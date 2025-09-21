@@ -1,0 +1,75 @@
+# RFID Athletics Timer - Requirements
+# Python 3.8+ required
+
+# GUI Framework
+PyQt6==6.6.1
+PyQt6-tools==6.6.0
+
+# Network and Communication
+socket-client==0.1.0
+
+# Database
+SQLite3  # Built-in with Python
+sqlalchemy==2.0.23
+
+# Data Processing
+pandas==2.1.4
+numpy==1.24.4
+
+# Date and Time
+python-dateutil==2.8.2
+
+# Logging and Configuration
+colorama==0.4.6
+pyyaml==6.0.1
+
+# Export and Reporting
+openpyxl==3.1.2        # Excel export
+reportlab==4.0.7       # PDF generation
+fpdf2==2.7.6           # Alternative PDF library
+
+# Development and Testing (optional)
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-qt==4.2.0       # PyQt testing
+black==23.11.0         # Code formatting
+flake8==6.1.0          # Code linting
+pre-commit==3.6.0      # Git hooks
+
+# System and OS
+psutil==5.9.6          # System monitoring
+pathlib                # Built-in with Python 3.4+
+
+# Audio (for notifications)
+pygame==2.5.2          # Sound alerts
+playsound==1.3.0       # Simple sound playback
+
+# Threading and Async
+threading               # Built-in with Python
+queue                  # Built-in with Python
+
+# Math and Statistics  
+scipy==1.11.4
+matplotlib==3.8.2      # For graphs and charts
+
+# Utilities
+click==8.1.7           # CLI commands
+tqdm==4.66.1           # Progress bars
+rich==13.7.0           # Rich text and beautiful formatting
+
+# Serialization
+pickle                 # Built-in with Python
+json                   # Built-in with Python
+
+# Network utilities
+netifaces==0.11.0      # Network interface detection
+ping3==4.0.4           # Network ping functionality
+
+# Documentation
+sphinx==7.2.6         # Documentation generation
+sphinx-rtd-theme==1.3.0
+
+# Version and Packaging
+setuptools==69.0.2
+wheel==0.42.0
+twine==4.0.2
