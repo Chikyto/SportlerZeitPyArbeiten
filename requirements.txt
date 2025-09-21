@@ -9,7 +9,6 @@ PyQt6-tools==6.6.0
 socket-client==0.1.0
 
 # Database
-SQLite3  # Built-in with Python
 sqlalchemy==2.0.23
 
 # Data Processing
