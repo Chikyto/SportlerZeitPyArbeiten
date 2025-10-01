@@ -1,250 +1,183 @@
-# RFID Athletics Timer
+# Guía de Refactorización - RFID Athletics Timer
 
-Sistema de control de tiempo para atletas usando lector RFID YR8900 e interfaz gráfica PyQt6.
+## 🎯 Objetivo
 
-## Descripción
+Convertir el código monolítico `tabbed_gui.py` en una arquitectura modular, escalable y mantenible.
 
-Este sistema permite la detección automática de chips RFID SmarTrac para control de tiempo en eventos deportivos. Utiliza el lector YR8900 de Invelion con comunicación Ethernet y proporciona una interfaz gráfica intuitiva para monitoreo en tiempo real.
+## 📁 Nueva Estructura
 
-## Características
-
-- **Comunicación Ethernet** con lector YR8900
-- **Interfaz gráfica moderna** con PyQt6
-- **Detección en tiempo real** de chips RFID
-- **Múltiples antenas** soportadas (hasta 8)
-- **Base de datos** para almacenamiento de eventos
-- **Exportación de datos** en múltiples formatos
-- **Sistema de logging** completo
-- **Arquitectura modular** y extensible
-
-## Requisitos del Sistema
-
-- Python 3.8 o superior
-- Lector RFID YR8900 (Invelion)
-- Red Ethernet configurada
-- Sistema operativo: Windows, Linux o macOS
-
-## Instalación
-
-### 1. Clonar el repositorio
-
-```bash
-git clone https://github.com/tu-usuario/rfid-athletics-timer.git
-cd rfid-athletics-timer
+```
+src/
+├── core/                           # Lógica de negocio (EXISTENTE)
+│   ├── advanced_scanner.py         # Scanner RFID
+│   ├── event_manager.py            # Gestión de eventos
+│   ├── integrated_race_tracker.py  # Tracking de carreras
+│   └── race_config.py              # Configuración
+│
+├── gui/
+│   ├── main_window.py             # ✨ NUEVO: MainWindow refactorizado
+│   │
+│   ├── wizard/                     # Wizard existente (sin cambios)
+│   │   ├── configuration_wizard.py
+│   │   ├── antenna_config_page.py
+│   │   ├── antenna_detection_page.py
+│   │   └── connection_page.py
+│   │
+│   ├── tabs/                       # ✨ NUEVO: Tabs modulares
+│   │   ├── __init__.py
+│   │   ├── base_tab.py            # Clase base
+│   │   ├── connection_tab.py      # Tab conexión RFID
+│   │   ├── detection_tab.py       # Tab detección chips
+│   │   ├── antenna_config_tab.py  # Tab config antenas
+│   │   ├── event_config_tab.py    # Tab gestión eventos
+│   │   ├── competition_tab.py     # Tab competencia
+│   │   └── database_tab.py        # Tab base de datos
+│   │
+│   └── widgets/                    # Widgets existentes (sin cambios)
+│       ├── antenna_config_widget.py
+│       ├── event_config_widget.py
+│       └── race_monitoring_widget.py
+│
+├── utils/                          # ✨ NUEVO: Utilidades
+│   ├── __init__.py
+│   ├── signals.py                 # Sistema de señales centralizado
+│   └── logger.py                  # Sistema de logging
+│
+└── main.py                        # ✨ NUEVO: Entry point único
 ```
 
-### 2. Crear entorno virtual
+## 🔄 Plan de Migración
 
-```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
+### Fase 1: Crear Infraestructura Base ✅
+- [x] `utils/signals.py` - Sistema de señales
+- [x] `gui/tabs/base_tab.py` - Clase base para tabs
+- [x] `gui/tabs/__init__.py` - Módulo de tabs
 
-# Linux/macOS
-python3 -m venv venv
-source venv/bin/activate
+### Fase 2: Migrar Tabs Individuales ✅
+- [x] `gui/tabs/connection_tab.py` - Extraído de `tabbed_gui.py`
+- [x] `gui/tabs/detection_tab.py` - Extraído de `tabbed_gui.py`
+- [ ] Los demás tabs usan widgets existentes directamente
+
+### Fase 3: Crear MainWindow Modular ✅
+- [x] `gui/main_window.py` - Orquestador principal
+- [x] Integración con sistema de señales
+- [x] Gestión del ciclo de vida
+
+### Fase 4: Integrar con Wizard ✅
+- [x] `main.py` - Entry point que conecta wizard → app
+- [x] Pasar configuración del wizard a MainWindow
+- [x] Auto-conexión si wizard verificó hardware
+
+### Fase 5: Testing y Limpieza
+- [ ] Probar flujo completo: wizard → app
+- [ ] Verificar todas las funcionalidades
+- [ ] Eliminar `tabbed_gui.py` (obsoleto)
+
+## 🎨 Arquitectura
+
+### Principios de Diseño
+
+1. **Separación de Responsabilidades**
+   - `MainWindow`: Orquestación y layout
+   - `Tabs`: UI y lógica específica de cada sección
+   - `Core`: Lógica de negocio pura
+   - `Utils`: Funcionalidad compartida
+
+2. **Comunicación vía Señales**
+   - Singleton `AppSignals` para comunicación desacoplada
+   - No hay referencias directas entre tabs
+   - Fácil extensión y testing
+
+3. **Modularidad**
+   - Cada tab es independiente
+   - Widgets reutilizables
+   - Fácil agregar nuevas funcionalidades
+
+### Flujo de Datos
+
+```
+Wizard → main.py → MainWindow
+                      ↓
+            ┌─────────┴─────────┐
+            ↓                   ↓
+         Tabs                Widgets
+            ↓                   ↓
+        AppSignals ←→ Core Components
 ```
 
-### 3. Instalar dependencias
+## 🚀 Cómo Usar
+
+### Ejecutar la Aplicación
 
 ```bash
-pip install -r requirements.txt
-```
+# Desde la raíz del proyecto
+python -m src.main
 
-### 4. Configuración inicial
-
-```bash
-python scripts/setup.py
-```
-
-## Configuración del Hardware
-
-### Lector YR8900
-
-1. **Conexión de red**: Conectar el lector a la red Ethernet
-2. **IP por defecto**: 192.168.0.178:4001
-3. **Configuración de antenas**: Hasta 8 antenas soportadas
-4. **Potencia RF**: Configurable de 0-33 dBm
-
-### Chips RFID
-
-- **Tipo soportado**: SmarTrac
-- **Frecuencia**: UHF 860-960 MHz
-- **Protocolo**: EPC Class 1 Gen 2 (ISO 18000-6C)
-
-## Uso Rápido
-
-### Ejecutar la aplicación
-
-```bash
+# O si tienes un script de entrada
 python main.py
 ```
 
-### Pasos básicos
-
-1. **Conectar**: Configurar IP del lector y conectar
-2. **Configurar**: Ajustar potencia y antena en uso
-3. **Scanning**: Iniciar detección de chips
-4. **Monitoreo**: Ver tags detectados en tiempo real
-5. **Exportar**: Guardar datos del evento
-
-## Estructura del Proyecto
-
-```
-rfid-athletics-timer/
-├── src/                    # Código fuente
-│   ├── core/              # Lógica del scanner
-│   ├── gui/               # Interfaz gráfica
-│   ├── data/              # Manejo de datos
-│   └── utils/             # Utilidades
-├── tests/                 # Tests unitarios
-├── docs/                  # Documentación
-├── data/                  # Datos del proyecto
-└── scripts/               # Scripts auxiliares
-```
-
-## Configuración
-
-### Archivo de configuración (src/core/config.py)
+### Desarrollo de Nuevos Tabs
 
 ```python
-# Configuración del lector RFID
-RFID_HOST = "192.168.0.178"
-RFID_PORT = 4001
-SCAN_INTERVAL = 500  # ms
+# gui/tabs/my_new_tab.py
+from .base_tab import BaseTab
+from PyQt6.QtWidgets import QLabel
 
-# Configuración de la base de datos
-DATABASE_PATH = "data/databases/athletics.db"
-
-# Configuración de logging
-LOG_LEVEL = "INFO"
-LOG_PATH = "data/logs/"
+class MyNewTab(BaseTab):
+    def setup_ui(self):
+        self.layout.addWidget(QLabel("Mi nuevo tab!"))
+    
+    def connect_signals(self):
+        self.signals.some_signal.connect(self.on_some_event)
+    
+    def on_some_event(self):
+        self.log("Evento recibido!")
 ```
 
-## API Principal
-
-### RFIDScanner
-
+Agregar al `MainWindow`:
 ```python
-from src.core.rfid_scanner import RFIDScanner
-
-scanner = RFIDScanner(host="192.168.0.178", port=4001)
-scanner.connect_reader()
-scanner.start_scanning()
+def create_tabs(self):
+    # ... otros tabs
+    self.my_tab = MyNewTab()
+    self.tab_widget.addTab(self.my_tab, "Mi Tab")
 ```
 
-### TagParser
+## 🔧 Próximos Pasos
 
+1. **Implementar tabs restantes** usando widgets existentes
+2. **Sistema de logging mejorado** (`utils/logger.py`)
+3. **Persistencia de configuración** (guardar/cargar settings)
+4. **Testing unitario** para cada componente
+5. **Integración Firebase** (tab de base de datos)
+
+## 📝 Notas de Implementación
+
+### Cambios Respecto al Código Original
+
+- **Eliminado código duplicado** (setup_competition_tab aparecía 2 veces)
+- **Desacoplamiento**: tabs no conocen otros tabs
+- **Señales centralizadas**: toda comunicación vía `AppSignals`
+- **Inicialización consistente**: race_tracker se crea cuando se inicia categoría
+- **Mejor manejo de estado**: cada componente gestiona su propio estado
+
+### Compatibilidad
+
+- ✅ Mantiene compatibilidad con widgets existentes
+- ✅ El wizard sigue funcionando igual
+- ✅ Core components sin cambios
+- ✅ Mismas funcionalidades, mejor arquitectura
+
+## 🐛 Debugging
+
+Para verificar conexiones del sistema:
 ```python
-from src.core.tag_parser import TagParser
-
-parser = TagParser()
-tag_info = parser.parse_tag_data(raw_data)
+# En MainWindow
+state = main_window.get_current_state()
+print(state)
 ```
 
-## Testing
+## 📚 Referencias
 
-```bash
-# Ejecutar todos los tests
-python -m pytest tests/
-
-# Test específico
-python -m pytest tests/test_rfid_scanner.py
-
-# Con cobertura
-python -m pytest --cov=src tests/
-```
-
-## Desarrollo
-
-### Configurar entorno de desarrollo
-
-```bash
-# Instalar dependencias de desarrollo
-pip install -r requirements-dev.txt
-
-# Pre-commit hooks
-pre-commit install
-
-# Formateo de código
-black src/
-flake8 src/
-```
-
-### Agregar nuevas funcionalidades
-
-1. Crear rama de feature: `git checkout -b feature/nueva-funcionalidad`
-2. Implementar en el módulo correspondiente
-3. Agregar tests unitarios
-4. Actualizar documentación
-5. Crear pull request
-
-## Solución de Problemas
-
-### Error de conexión al lector
-
-1. Verificar conexión de red
-2. Comprobar IP del lector: `ping 192.168.0.178`
-3. Revisar puerto disponible: `telnet 192.168.0.178 4001`
-4. Verificar configuración de firewall
-
-### Chips no detectados
-
-1. Verificar potencia RF
-2. Comprobar conexión de antenas
-3. Verificar tipo de chip compatible
-4. Revisar distancia de lectura
-
-### Problemas de rendimiento
-
-1. Ajustar intervalo de scanning
-2. Verificar recursos del sistema
-3. Optimizar configuración de red
-4. Revisar logs del sistema
-
-## Logging
-
-Los logs se almacenan en `data/logs/` con rotación automática:
-
-- `application.log`: Log general de la aplicación
-- `rfid.log`: Log específico del scanner RFID
-- `database.log`: Log de operaciones de base de datos
-
-## Exportación de Datos
-
-Formatos soportados:
-- **CSV**: Para análisis en Excel
-- **JSON**: Para integración con APIs
-- **PDF**: Para reportes impresos
-- **SQLite**: Para backup de base de datos
-
-## Contribuir
-
-1. Fork del repositorio
-2. Crear rama de feature
-3. Commit con mensajes descriptivos
-4. Push a la rama
-5. Crear Pull Request
-
-## Licencia
-
-Este proyecto está licenciado bajo MIT License. Ver `LICENSE` para más detalles.
-
-## Soporte
-
-- **Issues**: [GitHub Issues](https://github.com/tu-usuario/rfid-athletics-timer/issues)
-- **Wiki**: [Documentación detallada](https://github.com/tu-usuario/rfid-athletics-timer/wiki)
-- **Email**: soporte@tu-dominio.com
-
-## Changelog
-
-### v1.0.0 (2025-09-21)
-- Implementación inicial
-- Soporte para YR8900
-- Interfaz gráfica PyQt6
-- Sistema de base de datos
-- Exportación de datos
-
----
-
-**Desarrollado para sistemas de cronometraje deportivo** 🏃‍♂️🏃‍♀️
+- PyQt6 Signals: https://doc.qt.io/qtforpython-6/tutorials/basictutorial/signals_and_slots.html
+- Architecture Patterns: Clean Architecture, MVC

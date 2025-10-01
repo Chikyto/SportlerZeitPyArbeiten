@@ -317,7 +317,170 @@ class AntennaConfigWidget(QWidget):
         
         # Emitir señal con la configuración
         self.config_applied.emit(config_data)
+
+    def load_from_wizard_config(self, wizard_config):
+        """
+        Cargar configuración desde el wizard
+        El wizard envía índices 0-7, este widget usa 0-7 también
+        """
+        print(f"DEBUG: AntennaConfigWidget.load_from_wizard_config recibió {len(wizard_config)} antenas")
         
+        for antenna_id in range(8):
+            if antenna_id in wizard_config:
+                config = wizard_config[antenna_id]
+                print(f"DEBUG: Configurando antena {antenna_id}: enabled={config.get('enabled')}, "
+                    f"start={config.get('start')}, finish={config.get('finish')}")
+                
+                # Aplicar configuración a los controles existentes
+                if antenna_id in self.antenna_configs:
+                    controls = self.antenna_configs[antenna_id]
+                    
+                    # Checkbox habilitada
+                    controls['enabled'].setChecked(config.get('enabled', False))
+                    
+                    # Checkboxes de roles
+                    controls['start'].setChecked(config.get('start', False))
+                    controls['finish'].setChecked(config.get('finish', False))
+                    controls['checkpoint'].setChecked(config.get('checkpoint', False))
+                    
+                    # Campos de texto
+                    controls['name'].setText(config.get('name', f'Antena {antenna_id + 1}'))
+                    controls['description'].setText(config.get('description', 'Sin configurar'))
+                    
+                    # Bloquear controles inicialmente (modo "solo lectura")
+                    controls['name'].setReadOnly(True)
+                    controls['description'].setReadOnly(True)
+                    controls['start'].setEnabled(False)
+                    controls['finish'].setEnabled(False)
+                    controls['checkpoint'].setEnabled(False)
+                    controls['enabled'].setEnabled(False)
+        
+        # Agregar botón de editar si no existe
+        if not hasattr(self, 'edit_antenna_config_btn'):
+            self.add_edit_button()
+        
+        # Validar configuración cargada
+        self.validate_antenna_config()
+        
+        # Marcar como pre-configurado
+        self.is_wizard_configured = True
+        print("DEBUG: Configuración de antenas cargada y bloqueada")
+
+
+    def add_edit_button(self):
+        """Agregar botón para editar configuración en la parte superior"""
+        from PyQt6.QtWidgets import QFrame
+        
+        # Crear frame para el banner
+        banner = QFrame()
+        banner.setStyleSheet("""
+            QFrame {
+                background-color: #e8f5e9;
+                border: 2px solid #4caf50;
+                border-radius: 5px;
+                padding: 10px;
+            }
+        """)
+        
+        banner_layout = QHBoxLayout(banner)
+        
+        # Label de estado
+        self.antenna_config_status = QLabel("⚙️ Configuración cargada desde el wizard")
+        self.antenna_config_status.setStyleSheet("color: #2e7d32; font-weight: bold;")
+        banner_layout.addWidget(self.antenna_config_status)
+        
+        banner_layout.addStretch()
+        
+        # Botón de editar
+        self.edit_antenna_config_btn = QPushButton("✏️ Editar Configuración")
+        self.edit_antenna_config_btn.clicked.connect(self.toggle_antenna_edit_mode)
+        self.edit_antenna_config_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1976d2;
+                color: white;
+                font-weight: bold;
+                padding: 8px 15px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #1565c0;
+            }
+        """)
+        banner_layout.addWidget(self.edit_antenna_config_btn)
+        
+        # Insertar banner al principio del layout
+        self.layout().insertWidget(0, banner)
+
+
+    def toggle_antenna_edit_mode(self):
+        """Alternar modo de edición de antenas"""
+        if not hasattr(self, 'antenna_edit_mode'):
+            self.antenna_edit_mode = False
+        
+        self.antenna_edit_mode = not self.antenna_edit_mode
+        
+        if self.antenna_edit_mode:
+            # Habilitar edición
+            self.edit_antenna_config_btn.setText("💾 Guardar Cambios")
+            self.edit_antenna_config_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #f57c00;
+                    color: white;
+                    font-weight: bold;
+                    padding: 8px 15px;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: #ef6c00;
+                }
+            """)
+            self.antenna_config_status.setText("✏️ Modo edición activado")
+            self.antenna_config_status.setStyleSheet("color: #f57c00; font-weight: bold;")
+            
+            # Habilitar todos los controles
+            self.enable_all_controls(True)
+        else:
+            # Deshabilitar edición
+            self.edit_antenna_config_btn.setText("✏️ Editar Configuración")
+            self.edit_antenna_config_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #1976d2;
+                    color: white;
+                    font-weight: bold;
+                    padding: 8px 15px;
+                    border-radius: 4px;
+                }
+                QPushButton:hover {
+                    background-color: #1565c0;
+                }
+            """)
+            self.antenna_config_status.setText("⚙️ Configuración guardada")
+            self.antenna_config_status.setStyleSheet("color: #2e7d32; font-weight: bold;")
+            
+            # Deshabilitar controles
+            self.enable_all_controls(False)
+            
+            # Emitir señal de configuración actualizada
+            self.apply_antenna_config()
+
+
+    def enable_all_controls(self, enabled):
+        """Habilitar/deshabilitar todos los controles de edición"""
+        for antenna_id, controls in self.antenna_configs.items():
+            # Campos de texto
+            controls['name'].setReadOnly(not enabled)
+            controls['description'].setReadOnly(not enabled)
+            
+            # Checkboxes
+            controls['enabled'].setEnabled(enabled)
+            
+            # Roles solo si la antena está habilitada
+            is_enabled = controls['enabled'].isChecked()
+            controls['start'].setEnabled(enabled and is_enabled)
+            controls['finish'].setEnabled(enabled and is_enabled)
+            controls['checkpoint'].setEnabled(enabled and is_enabled)
+
+
     def get_current_config(self):
         """Obtener configuración actual"""
         config_data = {}

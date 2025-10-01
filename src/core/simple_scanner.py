@@ -207,6 +207,35 @@ class SimpleScanner:
         
         return tags
     
+    def test_original_command(self):
+        """Test con el comando original que funcionaba"""
+        print(f"\n{Fore.CYAN}=== TEST COMANDO ORIGINAL ===")
+        
+        # Tu comando original que funcionaba
+        cmd_original = bytes([0xA0, 0x03, 0xFF, 0x79, 0xE5])
+        print("Probando comando original (get frequency region):")
+        response = self.send_command(cmd_original)
+        
+        if response:
+            print(f"  ✓ Respuesta recibida: {len(response)} bytes")
+            print(f"  Datos: {' '.join(f'{b:02x}' for b in response)}")
+        else:
+            print(f"  ✗ Sin respuesta")
+            return False
+        
+        # Comando de scan original
+        cmd_scan = bytes([0xA0, 0x06, 0xF3, 0x8B, 0x01, 0x00, 0x01, 0xDA])
+        print("\nProbando comando de scan original:")
+        response = self.send_command(cmd_scan)
+        
+        if response:
+            print(f"  ✓ Respuesta de scan: {len(response)} bytes")
+            return True
+        else:
+            print(f"  ✗ Sin respuesta de scan")
+            return False
+
+
     def continuous_scan_simple(self, duration=10):
         """Scan continuo simple - MANTIENE tu lógica que funciona"""
         print(f"\n{Fore.CYAN}=== SCAN CONTINUO ({duration}s) ===")
@@ -238,3 +267,4 @@ class SimpleScanner:
             print(f"\n{Fore.YELLOW}[INFO] Scan interrumpido por usuario")
         
         return list(unique_tags.values())
+    

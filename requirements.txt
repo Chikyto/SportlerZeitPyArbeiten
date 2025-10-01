@@ -1,3 +1,25 @@
-# RFID Athletics Timer - Solo lo esencial
+# RFID Athletics Timer - Requirements Completo
+# Dependencias necesarias para el proyecto desarrollado
+
+# GUI Framework - OBLIGATORIO
 PyQt6==6.6.1
+
+# Comunicación y colores en consola - OBLIGATORIO  
 colorama==0.4.6
+
+# Fecha y hora - OBLIGATORIO (usado en el sistema de eventos)
+python-dateutil==2.8.2
+
+# Tipos de datos y utilidades - OBLIGATORIO
+dataclasses-json==0.6.3
+
+# ===================================================
+# DEPENDENCIAS DEL SISTEMA (built-in con Python)
+# ===================================================
+# socket - Comunicación TCP/IP con YR8900
+# datetime - Manejo de timestamps 
+# threading - Para QThread del scanner
+# enum - Para RaceStatus y AntennaRole
+# typing - Para type hints
+# pathlib - Para manejo de rutas
+# dataclasses - Para estructuras de datos

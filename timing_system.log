@@ -1,0 +1,132 @@
+2025-09-30 11:02:12,786 - __main__ - INFO - ============================================================
+2025-09-30 11:02:12,786 - __main__ - INFO - SISTEMA DE CRONOMETRAJE RFID
+2025-09-30 11:02:12,786 - __main__ - INFO - ============================================================
+2025-09-30 11:02:12,787 - __main__ - INFO - Iniciando wizard de configuración
+2025-09-30 11:02:13,380 - src.gui.wizard.configuration_wizard - INFO - Iniciando wizard de configuración
+2025-09-30 11:02:19,304 - hardware.reader_manager - INFO - Probando conexión con YR8900...
+2025-09-30 11:02:24,511 - hardware.reader_manager - INFO - Probando conexión con YR8900...
+2025-09-30 11:02:40,109 - src.gui.wizard.wizard_steps - INFO - Iniciando escaneo de antenas desde wizard
+2025-09-30 11:02:40,679 - hardware.antenna_detection - INFO - Puerto 1: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:02:41,265 - hardware.antenna_detection - INFO - Puerto 2: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:02:41,854 - hardware.antenna_detection - INFO - Puerto 3: RL=19dB, CONECTADA (umbral=8dB)
+2025-09-30 11:02:42,433 - hardware.antenna_detection - INFO - Puerto 4: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:02:43,017 - hardware.antenna_detection - INFO - Puerto 5: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:02:43,581 - hardware.antenna_detection - INFO - Puerto 6: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:02:44,159 - hardware.antenna_detection - INFO - Puerto 7: RL=18dB, CONECTADA (umbral=8dB)
+2025-09-30 11:02:45,123 - hardware.antenna_detection - INFO - Puerto 8: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:07:50,745 - src.gui.wizard.configuration_wizard - INFO - Wizard cancelado
+2025-09-30 11:07:50,747 - __main__ - INFO - Configuración cancelada por el usuario
+2025-09-30 11:08:54,174 - __main__ - INFO - ============================================================
+2025-09-30 11:08:54,175 - __main__ - INFO - SISTEMA DE CRONOMETRAJE RFID
+2025-09-30 11:08:54,175 - __main__ - INFO - ============================================================
+2025-09-30 11:08:54,176 - __main__ - INFO - Iniciando wizard de configuración
+2025-09-30 11:08:54,285 - src.gui.wizard.configuration_wizard - INFO - Iniciando wizard de configuración
+2025-09-30 11:08:55,910 - hardware.reader_manager - INFO - Probando conexión con YR8900...
+2025-09-30 11:09:00,381 - src.gui.wizard.wizard_steps - INFO - Iniciando escaneo de antenas desde wizard
+2025-09-30 11:09:00,966 - hardware.antenna_detection - INFO - Puerto 1: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:09:01,525 - hardware.antenna_detection - INFO - Puerto 2: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:09:02,117 - hardware.antenna_detection - INFO - Puerto 3: RL=21dB, CONECTADA (umbral=8dB)
+2025-09-30 11:09:02,689 - hardware.antenna_detection - INFO - Puerto 4: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:09:03,271 - hardware.antenna_detection - INFO - Puerto 5: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:09:03,854 - hardware.antenna_detection - INFO - Puerto 6: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:09:04,433 - hardware.antenna_detection - INFO - Puerto 7: RL=18dB, CONECTADA (umbral=8dB)
+2025-09-30 11:09:04,999 - hardware.antenna_detection - INFO - Puerto 8: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 11:09:28,918 - src.gui.wizard.configuration_wizard - INFO - Wizard completado exitosamente
+2025-09-30 11:09:28,918 - src.gui.wizard.configuration_wizard - INFO - Wizard completado
+2025-09-30 11:09:28,944 - __main__ - INFO - Configuración completada exitosamente
+2025-09-30 12:28:07,527 - __main__ - INFO - ============================================================
+2025-09-30 12:28:07,527 - __main__ - INFO - SISTEMA DE CRONOMETRAJE RFID - LAUNCHER
+2025-09-30 12:28:07,527 - __main__ - INFO - ============================================================
+2025-09-30 12:28:07,784 - __main__ - INFO - Configuración previa encontrada
+2025-09-30 12:28:15,207 - __main__ - INFO - Iniciando wizard de configuración
+2025-09-30 12:28:15,295 - src.gui.wizard.configuration_wizard - INFO - Wizard de configuración inicializado
+2025-09-30 12:28:17,098 - hardware.reader_manager - INFO - Probando conexión con YR8900...
+2025-09-30 12:28:22,469 - hardware.antenna_detection - INFO - Puerto 1: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:28:23,020 - hardware.antenna_detection - INFO - Puerto 2: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:28:23,579 - hardware.antenna_detection - INFO - Puerto 3: RL=19dB, CONECTADA (umbral=8dB)
+2025-09-30 12:28:24,140 - hardware.antenna_detection - INFO - Puerto 4: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:28:24,708 - hardware.antenna_detection - INFO - Puerto 5: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:28:25,285 - hardware.antenna_detection - INFO - Puerto 6: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:28:25,852 - hardware.antenna_detection - INFO - Puerto 7: RL=18dB, CONECTADA (umbral=8dB)
+2025-09-30 12:28:26,429 - hardware.antenna_detection - INFO - Puerto 8: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:29:07,274 - src.gui.wizard.configuration_wizard - INFO - Configuración guardada en timing_system_config.json
+2025-09-30 12:29:07,275 - src.gui.wizard.configuration_wizard - INFO - Configuración del wizard completada
+2025-09-30 12:29:07,275 - src.gui.wizard.configuration_wizard - INFO - Antenas configuradas: 2
+2025-09-30 12:29:07,276 - src.gui.wizard.configuration_wizard - INFO -   Puerto 3: largada, checkpoint, llegada
+2025-09-30 12:29:07,276 - src.gui.wizard.configuration_wizard - INFO -   Puerto 7: largada, checkpoint, llegada
+2025-09-30 12:29:07,290 - __main__ - INFO - Wizard completado exitosamente
+2025-09-30 12:29:07,290 - __main__ - INFO - Lanzando aplicación principal...
+2025-09-30 12:29:07,293 - __main__ - ERROR - No se pudo importar la ventana principal: cannot import name 'MainWindow' from 'src.gui.main_window' (C:\Users\Usuario\Desktop\SporterZeitPyArbeiten\SportlerZeitPyArbeiten\src\gui\main_window.py)
+2025-09-30 12:45:09,869 - __main__ - INFO - ============================================================
+2025-09-30 12:45:09,870 - __main__ - INFO - SISTEMA DE CRONOMETRAJE RFID - LAUNCHER
+2025-09-30 12:45:09,870 - __main__ - INFO - ============================================================
+2025-09-30 12:45:10,001 - __main__ - INFO - Configuración previa encontrada
+2025-09-30 12:45:12,734 - __main__ - INFO - Configuración cargada exitosamente
+2025-09-30 12:45:12,734 - __main__ - INFO - Lanzando aplicación principal...
+2025-09-30 12:45:12,757 - __main__ - ERROR - No se pudo importar la ventana principal: No module named 'core'
+2025-09-30 12:47:58,670 - __main__ - INFO - ============================================================
+2025-09-30 12:47:58,671 - __main__ - INFO - SISTEMA DE CRONOMETRAJE RFID - LAUNCHER
+2025-09-30 12:47:58,671 - __main__ - INFO - ============================================================
+2025-09-30 12:47:58,717 - __main__ - INFO - Configuración previa encontrada
+2025-09-30 12:48:01,109 - __main__ - INFO - Iniciando wizard de configuración
+2025-09-30 12:48:01,205 - src.gui.wizard.configuration_wizard - INFO - Wizard de configuración inicializado
+2025-09-30 12:48:04,952 - hardware.reader_manager - INFO - Probando conexión con YR8900...
+2025-09-30 12:48:09,689 - hardware.antenna_detection - INFO - Puerto 1: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:48:10,253 - hardware.antenna_detection - INFO - Puerto 2: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:48:10,827 - hardware.antenna_detection - INFO - Puerto 3: RL=19dB, CONECTADA (umbral=8dB)
+2025-09-30 12:48:11,397 - hardware.antenna_detection - INFO - Puerto 4: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:48:11,971 - hardware.antenna_detection - INFO - Puerto 5: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:48:12,532 - hardware.antenna_detection - INFO - Puerto 6: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:48:13,094 - hardware.antenna_detection - INFO - Puerto 7: RL=18dB, CONECTADA (umbral=8dB)
+2025-09-30 12:48:13,646 - hardware.antenna_detection - INFO - Puerto 8: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 12:48:23,487 - src.gui.wizard.configuration_wizard - INFO - Configuración guardada en timing_system_config.json
+2025-09-30 12:48:23,487 - src.gui.wizard.configuration_wizard - INFO - Configuración del wizard completada
+2025-09-30 12:48:23,488 - src.gui.wizard.configuration_wizard - INFO - Antenas configuradas: 2
+2025-09-30 12:48:23,488 - src.gui.wizard.configuration_wizard - INFO -   Puerto 3: largada, checkpoint
+2025-09-30 12:48:23,488 - src.gui.wizard.configuration_wizard - INFO -   Puerto 7: checkpoint, llegada
+2025-09-30 12:48:23,505 - __main__ - INFO - Wizard completado exitosamente
+2025-09-30 12:48:23,506 - __main__ - INFO - Lanzando aplicación principal...
+2025-09-30 12:48:23,529 - __main__ - INFO - Creando ventana principal...
+2025-09-30 12:48:23,531 - __main__ - ERROR - Error iniciando aplicación principal: MainWindow.__init__() takes 1 positional argument but 2 were given
+Traceback (most recent call last):
+  File "C:\Users\Usuario\Desktop\SporterZeitPyArbeiten\SportlerZeitPyArbeiten\launcher.py", line 99, in launch_main_application
+    main_window = MainWindow(config)
+                  ^^^^^^^^^^^^^^^^^^
+TypeError: MainWindow.__init__() takes 1 positional argument but 2 were given
+2025-09-30 12:50:47,803 - __main__ - INFO - ============================================================
+2025-09-30 12:50:47,803 - __main__ - INFO - SISTEMA DE CRONOMETRAJE RFID - LAUNCHER
+2025-09-30 12:50:47,803 - __main__ - INFO - ============================================================
+2025-09-30 12:50:47,855 - __main__ - INFO - Configuración previa encontrada
+2025-09-30 12:50:52,598 - __main__ - INFO - Configuración cargada exitosamente
+2025-09-30 12:50:52,598 - __main__ - INFO - Lanzando aplicación principal...
+2025-09-30 12:50:52,603 - __main__ - INFO - Creando ventana principal...
+2025-09-30 12:50:52,603 - __main__ - ERROR - Error iniciando aplicación principal: MainWindow.__init__() takes 1 positional argument but 2 were given
+Traceback (most recent call last):
+  File "C:\Users\Usuario\Desktop\SporterZeitPyArbeiten\SportlerZeitPyArbeiten\launcher.py", line 99, in launch_main_application
+    main_window = MainWindow(config)
+                  ^^^^^^^^^^^^^^^^^^
+TypeError: MainWindow.__init__() takes 1 positional argument but 2 were given
+2025-09-30 13:18:56,690 - __main__ - INFO - ============================================================
+2025-09-30 13:18:56,690 - __main__ - INFO - SISTEMA DE CRONOMETRAJE RFID - LAUNCHER
+2025-09-30 13:18:56,690 - __main__ - INFO - ============================================================
+2025-09-30 13:18:56,746 - __main__ - INFO - Configuración previa encontrada
+2025-09-30 13:18:58,421 - __main__ - INFO - Iniciando wizard de configuración
+2025-09-30 13:18:58,518 - src.gui.wizard.configuration_wizard - INFO - Wizard de configuración inicializado
+2025-09-30 13:19:01,871 - hardware.reader_manager - INFO - Probando conexión con YR8900...
+2025-09-30 13:19:03,251 - hardware.reader_manager - INFO - Probando conexión con YR8900...
+2025-09-30 13:19:06,774 - hardware.antenna_detection - INFO - Puerto 1: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 13:19:07,340 - hardware.antenna_detection - INFO - Puerto 2: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 13:19:07,906 - hardware.antenna_detection - INFO - Puerto 3: RL=21dB, CONECTADA (umbral=8dB)
+2025-09-30 13:19:08,464 - hardware.antenna_detection - INFO - Puerto 4: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 13:19:09,035 - hardware.antenna_detection - INFO - Puerto 5: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 13:19:09,615 - hardware.antenna_detection - INFO - Puerto 6: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 13:19:10,171 - hardware.antenna_detection - INFO - Puerto 7: RL=18dB, CONECTADA (umbral=8dB)
+2025-09-30 13:19:10,711 - hardware.antenna_detection - INFO - Puerto 8: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-09-30 13:19:17,351 - src.gui.wizard.configuration_wizard - INFO - Configuración guardada en timing_system_config.json
+2025-09-30 13:19:17,352 - src.gui.wizard.configuration_wizard - INFO - Configuración del wizard completada
+2025-09-30 13:19:17,352 - src.gui.wizard.configuration_wizard - INFO - Antenas configuradas: 2
+2025-09-30 13:19:17,352 - src.gui.wizard.configuration_wizard - INFO -   Puerto 3: largada, checkpoint
+2025-09-30 13:19:17,353 - src.gui.wizard.configuration_wizard - INFO -   Puerto 7: checkpoint, llegada
+2025-09-30 13:19:17,371 - __main__ - INFO - Wizard completado exitosamente
+2025-09-30 13:19:17,371 - __main__ - INFO - Lanzando aplicación principal...
+2025-09-30 13:19:17,456 - __main__ - ERROR - No se pudo importar la ventana principal: No module named 'src.core.config'

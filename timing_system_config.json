@@ -1,0 +1,26 @@
+{
+  "reader": {
+    "host": "192.168.0.178",
+    "port": 4001,
+    "reader_address": 243,
+    "timeout": 3.0
+  },
+  "antennas": {
+    "3": {
+      "port": 3,
+      "enabled": true,
+      "function": "largada",
+      "power_level": 25,
+      "description": "Antena puerto 3: largada + checkpoint"
+    },
+    "7": {
+      "port": 7,
+      "enabled": true,
+      "function": "checkpoint",
+      "power_level": 25,
+      "description": "Antena puerto 7: checkpoint + llegada"
+    }
+  },
+  "event_type": "carrera_lineal",
+  "system_name": "Sistema de Cronometraje RFID"
+}
