@@ -1,183 +1,286 @@
-# Guía de Refactorización - RFID Athletics Timer
+# RFID Athletics Timer
 
-## 🎯 Objetivo
+Sistema profesional de cronometraje deportivo con tecnología RFID para carreras de atletismo, usando el lector YR8900.
 
-Convertir el código monolítico `tabbed_gui.py` en una arquitectura modular, escalable y mantenible.
+## 🎯 Características Principales
 
-## 📁 Nueva Estructura
+- ✅ **Wizard de Configuración Automático**: Auto-detección de hardware y conexión en <1 minuto
+- ✅ **Multi-Antena**: Soporte para hasta 8 antenas con roles configurables
+- ✅ **Gestión de Eventos**: Múltiples categorías y carreras simultáneas
+- ✅ **Tracking en Tiempo Real**: Monitoreo de participantes con splits y tiempos
+- ✅ **Arquitectura Modular**: Código limpio, mantenible y escalable
+- ⏳ **Exportación de Datos**: Reportes y análisis (próximamente)
+- ⏳ **Integración Cloud**: Firebase para datos en tiempo real (próximamente)
 
-```
-src/
-├── core/                           # Lógica de negocio (EXISTENTE)
-│   ├── advanced_scanner.py         # Scanner RFID
-│   ├── event_manager.py            # Gestión de eventos
-│   ├── integrated_race_tracker.py  # Tracking de carreras
-│   └── race_config.py              # Configuración
-│
-├── gui/
-│   ├── main_window.py             # ✨ NUEVO: MainWindow refactorizado
-│   │
-│   ├── wizard/                     # Wizard existente (sin cambios)
-│   │   ├── configuration_wizard.py
-│   │   ├── antenna_config_page.py
-│   │   ├── antenna_detection_page.py
-│   │   └── connection_page.py
-│   │
-│   ├── tabs/                       # ✨ NUEVO: Tabs modulares
-│   │   ├── __init__.py
-│   │   ├── base_tab.py            # Clase base
-│   │   ├── connection_tab.py      # Tab conexión RFID
-│   │   ├── detection_tab.py       # Tab detección chips
-│   │   ├── antenna_config_tab.py  # Tab config antenas
-│   │   ├── event_config_tab.py    # Tab gestión eventos
-│   │   ├── competition_tab.py     # Tab competencia
-│   │   └── database_tab.py        # Tab base de datos
-│   │
-│   └── widgets/                    # Widgets existentes (sin cambios)
-│       ├── antenna_config_widget.py
-│       ├── event_config_widget.py
-│       └── race_monitoring_widget.py
-│
-├── utils/                          # ✨ NUEVO: Utilidades
-│   ├── __init__.py
-│   ├── signals.py                 # Sistema de señales centralizado
-│   └── logger.py                  # Sistema de logging
-│
-└── main.py                        # ✨ NUEVO: Entry point único
-```
+## 🚀 Inicio Rápido
 
-## 🔄 Plan de Migración
+### Requisitos Previos
 
-### Fase 1: Crear Infraestructura Base ✅
-- [x] `utils/signals.py` - Sistema de señales
-- [x] `gui/tabs/base_tab.py` - Clase base para tabs
-- [x] `gui/tabs/__init__.py` - Módulo de tabs
+- Python 3.10+
+- Lector RFID YR8900
+- Sistema operativo: Windows / Linux / macOS
 
-### Fase 2: Migrar Tabs Individuales ✅
-- [x] `gui/tabs/connection_tab.py` - Extraído de `tabbed_gui.py`
-- [x] `gui/tabs/detection_tab.py` - Extraído de `tabbed_gui.py`
-- [ ] Los demás tabs usan widgets existentes directamente
-
-### Fase 3: Crear MainWindow Modular ✅
-- [x] `gui/main_window.py` - Orquestador principal
-- [x] Integración con sistema de señales
-- [x] Gestión del ciclo de vida
-
-### Fase 4: Integrar con Wizard ✅
-- [x] `main.py` - Entry point que conecta wizard → app
-- [x] Pasar configuración del wizard a MainWindow
-- [x] Auto-conexión si wizard verificó hardware
-
-### Fase 5: Testing y Limpieza
-- [ ] Probar flujo completo: wizard → app
-- [ ] Verificar todas las funcionalidades
-- [ ] Eliminar `tabbed_gui.py` (obsoleto)
-
-## 🎨 Arquitectura
-
-### Principios de Diseño
-
-1. **Separación de Responsabilidades**
-   - `MainWindow`: Orquestación y layout
-   - `Tabs`: UI y lógica específica de cada sección
-   - `Core`: Lógica de negocio pura
-   - `Utils`: Funcionalidad compartida
-
-2. **Comunicación vía Señales**
-   - Singleton `AppSignals` para comunicación desacoplada
-   - No hay referencias directas entre tabs
-   - Fácil extensión y testing
-
-3. **Modularidad**
-   - Cada tab es independiente
-   - Widgets reutilizables
-   - Fácil agregar nuevas funcionalidades
-
-### Flujo de Datos
-
-```
-Wizard → main.py → MainWindow
-                      ↓
-            ┌─────────┴─────────┐
-            ↓                   ↓
-         Tabs                Widgets
-            ↓                   ↓
-        AppSignals ←→ Core Components
-```
-
-## 🚀 Cómo Usar
-
-### Ejecutar la Aplicación
+### Instalación
 
 ```bash
-# Desde la raíz del proyecto
-python -m src.main
+# Clonar repositorio
+git clone https://github.com/tu-usuario/rfid-athletics-timer.git
+cd rfid-athletics-timer
 
-# O si tienes un script de entrada
+# Crear entorno virtual
+python -m venv venv
+source venv/bin/activate  # En Windows: venv\Scripts\activate
+
+# Instalar dependencias
+pip install -r requirements.txt
+```
+
+### Ejecutar Aplicación
+
+```bash
 python main.py
 ```
 
-### Desarrollo de Nuevos Tabs
+Al iniciar, el wizard automático:
+1. Se conecta al lector RFID (2 segundos)
+2. Detecta antenas conectadas (5 segundos)
+3. Te pide configurar roles de antenas (30 segundos)
+4. Abre la aplicación lista para usar
 
-```python
-# gui/tabs/my_new_tab.py
-from .base_tab import BaseTab
-from PyQt6.QtWidgets import QLabel
+## 📖 Documentación
 
-class MyNewTab(BaseTab):
-    def setup_ui(self):
-        self.layout.addWidget(QLabel("Mi nuevo tab!"))
-    
-    def connect_signals(self):
-        self.signals.some_signal.connect(self.on_some_event)
-    
-    def on_some_event(self):
-        self.log("Evento recibido!")
+### Estructura del Proyecto
+
+```
+rfid-athletics-timer/
+├── src/
+│   ├── core/              # Lógica de negocio
+│   ├── gui/               # Interfaz gráfica
+│   │   ├── wizard/        # Wizard de configuración
+│   │   ├── tabs/          # Tabs modulares
+│   │   └── widgets/       # Widgets especializados
+│   ├── utils/             # Utilidades compartidas
+│   ├── config/            # Configuración
+│   └── hardware/          # Interfaz con hardware
+├── docs/                  # Documentación adicional
+├── tests/                 # Tests unitarios
+├── main.py               # Entry point
+├── requirements.txt      # Dependencias
+└── README.md             # Este archivo
 ```
 
-Agregar al `MainWindow`:
-```python
-def create_tabs(self):
-    # ... otros tabs
-    self.my_tab = MyNewTab()
-    self.tab_widget.addTab(self.my_tab, "Mi Tab")
+### Guías Disponibles
+
+- [Guía de Refactorización](REFACTORING_GUIDE.md) - Arquitectura y diseño
+- [Pasos de Implementación](IMPLEMENTATION_STEPS.md) - Guía paso a paso
+
+## 💡 Uso Básico
+
+### 1. Configuración Inicial (Wizard)
+
+El wizard se ejecuta automáticamente la primera vez:
+
+```
+┌─────────────────────────────────┐
+│  Auto-Conexión                  │
+│  ✓ Conectando a lector...       │
+│  ✓ Firmware v2.1 detectado      │
+└─────────────────────────────────┘
+         ↓
+┌─────────────────────────────────┐
+│  Auto-Detección de Antenas      │
+│  ✓ Puerto 3: Conectada          │
+│  ✓ Puerto 7: Conectada          │
+└─────────────────────────────────┘
+         ↓
+┌─────────────────────────────────┐
+│  Configuración de Roles         │
+│  □ Puerto 3: [✓] Largada        │
+│  □ Puerto 7: [✓] Meta           │
+└─────────────────────────────────┘
 ```
 
-## 🔧 Próximos Pasos
+### 2. Gestión de Eventos
 
-1. **Implementar tabs restantes** usando widgets existentes
-2. **Sistema de logging mejorado** (`utils/logger.py`)
-3. **Persistencia de configuración** (guardar/cargar settings)
-4. **Testing unitario** para cada componente
-5. **Integración Firebase** (tab de base de datos)
+```python
+# Crear categoría
+event_manager.create_category(
+    category_id="100m_varones",
+    name="100m Varones",
+    distance=100
+)
 
-## 📝 Notas de Implementación
+# Registrar participante
+event_manager.register_participant(
+    chip_number="E2001234567890123456",
+    category_id="100m_varones",
+    name="Juan Pérez",
+    bib_number="101"
+)
 
-### Cambios Respecto al Código Original
+# Iniciar categoría
+event_manager.start_category("100m_varones")
+```
 
-- **Eliminado código duplicado** (setup_competition_tab aparecía 2 veces)
-- **Desacoplamiento**: tabs no conocen otros tabs
-- **Señales centralizadas**: toda comunicación vía `AppSignals`
-- **Inicialización consistente**: race_tracker se crea cuando se inicia categoría
-- **Mejor manejo de estado**: cada componente gestiona su propio estado
+### 3. Detección de Chips
 
-### Compatibilidad
+La aplicación detecta automáticamente cuando un chip cruza una antena configurada:
 
-- ✅ Mantiene compatibilidad con widgets existentes
-- ✅ El wizard sigue funcionando igual
-- ✅ Core components sin cambios
-- ✅ Mismas funcionalidades, mejor arquitectura
+```python
+# Detección automática
+tag = {
+    'number': 'E2001234567890123456',
+    'antenna': 2,  # Puerto 3 (índice 2)
+    'timestamp': datetime.now()
+}
+
+# El sistema procesa automáticamente:
+# - Identifica participante
+# - Registra tiempo
+# - Actualiza estado (En Curso / Finalizado)
+# - Muestra en monitor de carrera
+```
+
+## 🛠️ Configuración Avanzada
+
+### Configuración de Antenas
+
+El sistema soporta múltiples setups:
+
+**Setup Simple (2 antenas):**
+- Antena 1: Largada
+- Antena 2: Meta
+
+**Circuito Cerrado:**
+- Antena 1: Largada + Meta
+- Antenas 2-4: Checkpoints
+
+**Arco de Meta (4 antenas):**
+- Antenas 1-4: Todas como Meta
+
+### Archivo de Configuración
+
+La configuración se guarda automáticamente en `timing_system_config.json`:
+
+```json
+{
+  "connection": {
+    "host": "192.168.0.178",
+    "port": 4001
+  },
+  "antennas": {
+    "2": {
+      "enabled": true,
+      "name": "Largada",
+      "start": true,
+      "finish": false,
+      "checkpoint": false
+    },
+    "6": {
+      "enabled": true,
+      "name": "Meta",
+      "start": false,
+      "finish": true,
+      "checkpoint": false
+    }
+  }
+}
+```
+
+## 🧪 Testing
+
+```bash
+# Ejecutar todos los tests
+pytest
+
+# Con coverage
+pytest --cov=src tests/
+
+# Test específico
+pytest tests/test_scanner.py
+```
 
 ## 🐛 Debugging
 
-Para verificar conexiones del sistema:
-```python
-# En MainWindow
-state = main_window.get_current_state()
-print(state)
+### Modo Verbose
+
+```bash
+python main.py --verbose
 ```
 
-## 📚 Referencias
+### Logs
 
-- PyQt6 Signals: https://doc.qt.io/qtforpython-6/tutorials/basictutorial/signals_and_slots.html
-- Architecture Patterns: Clean Architecture, MVC
+Los logs se guardan en `logs/app.log`:
+
+```bash
+tail -f logs/app.log
+```
+
+### Test sin Hardware
+
+```bash
+python quick_test_main.py
+```
+
+## 🤝 Contribuir
+
+1. Fork el proyecto
+2. Crea tu feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push al branch (`git push origin feature/AmazingFeature`)
+5. Abre un Pull Request
+
+### Convenciones de Código
+
+- Python 3.10+ con type hints
+- PEP 8 para estilo
+- Docstrings en español
+- Tests para nuevas funcionalidades
+
+## 📋 Roadmap
+
+### v1.0 (Actual)
+- ✅ Wizard automático
+- ✅ Detección multi-antena
+- ✅ Configuración modular
+- ⏳ Sistema de detección integrado
+
+### v1.1 (Próximo)
+- Race tracking completo
+- Gestión de múltiples categorías
+- Exportación de datos (CSV, Excel)
+- Reportes automáticos
+
+### v2.0 (Futuro)
+- Integración Firebase
+- App móvil para resultados en vivo
+- Panel web para organizadores
+- Análisis estadístico avanzado
+
+## 📄 Licencia
+
+Este proyecto está bajo la licencia MIT - ver [LICENSE](LICENSE) para detalles.
+
+## 👥 Equipo
+
+- **Desarrollo Principal**: [Tu Nombre]
+- **Arquitectura**: Claude (Anthropic)
+- **Testing**: [Colaboradores]
+
+## 📞 Soporte
+
+- **Issues**: [GitHub Issues](https://github.com/tu-usuario/rfid-athletics-timer/issues)
+- **Email**: soporte@example.com
+- **Documentación**: [Wiki](https://github.com/tu-usuario/rfid-athletics-timer/wiki)
+
+## 🙏 Agradecimientos
+
+- Comunidad PyQt6
+- Fabricantes del lector YR8900
+- Todos los contribuidores
+
+---
+
+**Estado del Proyecto**: 🟢 En Desarrollo Activo
+
+**Última Actualización**: Octubre 2025
