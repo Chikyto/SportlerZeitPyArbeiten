@@ -15,188 +15,318 @@ Convertir el código monolítico `tabbed_gui.py` en una arquitectura modular, es
 - ✅ Integración wizard → MainWindow
 - ✅ Configuración pre-cargada desde wizard
 - ✅ Modo edición opcional para ajustes
+- ✅ **AdvancedScanner refactorizado con YR8900Protocol**
+- ✅ **Sistema de multi-antena funcional**
+- ✅ **Detección física de antenas con return loss**
+
+**En Progreso:**
+- 🔄 Integración de configuración wizard → scanner
+- 🔄 Sistema de detección de chips por antena específica
 
 **Pendiente:**
-- ⏳ Sistema de detección de chips integrado
 - ⏳ Gestión de eventos y categorías
 - ⏳ Tracking de carreras en tiempo real
 - ⏳ Exportación de datos
 - ⏳ Integración con Firebase
 
+---
+
 ## 📁 Estructura Actual
 
 ```
 src/
-├── core/                           # Lógica de negocio (EXISTENTE)
-│   ├── advanced_scanner.py         # Scanner RFID
+├── core/                           # Lógica de negocio
+│   ├── advanced_scanner.py         # ✨ REFACTORIZADO: Scanner multi-antena
+│   ├── tag_parser.py               # Parser de tags RFID
 │   ├── event_manager.py            # Gestión de eventos
 │   ├── integrated_race_tracker.py  # Tracking de carreras
 │   └── race_config.py              # Configuración
 │
+├── hardware/                       # Interfaz con hardware
+│   ├── yr8900_protocol.py          # Protocolo de comunicación
+│   ├── antenna_detection.py        # Detección física de antenas
+│   ├── reader_manager.py           # Gestor de alto nivel
+│   └── config.py                   # Configuración de hardware
+│
 ├── gui/
-│   ├── main_window.py             # ✨ NUEVO: MainWindow refactorizado
+│   ├── main_window.py              # MainWindow refactorizado
 │   │
-│   ├── wizard/                     # Wizard existente (sin cambios)
+│   ├── wizard/                     # Wizard de configuración
 │   │   ├── configuration_wizard.py
 │   │   ├── antenna_config_page.py
 │   │   ├── antenna_detection_page.py
 │   │   └── connection_page.py
 │   │
-│   ├── tabs/                       # ✨ NUEVO: Tabs modulares
+│   ├── tabs/                       # Tabs modulares
 │   │   ├── __init__.py
-│   │   ├── base_tab.py            # Clase base
-│   │   ├── connection_tab.py      # Tab conexión RFID
-│   │   ├── detection_tab.py       # Tab detección chips
-│   │   ├── antenna_config_tab.py  # Tab config antenas
-│   │   ├── event_config_tab.py    # Tab gestión eventos
-│   │   ├── competition_tab.py     # Tab competencia
-│   │   └── database_tab.py        # Tab base de datos
+│   │   ├── base_tab.py
+│   │   ├── connection_tab.py
+│   │   ├── detection_tab.py
+│   │   ├── antenna_config_tab.py
+│   │   ├── event_config_tab.py
+│   │   ├── competition_tab.py
+│   │   └── database_tab.py
 │   │
-│   └── widgets/                    # Widgets existentes (sin cambios)
+│   └── widgets/                    # Widgets especializados
 │       ├── antenna_config_widget.py
 │       ├── event_config_widget.py
 │       └── race_monitoring_widget.py
 │
-├── utils/                          # ✨ NUEVO: Utilidades
+├── utils/                          # Utilidades
 │   ├── __init__.py
-│   ├── signals.py                 # Sistema de señales centralizado
-│   └── logger.py                  # Sistema de logging
+│   ├── signals.py                  # Sistema de señales
+│   └── logger.py                   # Sistema de logging
 │
-└── main.py                        # ✨ NUEVO: Entry point único
+├── tests/                          # Tests
+│   ├── test_multiantena.py         # ✨ NUEVO: Test multi-antena
+│   └── ...
+│
+└── main.py                         # Entry point único
 ```
 
-## 🔄 Plan de Migración
+---
 
-### Fase 1: Crear Infraestructura Base ✅
-- [x] `utils/signals.py` - Sistema de señales
-- [x] `gui/tabs/base_tab.py` - Clase base para tabs
-- [x] `gui/tabs/__init__.py` - Módulo de tabs
+## 🔄 Cambios Recientes (Octubre 2025)
 
-### Fase 2: Migrar Tabs Individuales ✅
-- [x] `gui/tabs/connection_tab.py` - Extraído de `tabbed_gui.py`
-- [x] `gui/tabs/detection_tab.py` - Extraído de `tabbed_gui.py`
-- [ ] Los demás tabs usan widgets existentes directamente
+### AdvancedScanner Refactorizado
 
-### Fase 3: Crear MainWindow Modular ✅
-- [x] `gui/main_window.py` - Orquestador principal
-- [x] Integración con sistema de señales
-- [x] Gestión del ciclo de vida
+**Problema Anterior:**
+- Scanner creaba conexiones socket directas
+- Comandos sin checksum correcto
+- `set_work_antenna()` causaba timeouts
+- No integraba con el sistema de detección de antenas
 
-### Fase 4: Integrar con Wizard ✅
-- [x] `main.py` - Entry point que conecta wizard → app
-- [x] Pasar configuración del wizard a MainWindow
-- [x] Auto-conexión si wizard verificó hardware
+**Solución Implementada:**
+```python
+# Antes (❌ No funcionaba)
+def set_work_antenna(self, antenna_id):
+    cmd = bytes([0xA0, 0x04, 0xF3, 0x74, antenna_id])  # Sin checksum
+    response = self.send_command(cmd)
 
-### Fase 5: Testing y Limpieza
-- [ ] Probar flujo completo: wizard → app
-- [ ] Verificar todas las funcionalidades
-- [ ] Eliminar `tabbed_gui.py` (obsoleto)
-
-## 🎨 Arquitectura
-
-### Principios de Diseño
-
-1. **Separación de Responsabilidades**
-   - `MainWindow`: Orquestación y layout
-   - `Tabs`: UI y lógica específica de cada sección
-   - `Core`: Lógica de negocio pura
-   - `Utils`: Funcionalidad compartida
-
-2. **Comunicación vía Señales**
-   - Singleton `AppSignals` para comunicación desacoplada
-   - No hay referencias directas entre tabs
-   - Fácil extensión y testing
-
-3. **Modularidad**
-   - Cada tab es independiente
-   - Widgets reutilizables
-   - Fácil agregar nuevas funcionalidades
-
-### Flujo de Datos
-
-```
-Wizard → main.py → MainWindow
-                      ↓
-            ┌─────────┴─────────┐
-            ↓                   ↓
-         Tabs                Widgets
-            ↓                   ↓
-        AppSignals ←→ Core Components
+# Ahora (✅ Funciona)
+def set_work_antenna(self, antenna_id):
+    result = self.protocol.send_command(
+        CommandCodes.SET_WORK_ANTENNA,
+        [port - 1]  # Base 0 para protocolo
+    )
+    # Checksum automático + manejo robusto
 ```
 
-## 🚀 Cómo Usar
+**Beneficios:**
+- ✅ Reutiliza `YR8900Protocol` probado
+- ✅ Checksum automático en todos los comandos
+- ✅ Integración con `AntennaDetector`
+- ✅ Manejo consistente de errores
+- ✅ Multi-antena funcional
 
-### Ejecutar la Aplicación
+### Sistema Multi-Antena
 
-```bash
-# Desde la raíz del proyecto
-python -m src.main
+**Características:**
+- Detección automática de antenas físicas (1-8 puertos)
+- Medición de return loss para validar conexiones
+- Rotación automática entre antenas activas
+- Tracking de qué tag fue visto en qué antena
 
-# O si tienes un script de entrada
-python main.py
+**Test Exitoso:**
+```
+Antenas conectadas: 4
+Puertos: [2, 3, 4, 6]
+Tags únicos detectados: 7
+
+Tag 8600: detectado en puerto(s) 2, 3, 4, 6
+Tag 8575: detectado en puerto(s) 3, 6
+Tag 7662: detectado en puerto(s) 2
 ```
 
-### Desarrollo de Nuevos Tabs
+---
+
+## 🎨 Arquitectura Actualizada
+
+### Flujo de Comunicación con Hardware
+
+```
+GUI/MainWindow
+      ↓
+AdvancedScanner
+      ↓
+YR8900Protocol ←→ Socket ←→ Hardware YR8900
+      ↓
+AntennaDetector
+```
+
+### Jerarquía de Clases
+
+```
+YR8900Protocol (Base)
+├── Manejo de comandos
+├── Cálculo de checksums
+├── Parsing de respuestas
+└── Gestión de conexiones
+
+AntennaDetector (usa Protocol)
+├── Detección física (return loss)
+├── Scan de todos los puertos
+└── Validación de conexiones
+
+ReaderManager (usa Protocol + Detector)
+├── API de alto nivel
+├── Gestión de estado
+└── Operaciones complejas
+
+AdvancedScanner (usa Protocol + Detector)
+├── Scanning de tags
+├── Multi-antena
+├── Parsing de EPC
+└── Compatibilidad con GUI
+```
+
+---
+
+## 🔧 Integración con Wizard (Próximo Paso)
+
+### Estado Actual del Wizard
+
+El wizard ya detecta y configura:
+1. ✅ Conexión al lector (IP/Puerto)
+2. ✅ Antenas físicamente conectadas (return loss)
+3. ✅ Roles de antenas (Largada/Meta/Checkpoint)
+4. ✅ Potencia y parámetros
+
+**Configuración Guardada:**
+```json
+{
+  "connection": {
+    "host": "192.168.0.178",
+    "port": 4001
+  },
+  "antennas": {
+    "2": {
+      "enabled": true,
+      "name": "Largada",
+      "start": true,
+      "finish": false,
+      "checkpoint": false
+    },
+    "3": {
+      "enabled": true,
+      "name": "Checkpoint 1",
+      "start": false,
+      "finish": false,
+      "checkpoint": true
+    }
+  }
+}
+```
+
+### Integración Necesaria
+
+**Archivo: `src/gui/main_window.py`**
 
 ```python
-# gui/tabs/my_new_tab.py
-from .base_tab import BaseTab
-from PyQt6.QtWidgets import QLabel
-
-class MyNewTab(BaseTab):
-    def setup_ui(self):
-        self.layout.addWidget(QLabel("Mi nuevo tab!"))
+class MainWindow:
+    def __init__(self, wizard_config=None):
+        self.wizard_config = wizard_config
+        self.scanner = None
+        self.setup_scanner()
     
-    def connect_signals(self):
-        self.signals.some_signal.connect(self.on_some_event)
-    
-    def on_some_event(self):
-        self.log("Evento recibido!")
+    def setup_scanner(self):
+        """Configura scanner con datos del wizard"""
+        if self.wizard_config:
+            # Usar configuración del wizard
+            host = self.wizard_config['connection']['host']
+            port = self.wizard_config['connection']['port']
+            
+            self.scanner = AdvancedScanner(host, port)
+            
+            # Configurar antenas habilitadas
+            enabled_antennas = [
+                int(port) for port, config in 
+                self.wizard_config['antennas'].items()
+                if config['enabled']
+            ]
+            self.scanner.available_antennas = enabled_antennas
 ```
 
-Agregar al `MainWindow`:
+**Archivo: `src/gui/tabs/detection_tab.py`**
+
 ```python
-def create_tabs(self):
-    # ... otros tabs
-    self.my_tab = MyNewTab()
-    self.tab_widget.addTab(self.my_tab, "Mi Tab")
+class DetectionTab(BaseTab):
+    def start_scanning(self):
+        """Inicia scan solo en antenas configuradas"""
+        if not self.scanner.available_antennas:
+            # Si no hay config, detectar todas
+            self.scanner.detect_connected_antennas()
+        
+        # Scan multi-antena con rotación
+        tags = self.scanner.continuous_scan_multi_antenna(
+            duration=self.scan_duration
+        )
+        
+        # Filtrar por roles si es necesario
+        self.filter_tags_by_antenna_role(tags)
 ```
 
-## 🔧 Próximos Pasos
+---
 
-1. **Implementar tabs restantes** usando widgets existentes
-2. **Sistema de logging mejorado** (`utils/logger.py`)
-3. **Persistencia de configuración** (guardar/cargar settings)
-4. **Testing unitario** para cada componente
-5. **Integración Firebase** (tab de base de datos)
+## 📝 Tareas Pendientes
 
-## 📝 Notas de Implementación
+### Próxima Fase: Integración Wizard → Scanner
 
-### Cambios Respecto al Código Original
+- [ ] Cargar configuración del wizard en MainWindow
+- [ ] Pasar antenas habilitadas a AdvancedScanner
+- [ ] Filtrar tags por rol de antena (largada/meta)
+- [ ] Implementar lógica de detección por posición
+- [ ] Testing integración completa
 
-- **Eliminado código duplicado** (setup_competition_tab aparecía 2 veces)
-- **Desacoplamiento**: tabs no conocen otros tabs
-- **Señales centralizadas**: toda comunicación vía `AppSignals`
-- **Inicialización consistente**: race_tracker se crea cuando se inicia categoría
-- **Mejor manejo de estado**: cada componente gestiona su propio estado
+### Fase Futura: Sistema de Carreras
 
-### Compatibilidad
+- [ ] EventManager con categorías
+- [ ] RaceTracker por antena
+- [ ] Cálculo automático de splits
+- [ ] Detección de vueltas
+- [ ] Exportación de resultados
 
-- ✅ Mantiene compatibilidad con widgets existentes
-- ✅ El wizard sigue funcionando igual
-- ✅ Core components sin cambios
-- ✅ Mismas funcionalidades, mejor arquitectura
+---
 
 ## 🐛 Debugging
 
-Para verificar conexiones del sistema:
-```python
-# En MainWindow
-state = main_window.get_current_state()
-print(state)
+### Verificar Multi-Antena
+
+```bash
+python test_multiantena.py
 ```
+
+### Verificar Configuración del Wizard
+
+```python
+# En Python
+import json
+with open('timing_system_config.json', 'r') as f:
+    config = json.load(f)
+    print(f"Antenas habilitadas: {config['antennas']}")
+```
+
+### Logs del Scanner
+
+```python
+# Habilitar logs detallados
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+scanner = AdvancedScanner()
+scanner.connect()
+```
+
+---
 
 ## 📚 Referencias
 
-- PyQt6 Signals: https://doc.qt.io/qtforpython-6/tutorials/basictutorial/signals_and_slots.html
-- Architecture Patterns: Clean Architecture, MVC
+- [YR8900 Protocol Spec](docs/yr8900_protocol.pdf)
+- [PyQt6 Documentation](https://doc.qt.io/qtforpython-6/)
+- [Test Multi-Antena](tests/test_multiantena.py)
+- [Advanced Scanner](src/core/advanced_scanner.py)
+
+---
+
+**Última Actualización:** Octubre 2025
+**Estado:** 🟢 Multi-antena funcional - Listo para integración

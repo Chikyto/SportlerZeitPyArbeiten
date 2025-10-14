@@ -1,146 +1,146 @@
 """
 Scanner avanzado para YR8900 con control eficiente de múltiples antenas
-Incluye comandos adicionales del lector: temperatura, firmware, etc.
+Versión refactorizada - Integrado con YR8900Protocol
 """
 
-import socket
 import time
-import struct
 from datetime import datetime
 from colorama import init, Fore
 from .tag_parser import TagParser
-from .config import RFID_HOST, RFID_PORT, RFID_TIMEOUT
+from hardware.yr8900_protocol import YR8900Protocol, CommandCodes
+from hardware.antenna_detection import AntennaDetector
+from config import ReaderConfig
+from .tag_parser import TagParser # Importar parser híbrido
 
 init(autoreset=True)
+
 
 class AdvancedYR8900Scanner:
     """Scanner avanzado con control completo del YR8900"""
     
-    def __init__(self, host=RFID_HOST, port=RFID_PORT):
-        self.host = host
-        self.port = port
-        self.socket = None
+    def __init__(self, host="192.168.0.178", port=4001):
+        # Crear config y protocol
+        self.config = ReaderConfig(host=host, port=port)
+        self.protocol = YR8900Protocol(self.config)
+        self.antenna_detector = AntennaDetector(self.protocol)
+        
+        self.parser = TagParser(debug=False)  # Usar parser híbrido
+
         self.connected = False
         self.parser = TagParser()
-        self.current_antenna = 0
-        self.available_antennas = [0, 1]  # Antenas conectadas (puertos 1 y 2)
+        self.current_antenna = None
+        self.available_antennas = []
         
+    # ========================================
+    # CONEXIÓN Y COMUNICACIÓN
+    # ========================================
+    
     def connect(self):
-        """Conectar al lector"""
+        """Conectar al lector usando protocol"""
         try:
-            print(f"{Fore.BLUE}[INFO] Conectando a {self.host}:{self.port}...")
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(RFID_TIMEOUT)
-            self.socket.connect((self.host, self.port))
-            self.connected = True
-            print(f"{Fore.GREEN}[SUCCESS] Conectado exitosamente!")
-            return True
+            print(f"{Fore.BLUE}[INFO] Conectando a {self.config.host}:{self.config.port}...")
+            
+            # Test de conexión
+            result = self.protocol.send_command(CommandCodes.GET_FIRMWARE_VERSION)
+            
+            if not result.get("valid"):
+                print(f"{Fore.RED}[ERROR] Error de conexión: {result.get('error')}")
+                return False
+            
+            if result.get("data") and len(result["data"]) >= 2:
+                major, minor = result["data"][0], result["data"][1]
+                firmware = f"{major}.{minor}"
+                print(f"{Fore.GREEN}[SUCCESS] Conectado - Firmware v{firmware}")
+                self.connected = True
+                return True
+            
+            return False
+            
         except Exception as e:
             print(f"{Fore.RED}[ERROR] Error de conexión: {e}")
             return False
     
     def disconnect(self):
         """Desconectar del lector"""
-        if self.socket:
-            self.socket.close()
-            self.socket = None
-            self.connected = False
-            print(f"{Fore.BLUE}[INFO] Desconectado")
-    
-    def send_command(self, command_bytes):
-        """Enviar comando con checksum automático"""
-        if not self.connected:
-            return None
-            
-        try:
-            # Calcular checksum si no está incluido
-            if len(command_bytes) >= 2:
-                expected_length = command_bytes[1]
-                if len(command_bytes) == expected_length + 1:  # Falta checksum
-                    checksum = sum(command_bytes[1:]) & 0xFF
-                    command_bytes = command_bytes + bytes([checksum])
-            
-            print(f"{Fore.CYAN}Enviando: {' '.join(f'{b:02x}' for b in command_bytes)}")
-            self.socket.send(command_bytes)
-            
-            response = self.socket.recv(1024)
-            print(f"{Fore.CYAN}Recibido: {' '.join(f'{b:02x}' for b in response)}")
-            return response
-            
-        except socket.timeout:
-            print(f"{Fore.YELLOW}[WARNING] Timeout en comando")
-            return None
-        except Exception as e:
-            print(f"{Fore.RED}[ERROR] Error enviando comando: {e}")
-            return None
+        self.connected = False
+        print(f"{Fore.BLUE}[INFO] Desconectado")
     
     # ========================================
-    # COMANDOS BÁSICOS DEL LECTOR
+    # COMANDOS BÁSICOS DEL HARDWARE
     # ========================================
     
     def get_firmware_version(self):
         """Obtener versión del firmware"""
-        cmd = bytes([0xA0, 0x03, 0xFF, 0x72])
-        response = self.send_command(cmd)
+        result = self.protocol.send_command(CommandCodes.GET_FIRMWARE_VERSION)
         
-        if response and len(response) >= 6:
-            # Parsear versión del firmware
-            major = response[4]
-            minor = response[5]
-            version = f"{major}.{minor}"
-            print(f"{Fore.GREEN}Versión del firmware: {version}")
-            return version
+        if result.get("valid") and result.get("data") and len(result["data"]) >= 2:
+            major, minor = result["data"][0], result["data"][1]
+            return f"{major}.{minor}"
         return None
     
     def get_reader_temperature(self):
         """Obtener temperatura del lector"""
-        cmd = bytes([0xA0, 0x03, 0xFF, 0x7B])
-        response = self.send_command(cmd)
+        result = self.protocol.send_command(CommandCodes.GET_READER_TEMPERATURE)
         
-        if response and len(response) >= 5:
-            # Temperatura en grados Celsius
-            temp = response[4]
-            print(f"{Fore.GREEN}Temperatura del lector: {temp}°C")
-            return temp
+        if result.get("valid") and result.get("data") and len(result["data"]) >= 2:
+            sign = result["data"][0]
+            temp = result["data"][1]
+            return temp if sign == 0x01 else -temp
         return None
     
     def get_current_antenna(self):
         """Obtener antena actualmente configurada"""
-        cmd = bytes([0xA0, 0x03, 0xF3, 0x75])
-        response = self.send_command(cmd)
+        result = self.protocol.send_command(CommandCodes.GET_WORK_ANTENNA)
         
-        if response and len(response) >= 5:
-            antenna_id = response[4]
-            print(f"{Fore.GREEN}Antena actual: {antenna_id}")
-            return antenna_id
+        if result.get("valid") and result.get("data"):
+            antenna_port = result["data"][0] + 1  # Base 0 → Base 1
+            self.current_antenna = antenna_port
+            return antenna_port
         return None
     
     def set_work_antenna(self, antenna_id):
-        """Configurar antena de trabajo"""
-        if antenna_id not in self.available_antennas:
-            print(f"{Fore.YELLOW}[WARNING] Antena {antenna_id} no está en la lista de disponibles")
+        """
+        Configurar antena de trabajo
         
-        cmd = bytes([0xA0, 0x04, 0xF3, 0x74, antenna_id])
-        response = self.send_command(cmd)
+        Args:
+            antenna_id: Puerto (0-7) o (1-8) - se detecta automáticamente
+        """
+        # Detectar si es base 0 o base 1
+        if antenna_id >= 1:
+            port = antenna_id  # Base 1 (1-8)
+        else:
+            port = antenna_id + 1  # Base 0 (0-7) → Base 1
         
-        if response and len(response) >= 4:
-            if response[3] == 0x10:  # Command success
-                self.current_antenna = antenna_id
-                print(f"{Fore.GREEN}Antena cambiada a: {antenna_id}")
+        if not 1 <= port <= 8:
+            print(f"{Fore.RED}Error: Puerto fuera de rango: {port} (debe ser 1-8)")
+            return False
+        
+        try:
+            print(f"{Fore.CYAN}DEBUG: Cambiando a puerto {port}...")
+            
+            result = self.protocol.send_command(
+                CommandCodes.SET_WORK_ANTENNA,
+                [port - 1]  # Convertir a base 0 para el protocolo
+            )
+            
+            if result.get("valid"):
+                self.current_antenna = port
+                print(f"{Fore.GREEN}✓ Antena {port} activada")
                 return True
             else:
-                print(f"{Fore.RED}Error cambiando antena: {response[3]}")
-        return False
+                print(f"{Fore.RED}✗ Error activando antena {port}: {result.get('error')}")
+                return False
+                
+        except Exception as e:
+            print(f"{Fore.RED}Error: {e}")
+            return False
     
     def get_output_power(self):
         """Obtener potencia de salida"""
-        cmd = bytes([0xA0, 0x03, 0xFF, 0x77])
-        response = self.send_command(cmd)
+        result = self.protocol.send_command(CommandCodes.GET_OUTPUT_POWER)
         
-        if response and len(response) >= 5:
-            power = response[4]
-            print(f"{Fore.GREEN}Potencia actual: {power} dBm")
-            return power
+        if result.get("valid") and result.get("data"):
+            return result["data"][0]
         return None
     
     def set_output_power(self, power_dbm):
@@ -149,74 +149,193 @@ class AdvancedYR8900Scanner:
             print(f"{Fore.RED}Error: Potencia debe estar entre 0-33 dBm")
             return False
         
-        cmd = bytes([0xA0, 0x04, 0xFF, 0x76, power_dbm])
-        response = self.send_command(cmd)
+        result = self.protocol.send_command(
+            CommandCodes.SET_OUTPUT_POWER,
+            [power_dbm]
+        )
         
-        if response and len(response) >= 4:
-            if response[3] == 0x10:  # Command success
-                print(f"{Fore.GREEN}Potencia configurada a: {power_dbm} dBm")
-                return True
-            else:
-                print(f"{Fore.RED}Error configurando potencia: {response[3]}")
-        return False
+        return result.get("valid", False)
     
     # ========================================
-    # SCANNING EFICIENTE MULTI-ANTENA
+    # DETECCIÓN DE ANTENAS
+    # ========================================
+    
+    def detect_connected_antennas(self):
+        """Detecta qué antenas están físicamente conectadas usando return loss"""
+        print(f"\n{Fore.CYAN}=== DETECTANDO ANTENAS CONECTADAS ===")
+        
+        results = self.antenna_detector.scan_all_ports()
+        
+        # Extraer puertos conectados
+        connected = [port for port, (is_connected, _) in results.items() if is_connected]
+        self.available_antennas = connected
+        
+        print(f"\n{Fore.GREEN}Antenas detectadas: {connected}")
+        print(f"{Fore.GREEN}Total: {len(connected)}/8 antenas")
+        
+        return connected
+    
+    # ========================================
+    # PARSING DE RESPUESTAS
+    # ========================================
+    
+    def split_concatenated_packets(self, data):
+        """Separa paquetes concatenados"""
+        packets = []
+        i = 0
+        
+        while i < len(data):
+            if data[i] == 0xA0 and i + 1 < len(data):
+                length = data[i + 1]
+                packet_end = i + length + 2
+                
+                if packet_end <= len(data):
+                    packet = data[i:packet_end]
+                    packets.append(packet)
+                    i = packet_end
+                else:
+                    packet = data[i:]
+                    if len(packet) >= 4:
+                        packets.append(packet)
+                    break
+            else:
+                i += 1
+        
+        return packets
+    
+    def parse_scan_response_robust(self, response):
+        """Parsing robusto con soporte para múltiples paquetes"""
+        tags = []
+        packets = self.split_concatenated_packets(response)
+        
+        for packet in packets:
+            if len(packet) >= 10:
+                if packet[0] == 0xA0 and packet[3] == 0x8B:
+                    expected_length = packet[1]
+                    if len(packet) >= expected_length + 2:
+                        freq_ant = packet[4]
+                        pc1 = packet[5]
+                        pc2 = packet[6]
+                        epc_end = expected_length + 1
+                        epc_data = packet[7:epc_end]
+                        
+                        if len(epc_data) > 0:
+                            tag_number = self.parser.extract_tag_number(epc_data)
+                            
+                            if tag_number and tag_number != "N/A":
+                                # ⭐ CRÍTICO: freq_ant ya contiene el puerto correcto
+                                # NO hacer & 0x03 porque eso da valores 0-3
+                                # El hardware reporta directamente el índice de antena usado
+                                
+                                # El freq_ant contiene: [frecuencia en bits altos][antena en bits bajos]
+                                # Extraer solo los 2 bits bajos para la antena (0-3 en base 0)
+                                antenna_index = freq_ant & 0x03  # Esto da 0,1,2,3
+                                
+                                # ⭐ PERO el scanner usa set_work_antenna(port) donde port es 1-8
+                                # Cuando hacemos set_work_antenna(2), el lector usa índice 1 (base 0)
+                                # Entonces: índice 1 → puerto 2
+                                antenna_port = antenna_index + 1  # Convertir a base 1
+                                
+                                # ⭐ WAIT - Esto no coincide con tu debug
+                                # Tu debug dice "antena 2" pero DetectionTab recibe "1"
+                                # Significa que el problema está en OTRO lado
+                                
+                                # ⭐ SOLUCIÓN: Usar el puerto que SABEMOS que se activó
+                                # Si acabamos de hacer set_work_antenna(2), el tag es del puerto 2
+                                antenna_port = self.current_antenna  # ⭐ USAR ESTE
+                                
+                                tag_info = {
+                                    'freq_ant': freq_ant,
+                                    'pc': f"{pc1:02x} {pc2:02x}",
+                                    'epc_hex': ''.join(f'{b:02x}' for b in epc_data),
+                                    'number': tag_number,
+                                    'antenna': antenna_port,  # ⭐ Usar current_antenna
+                                    'timestamp': datetime.now()
+                                }
+                                
+                                # Debug
+                                print(f"  ✓ Tag: {tag_number} en antena {antenna_port}")
+                                
+                                tags.append(tag_info)
+        
+        return tags
+    
+    # ========================================
+    # MÉTODOS DE SCANNING
     # ========================================
     
     def scan_single_antenna(self, antenna_id=None):
-        """Scan en una antena específica"""
-        if antenna_id is not None and antenna_id != self.current_antenna:
+        """
+        Scan en una antena específica
+        
+        Args:
+            antenna_id: Puerto a escanear (1-8) o None para usar antena actual
+        """
+        if not self.connected:
+            print("ERROR: No conectado")
+            return []
+        
+        # Cambiar a la antena especificada
+        if antenna_id is not None:
             if not self.set_work_antenna(antenna_id):
+                print(f"ERROR: No se pudo activar antena {antenna_id}")
                 return []
+            time.sleep(0.1)  # Pausa para estabilización
         
-        # Comando de inventory estándar
-        cmd = bytes([0xA0, 0x06, 0xF3, 0x8B, 0x01, 0x00, 0x01])
-        response = self.send_command(cmd)
-        
-        if response and len(response) > 6:
-            tags = self.parser.parse_tag_response(response)
-            # Asegurar que todos los tags tengan la antena correcta
-            for tag in tags:
-                tag['antenna'] = self.current_antenna
-            return tags
-        return []
-    
-    def scan_all_antennas(self):
-        """Scan eficiente en todas las antenas disponibles"""
-        print(f"{Fore.CYAN}=== SCAN MULTI-ANTENA ({len(self.available_antennas)} antenas) ===")
-        
-        all_tags = {}
-        
-        for antenna_id in self.available_antennas:
-            print(f"{Fore.YELLOW}Escaneando antena {antenna_id}...")
-            tags = self.scan_single_antenna(antenna_id)
+        try:
+            # Usar el comando INVENTORY del protocolo
+            result = self.protocol.send_command(
+                CommandCodes.INVENTORY,
+                [0x01, 0x00, 0x01],  # Parámetros estándar
+                timeout=2.0
+            )
             
-            for tag in tags:
-                tag_number = tag['number']
-                # Si el tag ya fue detectado, usar la primera detección
-                if tag_number not in all_tags:
-                    all_tags[tag_number] = tag
-                    print(f"{Fore.GREEN}[TAG] {tag_number} detectado en antena {antenna_id}")
+            if not result.get("valid"):
+                print(f"DEBUG: No hay respuesta válida")
+                return []
             
-            # Pequeña pausa entre antenas para estabilidad
-            time.sleep(0.1)
-        
-        return list(all_tags.values())
+            # Obtener datos raw de la respuesta
+            raw_response = bytes.fromhex(result.get("raw", ""))
+            
+            if len(raw_response) > 12:
+                tags = self.parse_scan_response_robust(raw_response)
+                
+                for tag in tags:
+                    print(f"  ✓ Tag: {tag['number']} en antena {antenna_id or self.current_antenna}")
+                
+                return tags
+            
+            return []
+            
+        except Exception as e:
+            print(f"ERROR escaneando: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
     
     def continuous_scan_multi_antenna(self, duration=10):
         """Scan continuo alternando entre antenas"""
-        print(f"{Fore.CYAN}=== SCAN CONTINUO MULTI-ANTENA ({duration}s) ===")
+        if not self.available_antennas:
+            print(f"{Fore.YELLOW}[WARNING] No hay antenas detectadas. Detectando...")
+            self.detect_connected_antennas()
+            
+            if not self.available_antennas:
+                print(f"{Fore.RED}[ERROR] No se detectaron antenas")
+                return []
         
         unique_tags = {}
         start_time = time.time()
         scan_count = 0
         
+        print(f"\n{Fore.CYAN}=== SCAN CONTINUO MULTI-ANTENA ===")
+        print(f"{Fore.CYAN}Antenas activas: {self.available_antennas}")
+        print(f"{Fore.CYAN}Duración: {duration}s")
+        print(f"{Fore.YELLOW}Presiona Ctrl+C para detener\n")
+        
         try:
             while time.time() - start_time < duration:
                 # Rotar entre antenas disponibles
                 antenna_id = self.available_antennas[scan_count % len(self.available_antennas)]
-                
                 tags = self.scan_single_antenna(antenna_id)
                 scan_count += 1
                 
@@ -224,148 +343,28 @@ class AdvancedYR8900Scanner:
                     tag_number = tag['number']
                     if tag_number not in unique_tags:
                         unique_tags[tag_number] = tag
-                        print(f"{Fore.GREEN}[{len(unique_tags):03d}] Nuevo: {tag_number} (Ant {antenna_id})")
+                        print(f"{Fore.GREEN}[{len(unique_tags):03d}] Nuevo tag: {tag_number} (antena {antenna_id})")
                 
-                # Pausa entre scans
                 time.sleep(0.3)
                 
         except KeyboardInterrupt:
-            print(f"\n{Fore.YELLOW}[INFO] Scan interrumpido por usuario")
+            print(f"\n{Fore.YELLOW}[INFO] Scan interrumpido")
         
-        print(f"{Fore.CYAN}Scan completado: {len(unique_tags)} tags únicos en {scan_count} scans")
         return list(unique_tags.values())
     
     # ========================================
-    # COMANDOS DE DIAGNÓSTICO
+    # MÉTODOS DE COMPATIBILIDAD CON GUI
     # ========================================
     
-    def system_diagnostics(self):
-        """Ejecutar diagnóstico completo del sistema"""
-        print(f"\n{Fore.CYAN}=== DIAGNÓSTICO DEL SISTEMA YR8900 ===")
-        
-        results = {}
-        
-        # Información básica
-        results['firmware'] = self.get_firmware_version()
-        results['temperature'] = self.get_reader_temperature()
-        results['current_antenna'] = self.get_current_antenna()
-        results['output_power'] = self.get_output_power()
-        
-        # Test de conectividad de antenas
-        results['antenna_tests'] = {}
-        original_antenna = self.current_antenna
-        
-        for antenna_id in range(4):  # Test antenas 0-3
-            print(f"\n{Fore.YELLOW}Probando antena {antenna_id}...")
-            if self.set_work_antenna(antenna_id):
-                # Hacer un scan rápido
-                tags = self.scan_single_antenna(antenna_id)
-                results['antenna_tests'][antenna_id] = {
-                    'connected': True,
-                    'tags_detected': len(tags)
-                }
-                print(f"  - Antena {antenna_id}: OK ({len(tags)} tags)")
-            else:
-                results['antenna_tests'][antenna_id] = {
-                    'connected': False,
-                    'tags_detected': 0
-                }
-                print(f"  - Antena {antenna_id}: ERROR")
-        
-        # Restaurar antena original
-        self.set_work_antenna(original_antenna)
-        
-        # Resumen
-        print(f"\n{Fore.CYAN}=== RESUMEN DIAGNÓSTICO ===")
-        print(f"Firmware: {results['firmware']}")
-        print(f"Temperatura: {results['temperature']}°C")
-        print(f"Potencia: {results['output_power']} dBm")
-        
-        working_antennas = [ant_id for ant_id, test in results['antenna_tests'].items() 
-                           if test['connected']]
-        print(f"Antenas funcionando: {working_antennas}")
-        
-        return results
-    
-    def get_reader_info(self):
-        """Obtener información completa del lector"""
-        if not self.connected:
-            return None
-            
-        info = {
-            'host': self.host,
-            'port': self.port,
-            'connected': self.connected,
-            'firmware': self.get_firmware_version(),
-            'temperature': self.get_reader_temperature(),
-            'current_antenna': self.get_current_antenna(),
-            'output_power': self.get_output_power(),
-            'available_antennas': self.available_antennas
-        }
-        
-        return info
-    
-    def test_current_antenna_only(self):
-        """Test solo con la antena actualmente activa"""
-        print(f"\n{Fore.CYAN}=== TEST ANTENA ACTUAL ===")
-        
-        # Usar el comando que sabemos que funciona
-        cmd = bytes([0xA0, 0x06, 0xF3, 0x8B, 0x01, 0x00, 0x01, 0xDA])
-        response = self.send_command(cmd)
-        
-        if response and len(response) > 6:
-            tags = self.parser.parse_tag_response(response)
-            print(f"Tags detectados en antena actual: {len(tags)}")
-            
-            for tag in tags:
-                freq_ant = tag.get('freq_ant', 0)
-                antenna_reported = freq_ant & 0x03
-                print(f"  - Chip {tag['number']} reporta antena: {antenna_reported}")
-            
-            return tags
-        return []
-
-
-        # Agregar al AdvancedYR8900Scanner
     def scan_with_parsing(self):
-        """Compatibilidad con la GUI existente"""
+        """Scan simple con parsing - Compatibilidad con GUI"""
         return self.scan_single_antenna()
-
+    
     def continuous_scan_simple(self, duration):
-        """Compatibilidad con la GUI existente"""
+        """Scan continuo simple - Compatibilidad con GUI"""
         return self.continuous_scan_multi_antenna(duration)
-        
-    def test_individual_antennas(self):
-        """Test de antenas - versión adaptada"""
-        print(f"\n{Fore.CYAN}=== DIAGNÓSTICO DE ANTENAS ===")
-        
-        # Primero test con antena actual
-        self.test_current_antenna_only()
-        
-        # Los comandos 0x74/0x75 no funcionan en este lector
-        print(f"\n{Fore.YELLOW}[INFO] Los comandos de cambio de antena no están soportados")
-        print(f"[INFO] El lector usa configuración de hardware para antenas")
-        """Test individual de cada antena"""
-        print(f"\n{Fore.CYAN}=== TEST INDIVIDUAL DE ANTENAS ===")
-        
-        original_antenna = self.get_current_antenna()
-        
-        for antenna_id in [0, 1, 2, 3]:
-            print(f"\n{Fore.YELLOW}Probando antena {antenna_id}:")
-            
-            # Intentar configurar antena
-            if self.set_work_antenna(antenna_id):
-                # Hacer scan simple
-                tags = self.scan_single_antenna(antenna_id)
-                print(f"  ✓ Antena {antenna_id}: {len(tags)} chips detectados")
-                
-                for tag in tags:
-                    print(f"    - Chip {tag['number']}")
-            else:
-                print(f"  ✗ Antena {antenna_id}: Error de configuración")
-            
-            time.sleep(0.5)  # Pausa entre tests
-        
-        # Restaurar antena original si es posible
-        if original_antenna is not None:
-            self.set_work_antenna(original_antenna)
+    
+    def test_original_command(self):
+        """Test básico de comandos - Para debugging"""
+        result = self.protocol.send_command(CommandCodes.GET_FREQUENCY_REGION)
+        return result.get("valid", False)

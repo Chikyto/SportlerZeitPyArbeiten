@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Wizard principal de configuración - Versión modular
+Wizard principal de configuración - Versión modular CORREGIDA
 src/gui/wizard/configuration_wizard.py
 """
 
 import logging
 from PyQt6.QtWidgets import QWizard, QMessageBox
+from PyQt6.QtCore import pyqtSignal
 
-# Importar desde las carpetas correctas
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
@@ -16,7 +16,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from config import SystemConfig
 from hardware import ReaderManager
 
-# Importar páginas del wizard
 from .connection_page import ConnectionPage
 from .antenna_detection_page import AntennaDetectionPage
 from .antenna_config_page import AntennaConfigurationPage
@@ -27,20 +26,18 @@ logger = logging.getLogger(__name__)
 class ConfigurationWizard(QWizard):
     """Wizard de configuración del sistema - Versión modular"""
     
+    # 🔥 SEÑAL CRÍTICA: emite configuración al finalizar
+    configuration_completed = pyqtSignal(dict)
+    
     def __init__(self, config: SystemConfig = None, parent=None):
         super().__init__(parent)
         
-        # Configuración
         self.config = config or SystemConfig()
-        
-        # Reader manager
         self.reader_manager = ReaderManager(self.config.reader)
         
-        # Configurar wizard
         self.setWindowTitle("Configuración - Sistema de Cronometraje RFID")
         self.resize(800, 600)
         
-        # Estilo del wizard
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
         self.setOption(QWizard.WizardOption.HaveHelpButton, False)
         
@@ -55,28 +52,33 @@ class ConfigurationWizard(QWizard):
     def accept(self):
         """Se llama cuando se completa el wizard"""
         try:
-            # Obtener configuración final
-            config_page = self.page(2)  # Página de configuración
+            # 1. Obtener configuración final
+            config_page = self.page(2)
             if config_page and hasattr(config_page, 'get_configuration'):
                 antenna_config = config_page.get_configuration()
                 self.config.antennas = antenna_config
                 
-                # Guardar configuración automáticamente
+                # 2. Guardar configuración automáticamente
                 filename = "timing_system_config.json"
                 if self.config.save_to_file(filename):
-                    logger.info(f"Configuración guardada en {filename}")
+                    logger.info(f"✅ Configuración guardada en {filename}")
                 
-                logger.info("Configuración del wizard completada")
-                logger.info(f"Antenas configuradas: {len(antenna_config)}")
-                
+                # Log de debug
+                logger.info("✅ Configuración del wizard completada")
+                logger.info(f"📡 Antenas configuradas: {len(antenna_config)}")
                 for port, config in antenna_config.items():
                     functions = getattr(config, 'multiple_functions', [])
                     logger.info(f"  Puerto {port}: {', '.join(functions)}")
+                
+                # 3. 🔥 EMITIR SEÑAL con configuración completa
+                full_config = self.get_configuration()
+                logger.info(f"🔔 Emitiendo configuración: {list(full_config['antennas'].keys())}")
+                self.configuration_completed.emit(full_config)
             
             super().accept()
             
         except Exception as e:
-            logger.error(f"Error finalizando wizard: {e}")
+            logger.error(f"❌ Error finalizando wizard: {e}")
             QMessageBox.critical(
                 self,
                 "Error",
@@ -98,13 +100,17 @@ class ConfigurationWizard(QWizard):
             super().reject()
 
     def get_configuration(self):
-        """Obtener configuración del wizard en formato compatible"""
+        """
+        🔥 CRÍTICO: Obtener configuración en formato estandarizado
+        Usar SIEMPRE puertos 1-8 como keys (no índices 0-7)
+        """
         config = {
             'connection': {
                 'host': getattr(self.config.reader, 'host', '192.168.0.178'),
                 'port': getattr(self.config.reader, 'port', 4001),
                 'verified': True
             },
+            'power_dbm': 30,  # Potencia por defecto
             'antennas': {}
         }
         
@@ -113,17 +119,18 @@ class ConfigurationWizard(QWizard):
             antenna_configs = antenna_page.get_configuration()
             
             for port, antenna_config in antenna_configs.items():
-                antenna_index = port - 1  # Convertir puerto 1-8 a índice 0-7
+                # 🔥 port ya es 1-8, NO convertir
                 functions = getattr(antenna_config, 'multiple_functions', [])
                 description = getattr(antenna_config, 'description', f'Antena puerto {port}')
                 
+                # Extraer nombre limpio
                 if ':' in description:
                     name = description.split(':', 1)[1].strip()
                 else:
-                    name = f'Puerto {port}'
+                    name = f'Antena {port}'
                 
-                # IMPORTANTE: usar antenna_index (int) como key, no string
-                config['antennas'][antenna_index] = {  # <-- antenna_index, no str(antenna_index)
+                # 🔥 KEY = puerto (1-8), NO índice (0-7)
+                config['antennas'][port] = {
                     'enabled': True,
                     'name': name,
                     'description': description,
@@ -134,4 +141,5 @@ class ConfigurationWizard(QWizard):
                     'functions': functions
                 }
         
+        logger.info(f"📡 Configuración generada con puertos: {list(config['antennas'].keys())}")
         return config

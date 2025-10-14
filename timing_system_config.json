@@ -1,26 +1,62 @@
 {
-  "reader": {
+  "connection": {
     "host": "192.168.0.178",
     "port": 4001,
-    "reader_address": 243,
-    "timeout": 3.0
+    "verified": true
   },
+  "power_dbm": 30,
   "antennas": {
-    "3": {
-      "port": 3,
+    "2": {
       "enabled": true,
-      "function": "largada",
+      "name": "largada + checkpoint + llegada",
+      "description": "Antena puerto 2: largada + checkpoint + llegada",
+      "start": true,
+      "finish": true,
+      "checkpoint": true,
       "power_level": 25,
-      "description": "Antena puerto 3: largada + checkpoint"
+      "functions": [
+        "largada",
+        "checkpoint",
+        "llegada"
+      ]
     },
-    "7": {
-      "port": 7,
+    "3": {
       "enabled": true,
-      "function": "checkpoint",
+      "name": "checkpoint",
+      "description": "Antena puerto 3: checkpoint",
+      "start": false,
+      "finish": false,
+      "checkpoint": true,
       "power_level": 25,
-      "description": "Antena puerto 7: checkpoint + llegada"
+      "functions": [
+        "checkpoint"
+      ]
+    },
+    "4": {
+      "enabled": true,
+      "name": "checkpoint",
+      "description": "Antena puerto 4: checkpoint",
+      "start": false,
+      "finish": false,
+      "checkpoint": true,
+      "power_level": 25,
+      "functions": [
+        "checkpoint"
+      ]
+    },
+    "6": {
+      "enabled": true,
+      "name": "largada + checkpoint + llegada",
+      "description": "Antena puerto 6: largada + checkpoint + llegada",
+      "start": true,
+      "finish": true,
+      "checkpoint": true,
+      "power_level": 25,
+      "functions": [
+        "largada",
+        "checkpoint",
+        "llegada"
+      ]
     }
-  },
-  "event_type": "carrera_lineal",
-  "system_name": "Sistema de Cronometraje RFID"
+  }
 }

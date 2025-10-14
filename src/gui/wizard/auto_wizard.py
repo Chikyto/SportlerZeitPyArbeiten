@@ -1,9 +1,9 @@
 """
-Wizard automático con detección inteligente
+Wizard automático con detección inteligente - VERSIÓN CORREGIDA
 """
 import logging
 from PyQt6.QtWidgets import QWizard, QMessageBox, QWizardPage, QVBoxLayout, QLabel, QProgressBar
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QTimer, Qt, pyqtSignal
 
 from config import SystemConfig
 from hardware import ReaderManager
@@ -38,7 +38,6 @@ class AutoConnectPage(QWizardPage):
         """Intentar conexión automática al entrar"""
         if not self.connection_attempted:
             self.connection_attempted = True
-            # Dar tiempo a la UI para renderizar
             QTimer.singleShot(500, self.attempt_connection)
     
     def attempt_connection(self):
@@ -48,13 +47,11 @@ class AutoConnectPage(QWizardPage):
         try:
             self.status_label.setText("Conectando a 192.168.0.178:4001...")
             
-            # Usar test_connection() del reader_manager
             if wizard.reader_manager.test_connection():
                 self.status_label.setText("✓ Conexión exitosa")
                 self.progress.setRange(0, 100)
                 self.progress.setValue(100)
                 
-                # Mostrar versión del firmware si está disponible
                 if hasattr(wizard.reader_manager, 'firmware_version'):
                     self.status_label.setText(
                         f"✓ Conexión exitosa - Firmware v{wizard.reader_manager.firmware_version}"
@@ -83,7 +80,6 @@ class AutoConnectPage(QWizardPage):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            # Aquí podrías mostrar un diálogo de configuración
             self.show_manual_config()
         else:
             self.wizard().reject()
@@ -116,7 +112,6 @@ class AutoConnectPage(QWizardPage):
         layout.addWidget(buttons)
         
         if dialog.exec():
-            # Reintentar con nueva configuración
             wizard = self.wizard()
             wizard.config.reader.host = host_input.text()
             wizard.config.reader.port = port_input.value()
@@ -184,7 +179,6 @@ class AutoDetectionPage(QWizardPage):
         self.status_label.setText(f"✓ Detección completada: {connected_count} antenas encontradas")
         
         if connected_count > 0:
-            # Avanzar automáticamente
             QTimer.singleShot(1000, wizard.next)
         else:
             QMessageBox.warning(
@@ -204,6 +198,9 @@ class AutoDetectionPage(QWizardPage):
 
 class AutoConfigurationWizard(QWizard):
     """Wizard automático optimizado"""
+    
+    # 🔥 SEÑAL CRÍTICA: emite configuración al finalizar
+    configuration_completed = pyqtSignal(dict)
     
     def __init__(self, config: SystemConfig = None, parent=None):
         super().__init__(parent)
@@ -232,21 +229,28 @@ class AutoConfigurationWizard(QWizard):
     def accept(self):
         """Guardar configuración al completar"""
         try:
+            # 1. Obtener configuración de las páginas
             config_page = self.page(2)
             if config_page and hasattr(config_page, 'get_configuration'):
                 antenna_config = config_page.get_configuration()
                 self.config.antennas = antenna_config
                 
+                # 2. Guardar a archivo
                 filename = "timing_system_config.json"
                 if self.config.save_to_file(filename):
-                    logger.info(f"Configuración guardada en {filename}")
+                    logger.info(f"✅ Configuración guardada en {filename}")
                 
-                logger.info("Configuración completada")
+                # 3. 🔥 EMITIR SEÑAL con configuración completa
+                full_config = self.get_configuration()
+                logger.info(f"🔔 Emitiendo configuración: {full_config}")
+                self.configuration_completed.emit(full_config)
+                
+                logger.info("✅ Configuración del wizard completada")
             
             super().accept()
             
         except Exception as e:
-            logger.error(f"Error finalizando wizard: {e}")
+            logger.error(f"❌ Error finalizando wizard: {e}")
             QMessageBox.critical(self, "Error", f"Error al finalizar:\n{str(e)}")
     
     def reject(self):
@@ -263,35 +267,37 @@ class AutoConfigurationWizard(QWizard):
             super().reject()
     
     def get_configuration(self):
-        """Obtener configuración en formato compatible"""
+        """
+        🔥 CRÍTICO: Obtener configuración en formato estandarizado
+        Usar SIEMPRE puertos 1-8 como keys (no índices 0-7)
+        """
         config = {
             'connection': {
                 'host': getattr(self.config.reader, 'host', '192.168.0.178'),
                 'port': getattr(self.config.reader, 'port', 4001),
                 'verified': True
             },
+            'power_dbm': 30,  # Potencia por defecto
             'antennas': {}
         }
-        
-        # Obtener antenas detectadas
-        if hasattr(self.auto_detection_page, 'detection_results'):
-            detection_results = self.auto_detection_page.detection_results
         
         # Obtener configuración de antenas
         if hasattr(self.antenna_config_page, 'get_configuration'):
             antenna_configs = self.antenna_config_page.get_configuration()
             
             for port, antenna_config in antenna_configs.items():
-                antenna_index = port - 1
+                # port ya viene como 1-8, NO convertir a índice
                 functions = getattr(antenna_config, 'multiple_functions', [])
                 description = getattr(antenna_config, 'description', f'Antena puerto {port}')
                 
+                # Extraer nombre limpio
                 if ':' in description:
                     name = description.split(':', 1)[1].strip()
                 else:
-                    name = f'Puerto {port}'
+                    name = f'Antena {port}'
                 
-                config['antennas'][antenna_index] = {
+                # 🔥 KEY = puerto (1-8), NO índice (0-7)
+                config['antennas'][port] = {
                     'enabled': True,
                     'name': name,
                     'description': description,
@@ -302,4 +308,5 @@ class AutoConfigurationWizard(QWizard):
                     'functions': functions
                 }
         
+        logger.info(f"📡 Configuración generada: {config['antennas'].keys()}")
         return config

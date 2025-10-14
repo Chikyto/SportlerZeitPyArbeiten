@@ -130,3 +130,37 @@ TypeError: MainWindow.__init__() takes 1 positional argument but 2 were given
 2025-09-30 13:19:17,371 - __main__ - INFO - Wizard completado exitosamente
 2025-09-30 13:19:17,371 - __main__ - INFO - Lanzando aplicación principal...
 2025-09-30 13:19:17,456 - __main__ - ERROR - No se pudo importar la ventana principal: No module named 'src.core.config'
+2025-10-03 12:47:06,750 - __main__ - INFO - ============================================================
+2025-10-03 12:47:06,751 - __main__ - INFO - SISTEMA DE CRONOMETRAJE RFID - LAUNCHER
+2025-10-03 12:47:06,751 - __main__ - INFO - ============================================================
+2025-10-03 12:47:06,796 - __main__ - INFO - Configuración previa encontrada
+2025-10-03 12:47:13,996 - __main__ - INFO - Iniciando wizard de configuración
+2025-10-03 12:47:14,054 - src.gui.wizard.configuration_wizard - INFO - Wizard de configuración inicializado
+2025-10-03 12:47:15,787 - hardware.reader_manager - INFO - Probando conexión con YR8900...
+2025-10-03 12:47:20,884 - hardware.antenna_detection - INFO - Puerto 1: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-10-03 12:47:21,449 - hardware.antenna_detection - INFO - Puerto 2: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-10-03 12:47:22,021 - hardware.antenna_detection - INFO - Puerto 3: RL=19dB, CONECTADA (umbral=8dB)
+2025-10-03 12:47:22,584 - hardware.antenna_detection - INFO - Puerto 4: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-10-03 12:47:23,171 - hardware.antenna_detection - INFO - Puerto 5: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-10-03 12:47:23,733 - hardware.antenna_detection - INFO - Puerto 6: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-10-03 12:47:24,299 - hardware.antenna_detection - INFO - Puerto 7: RL=18dB, CONECTADA (umbral=8dB)
+2025-10-03 12:47:24,865 - hardware.antenna_detection - INFO - Puerto 8: RL=0dB, NO CONECTADA (umbral=8dB)
+2025-10-03 12:47:41,257 - src.gui.wizard.configuration_wizard - INFO - Configuración guardada en timing_system_config.json
+2025-10-03 12:47:41,257 - src.gui.wizard.configuration_wizard - INFO - Configuración del wizard completada
+2025-10-03 12:47:41,257 - src.gui.wizard.configuration_wizard - INFO - Antenas configuradas: 2
+2025-10-03 12:47:41,257 - src.gui.wizard.configuration_wizard - INFO -   Puerto 3: largada, checkpoint
+2025-10-03 12:47:41,257 - src.gui.wizard.configuration_wizard - INFO -   Puerto 7: checkpoint
+2025-10-03 12:47:41,273 - __main__ - INFO - Wizard completado exitosamente
+2025-10-03 12:47:41,273 - __main__ - INFO - Lanzando aplicación principal...
+2025-10-03 12:47:41,334 - __main__ - INFO - Creando ventana principal...
+2025-10-03 12:47:41,381 - __main__ - ERROR - Error iniciando aplicación principal: argument of type 'SystemConfig' is not iterable
+Traceback (most recent call last):
+  File "C:\Users\Usuario\Desktop\SporterZeitPyArbeiten\SportlerZeitPyArbeiten\launcher.py", line 100, in launch_main_application
+    main_window = MainWindow(config)
+                  ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Usuario\Desktop\SporterZeitPyArbeiten\SportlerZeitPyArbeiten\src\gui\main_window.py", line 49, in __init__
+    self.apply_wizard_config()
+  File "C:\Users\Usuario\Desktop\SporterZeitPyArbeiten\SportlerZeitPyArbeiten\src\gui\main_window.py", line 188, in apply_wizard_config
+    if 'connection' in self.wizard_config:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: argument of type 'SystemConfig' is not iterable

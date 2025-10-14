@@ -5,15 +5,14 @@ from PyQt6.QtWidgets import (QGroupBox, QHBoxLayout, QVBoxLayout,
                             QLabel, QLineEdit, QSpinBox, QPushButton, QTextEdit)
 from PyQt6.QtCore import pyqtSlot
 from .base_tab import BaseTab
+from datetime import datetime
 
 
 class ConnectionTab(BaseTab):
-    """Pestaña de conexión RFID"""
-    
-    def __init__(self, scanner, parent=None):
+    def __init__(self, scanner=None, signals=None, parent=None):  # ⭐ CAMBIO AQUÍ
         self.scanner = scanner
-        self.edit_mode = False  # Inicializar ANTES de super().__init__
-        super().__init__(parent)
+        self.edit_mode = False
+        super().__init__(signals=signals, parent=parent)  # ⭐ CAMBIO AQUÍ
         
     def setup_ui(self):
         """Configurar interfaz"""
@@ -87,12 +86,38 @@ class ConnectionTab(BaseTab):
         self.layout.addWidget(self.connection_log)
     
     def connect_signals(self):
-        """Conectar señales"""
-        self.signals.log_message.connect(self.on_log_message)
-        self.signals.scanner_connected.connect(self.on_scanner_connected)
+        """Conecta las señales necesarias"""
+        # Conectar solo si la señal existe
+        if not self.signals:  # ⭐ VERIFICAR QUE SIGNALS EXISTE
+            return
     
+        if hasattr(self.signals, 'log_message'):
+            self.signals.log_message.connect(self.on_log_message)
+        
+        if hasattr(self.signals, 'connection_status_changed'):
+            self.signals.connection_status_changed.connect(self.on_connection_status)
+        
+        if hasattr(self.signals, 'scanner_connected'):  # ⭐ VERIFICAR ESTA TAMBIÉN
+            self.signals.scanner_connected.connect(self.on_scanner_connected)
+
+    def get_timestamp(self):  # ⭐ AGREGAR ESTE MÉTODO QUE FALTABA
+        """Obtener timestamp formateado"""
+        return datetime.now().strftime('%H:%M:%S')
+    
+    @pyqtSlot(bool, str)  # ⭐ AGREGAR ESTE MÉTODO
+    def on_connection_status(self, connected, message):
+        """Callback para connection_status_changed"""
+        self.log(message)
+        self.on_scanner_connected(connected)
+
+
     @pyqtSlot()
     def connect_scanner(self):
+        """Conectar al scanner"""
+        if not self.scanner:  # ⭐ VERIFICAR QUE SCANNER EXISTE
+            self.log("ERROR: Scanner no disponible")
+            return
+
         """Conectar al scanner"""
         host = self.host_input.text().strip()
         port = self.port_input.value()
@@ -131,8 +156,12 @@ class ConnectionTab(BaseTab):
     @pyqtSlot()
     def disconnect_scanner(self):
         """Desconectar del scanner"""
+        if not self.scanner:
+            return
+        
         self.scanner.disconnect()
-        self.signals.scanner_connected.emit(False)
+        if self.signals and hasattr(self.signals, 'scanner_connected'):
+            self.signals.scanner_connected.emit(False)
         self.log("Desconectado")
     
     @pyqtSlot()
@@ -190,7 +219,14 @@ class ConnectionTab(BaseTab):
                 self.log("⚠️ Reconecte el scanner con la nueva configuración")
     
     @pyqtSlot(str, str)
-    def on_log_message(self, message, level):
+    def on_log_message(self, message, level='info'):
         """Agregar mensaje al log"""
         timestamp = self.get_timestamp()
+        # color_map = {
+        # 'error': 'red',
+        # 'warning': 'orange',
+        # 'info': 'black'
+        # }
+        # color = color_map.get(level, 'black')
+    
         self.connection_log.append(f"[{timestamp}] {message}")

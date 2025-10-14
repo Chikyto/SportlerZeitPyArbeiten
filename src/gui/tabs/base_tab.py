@@ -1,44 +1,58 @@
 """
-Clase base para todas las pestañas de la aplicación
+Clase base para todos los tabs
+src/gui/tabs/base_tab.py
 """
+
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
-from PyQt6.QtCore import pyqtSlot
-from datetime import datetime
-from ...utils.signals import get_app_signals
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BaseTab(QWidget):
-    """Clase base para pestañas con funcionalidad común"""
+    """Clase base para todos los tabs de la aplicación"""
     
-    def __init__(self, parent=None):
+    def __init__(self, signals=None, parent=None):
         super().__init__(parent)
-        self.signals = get_app_signals()
+        self.signals = signals
         self.layout = QVBoxLayout(self)
-        self.setup_ui()
-        self.connect_signals()
         
+        # Setup UI siempre
+        self.setup_ui()
+        
+        # Conectar señales solo si existen
+        if self.signals:
+            try:
+                self.connect_signals()
+            except Exception as e:
+                logger.error(f"Error conectando señales en {self.__class__.__name__}: {e}")
+    
     def setup_ui(self):
-        """Configurar UI - debe ser implementado por subclases"""
-        raise NotImplementedError("Subclasses must implement setup_ui()")
+        """Sobrescribir en subclases para crear UI"""
+        pass
     
     def connect_signals(self):
-        """Conectar señales - puede ser sobrescrito por subclases"""
+        """Sobrescribir en subclases para conectar señales"""
         pass
     
-    def get_timestamp(self):
-        """Obtener timestamp formateado"""
-        return datetime.now().strftime('%H:%M:%S')
+    def log(self, message):
+        """Helper para logging"""
+        logger.info(f"[{self.__class__.__name__}] {message}")
+        print(f"[{self.__class__.__name__}] {message}")
     
-    def log(self, message, level='info'):
-        """Emitir mensaje de log"""
-        self.signals.log_message.emit(message, level)
-    
-    @pyqtSlot()
-    def on_tab_activated(self):
-        """Llamado cuando el tab es activado - puede ser sobrescrito"""
-        pass
-    
-    @pyqtSlot()
-    def on_tab_deactivated(self):
-        """Llamado cuando el tab es desactivado - puede ser sobrescrito"""
-        pass
+    def safe_connect(self, signal_name, slot):
+        """Helper para conectar señales de forma segura"""
+        if not self.signals:
+            return False
+        
+        if hasattr(self.signals, signal_name):
+            signal = getattr(self.signals, signal_name)
+            try:
+                signal.connect(slot)
+                return True
+            except Exception as e:
+                logger.error(f"Error conectando {signal_name}: {e}")
+                return False
+        else:
+            logger.warning(f"Señal {signal_name} no existe en AppSignals")
+            return False

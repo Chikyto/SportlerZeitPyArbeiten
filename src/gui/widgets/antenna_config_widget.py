@@ -319,52 +319,80 @@ class AntennaConfigWidget(QWidget):
         self.config_applied.emit(config_data)
 
     def load_from_wizard_config(self, wizard_config):
-        """
-        Cargar configuración desde el wizard
-        El wizard envía índices 0-7, este widget usa 0-7 también
-        """
-        print(f"DEBUG: AntennaConfigWidget.load_from_wizard_config recibió {len(wizard_config)} antenas")
+        """Cargar configuración desde el wizard"""
+        print(f"\n{'='*60}")
+        print(f"DEBUG: load_from_wizard_config iniciado")
+        print(f"{'='*60}")
         
         for antenna_id in range(8):
+            if antenna_id not in self.antenna_configs:
+                continue
+                
+            controls = self.antenna_configs[antenna_id]
+            
+            # Bloquear señales temporalmente
+            for control in controls.values():
+                if hasattr(control, 'blockSignals'):
+                    control.blockSignals(True)
+            
             if antenna_id in wizard_config:
                 config = wizard_config[antenna_id]
-                print(f"DEBUG: Configurando antena {antenna_id}: enabled={config.get('enabled')}, "
-                    f"start={config.get('start')}, finish={config.get('finish')}")
                 
-                # Aplicar configuración a los controles existentes
-                if antenna_id in self.antenna_configs:
-                    controls = self.antenna_configs[antenna_id]
-                    
-                    # Checkbox habilitada
-                    controls['enabled'].setChecked(config.get('enabled', False))
-                    
-                    # Checkboxes de roles
-                    controls['start'].setChecked(config.get('start', False))
-                    controls['finish'].setChecked(config.get('finish', False))
-                    controls['checkpoint'].setChecked(config.get('checkpoint', False))
-                    
-                    # Campos de texto
-                    controls['name'].setText(config.get('name', f'Antena {antenna_id + 1}'))
-                    controls['description'].setText(config.get('description', 'Sin configurar'))
-                    
-                    # Bloquear controles inicialmente (modo "solo lectura")
-                    controls['name'].setReadOnly(True)
-                    controls['description'].setReadOnly(True)
-                    controls['start'].setEnabled(False)
-                    controls['finish'].setEnabled(False)
-                    controls['checkpoint'].setEnabled(False)
-                    controls['enabled'].setEnabled(False)
+                print(f"\nAntena {antenna_id}:")
+                print(f"  Config: {config}")
+                
+                # Forzar estado de checkboxes usando setCheckState
+                from PyQt6.QtCore import Qt
+                
+                enabled = config.get('enabled', False)
+                start = config.get('start', False)
+                finish = config.get('finish', False)
+                checkpoint = config.get('checkpoint', False)
+                
+                print(f"  Valores a aplicar: E={enabled}, S={start}, F={finish}, C={checkpoint}")
+                
+                # Aplicar estados
+                controls['enabled'].setCheckState(Qt.CheckState.Checked if enabled else Qt.CheckState.Unchecked)
+                controls['start'].setCheckState(Qt.CheckState.Checked if start else Qt.CheckState.Unchecked)
+                controls['finish'].setCheckState(Qt.CheckState.Checked if finish else Qt.CheckState.Unchecked)
+                controls['checkpoint'].setCheckState(Qt.CheckState.Checked if checkpoint else Qt.CheckState.Unchecked)
+                
+                # Textos
+                controls['name'].setText(config.get('name', f'Antena {antenna_id + 1}'))
+                controls['description'].setText(config.get('description', 'Sin configurar'))
+                
+                print(f"  Estados aplicados: E={controls['enabled'].isChecked()}, "
+                    f"S={controls['start'].isChecked()}, "
+                    f"F={controls['finish'].isChecked()}, "
+                    f"C={controls['checkpoint'].isChecked()}")
+            else:
+                # Desmarcar antenas no configuradas
+                from PyQt6.QtCore import Qt
+                controls['enabled'].setCheckState(Qt.CheckState.Unchecked)
+                controls['start'].setCheckState(Qt.CheckState.Unchecked)
+                controls['finish'].setCheckState(Qt.CheckState.Unchecked)
+                controls['checkpoint'].setCheckState(Qt.CheckState.Unchecked)
+            
+            # Desbloquear señales
+            for control in controls.values():
+                if hasattr(control, 'blockSignals'):
+                    control.blockSignals(False)
+        
+        # Forzar actualización visual
+        self.update()
+        self.repaint()
         
         # Agregar botón de editar si no existe
         if not hasattr(self, 'edit_antenna_config_btn'):
             self.add_edit_button()
         
-        # Validar configuración cargada
+        # Validar después de cargar todo
         self.validate_antenna_config()
         
-        # Marcar como pre-configurado
         self.is_wizard_configured = True
-        print("DEBUG: Configuración de antenas cargada y bloqueada")
+        print(f"\n{'='*60}")
+        print("DEBUG: load_from_wizard_config completado")
+        print(f"{'='*60}\n")
 
 
     def add_edit_button(self):

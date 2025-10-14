@@ -1,24 +1,23 @@
 """
-Ventana principal de la aplicación RFID Athletics Timer
+Ventana principal de la aplicación RFID Athletics Timer - VERSIÓN CORREGIDA
 Arquitectura modular con separación de responsabilidades
 """
+import logging
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, 
                             QTabWidget, QLabel, QMessageBox)
 from PyQt6.QtCore import pyqtSlot, Qt
 
+from src.utils.signals import AppSignals
 from ..core.advanced_scanner import AdvancedYR8900Scanner
 from ..core.integrated_race_tracker import IntegratedRaceTracker
-from ..utils.signals import get_app_signals
+from src.utils.signals import get_app_signals
 
 # Importar tabs
-from .tabs.connection_tab import ConnectionTab
-from .tabs.detection_tab import DetectionTab
-
-# Importar widgets existentes
-from .widgets.antenna_config_widget import AntennaConfigWidget
+from .tabs import DetectionTab, ConfigurationTab
 from .widgets.event_config_widget import EventConfigWidget
 from .widgets.race_monitoring_widget import RaceMonitoringWidget
 
+logger = logging.getLogger(__name__)    
 
 class MainWindow(QMainWindow):
     """
@@ -33,21 +32,55 @@ class MainWindow(QMainWindow):
     def __init__(self, wizard_config=None):
         super().__init__()
         
-        # Configuración del wizard (si viene del wizard)
-        self.wizard_config = wizard_config
+        # 🔥 IMPORTANTE: Normalizar wizard_config al recibirlo
+        self.wizard_config = self._normalize_config(wizard_config)
+        self.signals = AppSignals()
+        self.scanner = None
         
-        # Señales centralizadas
-        self.signals = get_app_signals()
+        self.setWindowTitle("RFID Athletics Timer")
+        self.setMinimumSize(1200, 800)
         
-        # Core components
-        self.scanner = AdvancedYR8900Scanner()
-        self.race_tracker = None
-        
-        # Setup
+        # 🔥 ORDEN CRÍTICO:
+        # 1. Crear UI (tabs)
         self.setup_ui()
-        self.connect_signals()
-        self.apply_wizard_config()
         
+        # 2. Configurar scanner
+        self.setup_scanner()
+        
+        # 3. 🔥 APLICAR CONFIGURACIÓN A LOS TABS
+        self.apply_config_to_tabs()
+        
+        # 4. Conectar señales
+        self.connect_signals()
+    
+    def _normalize_config(self, config):
+        """
+        🔥 CRÍTICO: Normalizar configuración para asegurar tipos correctos
+        Convierte keys de antenas de string a int si es necesario
+        """
+        if not config:
+            return config
+        
+        logger.info("=" * 80)
+        logger.info("🔧 NORMALIZANDO CONFIGURACIÓN")
+        logger.info("=" * 80)
+        
+        # Normalizar keys de antennas a int
+        if 'antennas' in config:
+            antennas_normalized = {}
+            for key, value in config['antennas'].items():
+                # Convertir key a int
+                port_int = int(key) if isinstance(key, str) else key
+                antennas_normalized[port_int] = value
+                
+                logger.info(f"  Puerto {key} ({type(key).__name__}) → {port_int} (int)")
+            
+            config['antennas'] = antennas_normalized
+            logger.info(f"✅ Antenas normalizadas: {list(antennas_normalized.keys())}")
+        
+        logger.info("=" * 80)
+        return config
+    
     def setup_ui(self):
         """Configurar interfaz principal"""
         self.setWindowTitle("RFID Athletics Timer - Sistema de Control")
@@ -57,6 +90,7 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
+        # Layout principal
         layout = QVBoxLayout(central_widget)
         
         # Sistema de pestañas
@@ -71,199 +105,276 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("Aplicación iniciada")
         layout.addWidget(self.status_label)
     
-    def create_tabs(self):
-        """Crear todas las pestañas de la aplicación"""
-        # 1. Gestión de Eventos (primero - lo más importante)
-        self.event_config_widget = EventConfigWidget()
-        self.tab_widget.addTab(self.event_config_widget, "⚙️ Gestión de Eventos")
-        
-        # 2. Competencia (segundo - monitoreo activo)
-        self.race_monitoring_widget = RaceMonitoringWidget()
-        self.tab_widget.addTab(self.race_monitoring_widget, "🏁 Competencia")
-        
-        # 3. Conexión RFID
-        self.connection_tab = ConnectionTab(self.scanner)
-        self.tab_widget.addTab(self.connection_tab, "🔌 Conexión RFID")
-        
-        # 4. Configuración de Antenas
-        self.antenna_config_widget = AntennaConfigWidget()
-        self.tab_widget.addTab(self.antenna_config_widget, "📡 Config. Antenas")
-        
-        # 5. Detección de Chips
-        self.detection_tab = DetectionTab(self.scanner)
-        self.tab_widget.addTab(self.detection_tab, "🔍 Detección de Chips")
-        
-        # 6. Base de Datos (futuro)
-        self.create_database_tab()
-    
-    def create_database_tab(self):
-        """Crear tab de base de datos (placeholder)"""
-        from PyQt6.QtWidgets import QGroupBox, QPushButton, QTextEdit
-        
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        
-        # Estado de conexión a DB
-        db_status_group = QGroupBox("Estado de Base de Datos")
-        db_status_layout = QVBoxLayout(db_status_group)
-        
-        db_status = QLabel("Sin conexión a base de datos")
-        db_status.setStyleSheet("font-weight: bold; color: orange;")
-        db_status_layout.addWidget(db_status)
-        
-        # Botones de DB
-        from PyQt6.QtWidgets import QHBoxLayout
-        db_buttons = QHBoxLayout()
-        
-        connect_firebase_btn = QPushButton("Conectar Firebase")
-        connect_firebase_btn.setEnabled(False)
-        connect_firebase_btn.setToolTip("Funcionalidad pendiente de implementar")
-        db_buttons.addWidget(connect_firebase_btn)
-        
-        export_data_btn = QPushButton("Exportar Datos")
-        export_data_btn.clicked.connect(self.export_data)
-        db_buttons.addWidget(export_data_btn)
-        
-        db_status_layout.addLayout(db_buttons)
-        layout.addWidget(db_status_group)
-        
-        # Información local
-        local_group = QGroupBox("Almacenamiento Local (Temporal)")
-        local_layout = QVBoxLayout(local_group)
-        
-        local_storage_info = QTextEdit()
-        local_storage_info.setMaximumHeight(150)
-        local_storage_info.setReadOnly(True)
-        local_storage_info.setPlainText(
-            "Datos se almacenan localmente mientras se implementa Firebase.\n"
-            "Todos los chips detectados se mantienen en memoria."
-        )
-        local_layout.addWidget(local_storage_info)
-        layout.addWidget(local_group)
-        
-        # Futuras funcionalidades
-        future_group = QGroupBox("Funcionalidades Futuras")
-        future_layout = QVBoxLayout(future_group)
-        
-        future_info = QLabel(
-            "• Sincronización automática con Firebase\n"
-            "• Backup en tiempo real\n"
-            "• Análisis de datos históricos\n"
-            "• Reportes automáticos"
-        )
-        future_layout.addWidget(future_info)
-        layout.addWidget(future_group)
-        
-        self.tab_widget.addTab(tab, "💾 Base de Datos")
-    
-    def connect_signals(self):
-        """Conectar todas las señales del sistema"""
-        # Señales de eventos
-        self.event_config_widget.category_started.connect(self.on_category_started)
-        self.event_config_widget.category_finished.connect(self.on_category_finished)
-        
-        # Señales de antenas
-        self.antenna_config_widget.config_applied.connect(self.on_antenna_config_applied)
-        
-        # Señales de logging
-        self.signals.log_message.connect(self.on_log_message)
-        
-        # Señales de tags
-        self.signals.tag_detected.connect(self.on_tag_detected_global)
-    
-    def apply_wizard_config(self):
-        """Aplicar configuración del wizard si existe"""
+    def setup_scanner(self):
+        """Configura scanner con datos del wizard"""
         if not self.wizard_config:
-            print("DEBUG: No hay wizard_config")
+            logger.warning("No hay configuración del wizard disponible")
+            self.signals.connection_status_changed.emit(False, "Sin configuración")
             return
         
-        print("\n" + "="*60)
-        print("DEBUG: CONFIGURACIÓN COMPLETA DEL WIZARD")
-        print("="*60)
-        import json
-        print(json.dumps(self.wizard_config, indent=2, default=str))
-        print("="*60 + "\n")
+        try:
+            # Obtener parámetros de conexión
+            conn = self.wizard_config.get('connection', {})
+            host = conn.get('host', '192.168.0.178')
+            port = conn.get('port', 4001)
+            
+            logger.info(f"Creando scanner: {host}:{port}")
+            
+            # Crear scanner con parámetros del wizard
+            from src.core.advanced_scanner import AdvancedYR8900Scanner
+            self.scanner = AdvancedYR8900Scanner(host, port)
+            
+            # Conectar al lector
+            if not self.scanner.connect():
+                logger.error("No se pudo conectar al scanner")
+                self.signals.connection_status_changed.emit(
+                    False, 
+                    "Error de conexión al lector"
+                )
+                return
+            
+            # 🔥 Configurar antenas habilitadas (keys ya son int gracias a normalize)
+            antennas_config = self.wizard_config.get('antennas', {})
+            enabled_ports = [
+                port for port, config in antennas_config.items()
+                if config.get('enabled', False)
+            ]
+            
+            logger.info(f"📡 Antenas habilitadas: {enabled_ports}")
+            self.scanner.available_antennas = enabled_ports
+      
+            # Configurar potencia si está en config
+            power = self.wizard_config.get('power_dbm')
+            if power:
+                logger.info(f"⚡ Configurando potencia: {power} dBm")
+                self.scanner.set_output_power(power)
+            
+            # Emitir señal de scanner listo
+            self.signals.scanner_ready.emit(self.scanner)
+            self.signals.connection_status_changed.emit(
+                True, 
+                f"Conectado - {len(enabled_ports)} antenas activas"
+            )
+            
+            logger.info("✓ Scanner configurado y listo")
+            
+        except Exception as e:
+            logger.error(f"❌ Error configurando scanner: {e}")
+            import traceback
+            traceback.print_exc()
+            self.signals.connection_status_changed.emit(False, str(e))
+    
+    def apply_config_to_tabs(self):
+        """
+        🔥 MÉTODO CRÍTICO: Aplicar configuración del wizard a todos los tabs
+        Este método se llama DESPUÉS de crear los tabs y el scanner
+        """
+        if not self.wizard_config:
+            logger.warning("⚠️  No hay configuración para aplicar a los tabs")
+            return
         
-        # Aplicar configuración de conexión
-        if 'connection' in self.wizard_config:
-            conn = self.wizard_config['connection']
-            try:
-                self.connection_tab.host_input.setText(conn.get('host', '192.168.0.178'))
-                self.connection_tab.port_input.setValue(conn.get('port', 4001))
-                self.connection_tab.host_input.setReadOnly(True)
-                self.connection_tab.port_input.setReadOnly(True)
-                
-                if conn.get('verified', False):
-                    from PyQt6.QtCore import QTimer
-                    QTimer.singleShot(500, self.connection_tab.connect_scanner)
-            except Exception as e:
-                print(f"ERROR aplicando config de conexión: {e}")
+        logger.info("=" * 80)
+        logger.info("🔄 APLICANDO CONFIGURACIÓN A LOS TABS")
+        logger.info("=" * 80)
         
-        # Aplicar configuración de antenas
-        if 'antennas' in self.wizard_config:
-            wizard_antennas = self.wizard_config['antennas']
-            
-            print(f"DEBUG: Wizard antennas keys: {list(wizard_antennas.keys())}")
-            print(f"DEBUG: Wizard antennas types: {[type(k) for k in wizard_antennas.keys()]}")
-            
-            # Crear configuración completa para todas las antenas (0-7)
-            full_config = {}
-            
-            for antenna_index in range(8):
-                # Probar ambos: int y string (por si JSON convirtió a string)
-                found = False
-                
-                # Intentar como int
-                if antenna_index in wizard_antennas:
-                    wizard_ant = wizard_antennas[antenna_index]
-                    found = True
-                # Intentar como string
-                elif str(antenna_index) in wizard_antennas:
-                    wizard_ant = wizard_antennas[str(antenna_index)]
-                    found = True
-                
-                if found:
-                    # Antena configurada en el wizard
-                    full_config[antenna_index] = {
-                        'enabled': wizard_ant.get('enabled', True),
-                        'name': wizard_ant.get('name', f'Antena {antenna_index + 1}'),
-                        'start': wizard_ant.get('start', False),
-                        'finish': wizard_ant.get('finish', False),
-                        'checkpoint': wizard_ant.get('checkpoint', False),
-                        'description': wizard_ant.get('description', 'Sin configurar')
-                    }
-                    print(f"DEBUG: ✓ Antena {antenna_index} configurada: {full_config[antenna_index]}")
+        antennas_config = self.wizard_config.get('antennas', {})
+        
+        # Debug detallado
+        logger.info(f"📦 Configuración a aplicar:")
+        logger.info(f"   Keys: {list(antennas_config.keys())}")
+        logger.info(f"   Tipos: {[type(k).__name__ for k in antennas_config.keys()]}")
+        
+        for port, config in antennas_config.items():
+            logger.info(f"   Puerto {port}:")
+            logger.info(f"      name: {config.get('name')}")
+            logger.info(f"      enabled: {config.get('enabled')}")
+            logger.info(f"      start: {config.get('start')}")
+            logger.info(f"      finish: {config.get('finish')}")
+            logger.info(f"      checkpoint: {config.get('checkpoint')}")
+        
+        # 1. 🔥 APLICAR A DETECTION TAB
+        try:
+            logger.info("\n📡 Actualizando DetectionTab...")
+            if hasattr(self, 'detection_tab'):
+                self.detection_tab.update_antenna_roles_from_config(antennas_config)
+                logger.info("✅ DetectionTab actualizado")
+            else:
+                logger.error("❌ detection_tab no existe!")
+        except Exception as e:
+            logger.error(f"❌ Error actualizando DetectionTab: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # 2. 🔥 APLICAR A CONFIGURATION TAB
+        try:
+            logger.info("\n⚙️  Actualizando ConfigurationTab...")
+            if hasattr(self, 'config_tab'):
+                # Tu ConfigurationTab debe tener un método load_configuration
+                if hasattr(self.config_tab, 'load_configuration'):
+                    self.config_tab.load_configuration(self.wizard_config)
+                    logger.info("✅ ConfigurationTab actualizado")
                 else:
-                    # Antena no configurada
-                    full_config[antenna_index] = {
-                        'enabled': False,
-                        'name': f'Antena {antenna_index + 1}',
-                        'start': False,
-                        'finish': False,
-                        'checkpoint': False,
-                        'description': 'Sin configurar'
-                    }
+                    logger.warning("⚠️  ConfigurationTab no tiene load_configuration()")
+            else:
+                logger.error("❌ config_tab no existe!")
+        except Exception as e:
+            logger.error(f"❌ Error actualizando ConfigurationTab: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        logger.info("=" * 80)
+        logger.info("✅ CONFIGURACIÓN APLICADA A TODOS LOS TABS")
+        logger.info("=" * 80)
+    
+    def on_connection_status_changed(self, connected, message):
+        """Actualiza status bar según estado de conexión"""
+        if connected:
+            self.status_label.setText(f"✓ {message}")
+            logger.info(f"✓ {message}")
+        else:
+            self.status_label.setText(f"✗ {message}")
+            logger.warning(f"✗ {message}")
+
+    def get_antenna_config(self, port: int) -> dict:
+        """
+        Obtiene configuración completa de una antena específica
+        
+        Args:
+            port: Número de puerto (1-8) como INT
             
-            print(f"\nDEBUG: Config completa a enviar al widget:")
-            for idx, cfg in full_config.items():
-                if cfg['enabled']:
-                    print(f"  Antena {idx}: {cfg}")
-            
-            try:
-                print("\nDEBUG: Llamando a load_from_wizard_config...")
-                self.antenna_config_widget.load_from_wizard_config(full_config)
-                self.signals.antenna_config_applied.emit(full_config)
-                print("DEBUG: ✓ Configuración aplicada al widget")
-                    
-            except Exception as e:
-                print(f"ERROR aplicando config de antenas: {e}")
-                import traceback
-                traceback.print_exc()
+        Returns:
+            Dict con configuración de la antena
+        """
+        if not self.wizard_config:
+            return {}
+        
+        antennas = self.wizard_config.get('antennas', {})
+        
+        # 🔥 Buscar por puerto como int (ya normalizado)
+        return antennas.get(port, {})
+    
+    def get_antenna_role(self, port: int) -> str:
+        """
+        Obtiene el rol PRINCIPAL de una antena
+        Para compatibilidad con código existente
+        """
+        config = self.get_antenna_config(port)
+        
+        # Retornar el primer rol encontrado (por prioridad)
+        if config.get('start'):
+            return 'start'
+        elif config.get('finish'):
+            return 'finish'
+        elif config.get('checkpoint'):
+            return 'checkpoint'
+        
+        return 'unknown'
+
+    def get_antenna_roles(self, port: int) -> list:
+        """
+        Obtiene TODOS los roles de una antena
+        Retorna lista de roles: ['start', 'finish', 'checkpoint']
+        """
+        config = self.get_antenna_config(port)
+        roles = []
+        
+        if config.get('start'):
+            roles.append('start')
+        if config.get('finish'):
+            roles.append('finish')
+        if config.get('checkpoint'):
+            roles.append('checkpoint')
+        
+        return roles
+    
+    def get_antenna_name(self, port: int) -> str:
+        """Obtiene el nombre de una antena"""
+        config = self.get_antenna_config(port)
+        return config.get('name', f'Antena {port}')
+    
+    def get_enabled_antennas(self) -> list:
+        """Obtiene lista de puertos habilitados"""
+        if not self.wizard_config:
+            return []
+        
+        antennas = self.wizard_config.get('antennas', {})
+        return [
+            port for port, config in antennas.items()
+            if config.get('enabled', False)
+        ]
+
+    def create_tabs(self):
+        """Crea todos los tabs de la aplicación"""
+        
+        logger.info("=" * 80)
+        logger.info("🏗️  CREANDO TABS")
+        logger.info("=" * 80)
+        logger.info(f"wizard_config existe: {self.wizard_config is not None}")
+        if self.wizard_config:
+            logger.info(f"  Antenas en config: {list(self.wizard_config.get('antennas', {}).keys())}")
+        logger.info("=" * 80)
+        
+        # ===== TAB 1: DETECCIÓN =====
+        logger.info("\n📡 Creando DetectionTab...")
+        self.detection_tab = DetectionTab(signals=self.signals)
+        self.tab_widget.addTab(self.detection_tab, "🔍 Detección")
+        logger.info("✅ DetectionTab creado")
+        
+        # ===== TAB 2: GESTIÓN DE EVENTOS =====
+        logger.info("\n📋 Creando EventConfigWidget...")
+        self.event_config_widget = EventConfigWidget()
+        self.tab_widget.addTab(self.event_config_widget, "📋 Gestión de Eventos")
+        logger.info("✅ EventConfigWidget creado")
+        
+        # ===== TAB 3: COMPETENCIA =====
+        logger.info("\n🏃 Creando RaceMonitoringWidget...")
+        self.race_monitoring_widget = RaceMonitoringWidget()
+        self.tab_widget.addTab(self.race_monitoring_widget, "🏃 Competencia")
+        logger.info("✅ RaceMonitoringWidget creado")
+        
+        # ===== TAB 4: CONFIGURACIÓN =====
+        logger.info("\n⚙️  Creando ConfigurationTab...")
+        logger.info(f"  Pasando scanner: {self.scanner is not None}")
+        logger.info(f"  Pasando signals: {self.signals is not None}")
+        logger.info(f"  Pasando wizard_config: {self.wizard_config is not None}")
+        
+        try:
+            self.config_tab = ConfigurationTab(
+                scanner=self.scanner,
+                signals=self.signals,
+                wizard_config=self.wizard_config
+            )
+            logger.info("✅ ConfigurationTab creado")
+            self.tab_widget.addTab(self.config_tab, "⚙️ Configuración")
+        except Exception as e:
+            logger.error(f"❌ Error creando ConfigurationTab: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+        
+        logger.info("=" * 80)
+        logger.info("✅ TODOS LOS TABS CREADOS")
+        logger.info("=" * 80)
+
+    def connect_signals(self):
+        """Conecta señales del sistema"""
+        logger.info("🔌 Conectando señales...")
+        
+        # Señal de estado de conexión
+        self.signals.connection_status_changed.connect(self.on_connection_status_changed)
+        
+        # Conectar señales de widgets existentes de forma segura
+        if hasattr(self, 'event_config_widget') and hasattr(self.event_config_widget, 'category_started'):
+            self.event_config_widget.category_started.connect(self.on_category_started)
+        
+        if hasattr(self, 'race_monitoring_widget'):
+            pass
+        
+        logger.info("✅ Señales conectadas")
 
     @pyqtSlot(int)
     def on_tab_changed(self, index):
         """Manejar cambio de pestaña"""
-        # Notificar al tab actual que fue activado
         current_widget = self.tab_widget.widget(index)
         if hasattr(current_widget, 'on_tab_activated'):
             current_widget.on_tab_activated()
@@ -272,17 +383,18 @@ class MainWindow(QMainWindow):
     def on_category_started(self, category_id):
         """Manejar inicio de categoría"""
         # Inicializar race tracker si no existe
-        if not self.race_tracker:
+        if not hasattr(self, 'race_tracker') or not self.race_tracker:
             event_manager = self.event_config_widget.get_event_manager()
             self.race_tracker = IntegratedRaceTracker(event_manager)
             
             # Aplicar configuración de antenas si existe
-            antenna_config = self.antenna_config_widget.get_current_config()
-            enabled_antennas = {
-                ant_id: config for ant_id, config in antenna_config.items() 
-                if config['enabled']
-            }
-            self.race_tracker.set_antenna_config(enabled_antennas)
+            if self.wizard_config:
+                antennas_config = self.wizard_config.get('antennas', {})
+                enabled_antennas = {
+                    port: config for port, config in antennas_config.items() 
+                    if config.get('enabled', False)
+                }
+                self.race_tracker.set_antenna_config(enabled_antennas)
             
             # Conectar el widget de monitoreo
             self.race_monitoring_widget.set_race_tracker(self.race_tracker)
@@ -296,41 +408,12 @@ class MainWindow(QMainWindow):
         self.signals.log_message.emit(f"Categoría finalizada: {category_id}", "info")
     
     @pyqtSlot(dict)
-    def on_antenna_config_applied(self, config_data):
-        """Manejar configuración de antenas aplicada"""
-        config_summary = []
-        
-        for antenna_id, config in config_data.items():
-            roles = []
-            if config['start']:
-                roles.append("Largada")
-            if config['finish']:
-                roles.append("Meta")
-            if config['checkpoint']:
-                roles.append("Checkpoint")
-            
-            name = config['name']
-            roles_str = "+".join(roles)
-            config_summary.append(f"Antena {antenna_id + 1} ({name}): {roles_str}")
-        
-        self.signals.log_message.emit("Configuración de antenas aplicada:", "info")
-        for line in config_summary:
-            self.signals.log_message.emit(f"  • {line}", "info")
-        
-        # Actualizar tracker integrado si existe
-        if self.race_tracker:
-            self.race_tracker.set_antenna_config(config_data)
-        
-        enabled_count = len(config_summary)
-        self.status_label.setText(f"Sistema configurado con {enabled_count} antenas activas")
-    
-    @pyqtSlot(dict)
     def on_tag_detected_global(self, tag):
         """Procesar detección de tag a nivel global"""
         tag_number = tag['number']
         
         # Procesar con race tracker si existe y hay categoría activa
-        if self.race_tracker:
+        if hasattr(self, 'race_tracker') and self.race_tracker:
             reading = self.race_tracker.process_chip_reading(
                 tag_number, 
                 tag['antenna'], 
@@ -338,7 +421,6 @@ class MainWindow(QMainWindow):
             )
             
             if reading:
-                # Forzar actualización del widget de monitoreo
                 self.race_monitoring_widget.refresh_all_data()
                 
                 participant_status = self.race_tracker.get_participant_status(tag_number)
@@ -378,7 +460,7 @@ class MainWindow(QMainWindow):
         
         if reply == QMessageBox.StandardButton.Yes:
             # Desconectar scanner si está conectado
-            if self.scanner.connected:
+            if self.scanner and hasattr(self.scanner, 'connected') and self.scanner.connected:
                 self.scanner.disconnect()
             event.accept()
         else:
@@ -388,7 +470,7 @@ class MainWindow(QMainWindow):
         """Obtener estado actual del sistema para debugging"""
         return {
             'scanner_connected': self.scanner.connected if self.scanner else False,
-            'race_tracker_active': self.race_tracker is not None,
+            'race_tracker_active': hasattr(self, 'race_tracker') and self.race_tracker is not None,
             'active_tab': self.tab_widget.currentIndex(),
-            'antenna_config': self.antenna_config_widget.get_current_config() if hasattr(self, 'antenna_config_widget') else None
+            'wizard_config_loaded': self.wizard_config is not None
         }

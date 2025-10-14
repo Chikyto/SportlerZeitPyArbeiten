@@ -1,49 +1,67 @@
 """
-Sistema de señales centralizado para comunicación entre componentes
+Sistema centralizado de señales para comunicación entre componentes
+src/utils/signals.py
 """
+
 from PyQt6.QtCore import QObject, pyqtSignal
-from datetime import datetime
 
 
 class AppSignals(QObject):
-    """Señales globales de la aplicación"""
+    """Sistema centralizado de señales para toda la aplicación"""
     
-    # Señales de conexión
-    scanner_connected = pyqtSignal(bool)  # True si conectado
-    scanner_status_changed = pyqtSignal(str)  # Mensaje de estado
+    # ===== SEÑALES DE CONEXIÓN =====
+    connection_status_changed = pyqtSignal(bool, str)
+    connection_established = pyqtSignal()
+    connection_lost = pyqtSignal()
+    scanner_connected = pyqtSignal(bool)
     
-    # Señales de detección de chips
-    tag_detected = pyqtSignal(dict)  # {number, antenna, timestamp, epc_hex}
-    tags_cleared = pyqtSignal()
+    # ===== SEÑALES DE LOGGING =====
+    log_message = pyqtSignal(str, str)  # ⭐ mensaje, level
     
-    # Señales de configuración de antenas
-    antenna_config_applied = pyqtSignal(dict)  # {antenna_id: config}
+    # ===== SEÑALES DE DETECCIÓN DE TAGS =====
+    tag_detected = pyqtSignal(dict)
+    tags_batch_detected = pyqtSignal(list)
     
-    # Señales de eventos/categorías
-    category_created = pyqtSignal(str)  # category_id
-    category_started = pyqtSignal(str)  # category_id
-    category_finished = pyqtSignal(str)  # category_id
-    participant_registered = pyqtSignal(str, str)  # chip_number, category_id
+    # ===== SEÑALES DE CATEGORÍAS =====
+    category_created = pyqtSignal(str)
+    category_started = pyqtSignal(str)
+    category_finished = pyqtSignal(str)
+    category_updated = pyqtSignal(str)
     
-    # Señales de carrera
-    race_status_changed = pyqtSignal(dict)  # {status, timestamp, data}
-    participant_status_updated = pyqtSignal(str, dict)  # chip_number, status_data
+    # ===== SEÑALES MULTI-ANTENA =====
+    scanner_ready = pyqtSignal(object)
+    antenna_changed = pyqtSignal(int)
     
-    # Señales de logging
-    log_message = pyqtSignal(str, str)  # message, level (info/warning/error)
+    # Detecciones por rol de antena
+    start_detected = pyqtSignal(str, str)
+    finish_detected = pyqtSignal(str, str)
+    checkpoint_detected = pyqtSignal(str, int, str)
     
-    # Señales de base de datos
-    data_exported = pyqtSignal(str)  # filepath
-    firebase_status_changed = pyqtSignal(bool)  # connected
+    # Estado de scanning
+    scanning_started = pyqtSignal()
+    scanning_stopped = pyqtSignal()
+    scan_progress = pyqtSignal(int)
+    
+    # Errores de scanning
+    scanner_error = pyqtSignal(str)
+    antenna_error = pyqtSignal(int, str)
+    
+    # ===== SEÑALES DE PARTICIPANTES =====
+    participant_registered = pyqtSignal(dict)
+    participant_updated = pyqtSignal(str)
+    
+    # ===== SEÑALES DE RESULTADOS =====
+    result_calculated = pyqtSignal(dict)
+    results_exported = pyqtSignal(str)
 
 
-# Instancia global singleton
-_app_signals = None
+# Singleton para uso global
+_app_signals_instance = None
 
 
-def get_app_signals() -> AppSignals:
-    """Obtener instancia singleton de señales de aplicación"""
-    global _app_signals
-    if _app_signals is None:
-        _app_signals = AppSignals()
-    return _app_signals
+def get_app_signals():
+    """Obtiene la instancia singleton de AppSignals"""
+    global _app_signals_instance
+    if _app_signals_instance is None:
+        _app_signals_instance = AppSignals()
+    return _app_signals_instance
