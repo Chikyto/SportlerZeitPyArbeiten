@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
-from src.gui.wizard.configuration_wizard import ConfigurationWizard
+from src.gui.wizard.auto_wizard import AutoConfigurationWizard  # 🔥 Cambiado a AutoWizard
 from src.gui.main_window import MainWindow
 
 logging.basicConfig(
@@ -50,7 +50,7 @@ def save_config(config):
 def run_wizard():
     """Ejecuta el wizard de configuración"""
     logger.info("Iniciando wizard de configuración...")
-    wizard = ConfigurationWizard()
+    wizard = AutoConfigurationWizard()
     
     if wizard.exec():
         config = wizard.get_configuration()

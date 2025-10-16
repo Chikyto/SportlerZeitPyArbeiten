@@ -8,15 +8,14 @@
   "antennas": {
     "2": {
       "enabled": true,
-      "name": "largada + checkpoint + llegada",
-      "description": "Antena puerto 2: largada + checkpoint + llegada",
+      "name": "largada + llegada",
+      "description": "Antena puerto 2: largada + llegada",
       "start": true,
       "finish": true,
-      "checkpoint": true,
+      "checkpoint": false,
       "power_level": 25,
       "functions": [
         "largada",
-        "checkpoint",
         "llegada"
       ]
     },
@@ -46,15 +45,14 @@
     },
     "6": {
       "enabled": true,
-      "name": "largada + checkpoint + llegada",
-      "description": "Antena puerto 6: largada + checkpoint + llegada",
+      "name": "largada + llegada",
+      "description": "Antena puerto 6: largada + llegada",
       "start": true,
       "finish": true,
-      "checkpoint": true,
+      "checkpoint": false,
       "power_level": 25,
       "functions": [
         "largada",
-        "checkpoint",
         "llegada"
       ]
     }

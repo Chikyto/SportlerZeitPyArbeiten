@@ -16,9 +16,8 @@ logger = logging.getLogger(__name__)
 class AutoConnectPage(QWizardPage):
     """Página de auto-conexión invisible"""
     
-    def __init__(self, wizard):
+    def __init__(self):  # 🔥 CORREGIDO: Sin parámetro wizard
         super().__init__()
-        self.wizard_ref = wizard
         self.connection_attempted = False
         
         self.setTitle("Conectando al sistema...")
@@ -42,7 +41,7 @@ class AutoConnectPage(QWizardPage):
     
     def attempt_connection(self):
         """Intentar conectar automáticamente"""
-        wizard = self.wizard()
+        wizard = self.wizard()  # 🔥 Obtener wizard de QWizardPage
         
         try:
             self.status_label.setText("Conectando a 192.168.0.178:4001...")
@@ -123,9 +122,8 @@ class AutoConnectPage(QWizardPage):
 class AutoDetectionPage(QWizardPage):
     """Página de auto-detección de antenas"""
     
-    def __init__(self, wizard):
+    def __init__(self):  # 🔥 CORREGIDO: Sin parámetro wizard
         super().__init__()
-        self.wizard_ref = wizard
         self.detection_results = {}
         self.detection_completed = False
         
@@ -151,7 +149,7 @@ class AutoDetectionPage(QWizardPage):
     
     def start_detection(self):
         """Escanear antenas automáticamente"""
-        wizard = self.wizard()
+        wizard = self.wizard()  # 🔥 Obtener wizard de QWizardPage
         
         self.progress.setRange(0, 8)
         
@@ -214,8 +212,8 @@ class AutoConfigurationWizard(QWizard):
         self.setOption(QWizard.WizardOption.HaveHelpButton, False)
         
         # Páginas del wizard optimizado
-        self.auto_connect_page = AutoConnectPage(self)
-        self.auto_detection_page = AutoDetectionPage(self)
+        self.auto_connect_page = AutoConnectPage()  # 🔥 SIN pasar self
+        self.auto_detection_page = AutoDetectionPage()  # 🔥 SIN pasar self
         self.antenna_config_page = AntennaConfigurationPage(self)
         self.summary_page = SummaryPage(self)
         
@@ -229,18 +227,16 @@ class AutoConfigurationWizard(QWizard):
     def accept(self):
         """Guardar configuración al completar"""
         try:
-            # 1. Obtener configuración de las páginas
             config_page = self.page(2)
             if config_page and hasattr(config_page, 'get_configuration'):
                 antenna_config = config_page.get_configuration()
                 self.config.antennas = antenna_config
                 
-                # 2. Guardar a archivo
                 filename = "timing_system_config.json"
                 if self.config.save_to_file(filename):
                     logger.info(f"✅ Configuración guardada en {filename}")
                 
-                # 3. 🔥 EMITIR SEÑAL con configuración completa
+                # 🔥 EMITIR SEÑAL con configuración completa
                 full_config = self.get_configuration()
                 logger.info(f"🔔 Emitiendo configuración: {full_config}")
                 self.configuration_completed.emit(full_config)
@@ -277,20 +273,17 @@ class AutoConfigurationWizard(QWizard):
                 'port': getattr(self.config.reader, 'port', 4001),
                 'verified': True
             },
-            'power_dbm': 30,  # Potencia por defecto
+            'power_dbm': 30,
             'antennas': {}
         }
         
-        # Obtener configuración de antenas
         if hasattr(self.antenna_config_page, 'get_configuration'):
             antenna_configs = self.antenna_config_page.get_configuration()
             
             for port, antenna_config in antenna_configs.items():
-                # port ya viene como 1-8, NO convertir a índice
                 functions = getattr(antenna_config, 'multiple_functions', [])
                 description = getattr(antenna_config, 'description', f'Antena puerto {port}')
                 
-                # Extraer nombre limpio
                 if ':' in description:
                     name = description.split(':', 1)[1].strip()
                 else:

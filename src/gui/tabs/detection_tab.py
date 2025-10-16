@@ -1,84 +1,54 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-DetectionTab refactorizado con soporte para roles de antenas - VERSIÓN CORREGIDA
+DetectionTab refactorizado - Solo UI y coordinación
+src/gui/tabs/detection_tab.py
+
+Responsabilidad única: UI y coordinación entre componentes
+Delegación: ScanThread para scanning, TagProcessor para lógica
 """
 
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QGroupBox, QMessageBox
 )
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import pyqtSlot
 from PyQt6.QtGui import QColor
-from datetime import datetime
-import time
 import logging
 
 from .base_tab import BaseTab
+from ..components.scan_thread import ScanThread  # 🔥 Desde components/
+from src.core.tag_processor import TagProcessor   # 🔥 Desde core/
 
 logger = logging.getLogger(__name__)
 
-class ScanThread(QThread):
-    """Thread para scanning continuo sin bloquear UI"""
-    tag_detected = pyqtSignal(dict)
-    error_occurred = pyqtSignal(str)
-    
-    def __init__(self, scanner):
-        super().__init__()
-        self.scanner = scanner
-        self.running = False
-    
-    def run(self):
-        """Loop de scanning"""
-        self.running = True
-        scan_count = 0
-        
-        logger.info("ScanThread iniciado")
-        
-        while self.running:
-            try:
-                if not self.scanner.available_antennas:
-                    time.sleep(1)
-                    continue
-                
-                antenna_id = self.scanner.available_antennas[
-                    scan_count % len(self.scanner.available_antennas)
-                ]
-                
-                tags = self.scanner.scan_single_antenna(antenna_id)
-                
-                for tag in tags:
-                    self.tag_detected.emit(tag)
-                
-                scan_count += 1
-                time.sleep(0.3)
-                
-            except Exception as e:
-                logger.error(f"Error en scan: {e}")
-                self.error_occurred.emit(str(e))
-                time.sleep(1)
-        
-        logger.info("ScanThread detenido")
-    
-    def stop(self):
-        """Detiene el thread"""
-        self.running = False
-
 
 class DetectionTab(BaseTab):
-    """Tab de detección de chips con soporte multi-antena"""
+    """
+    Tab de detección de chips RFID
+    
+    Responsabilidades:
+    - Crear y gestionar UI
+    - Coordinar ScanThread y TagProcessor
+    - Mostrar detecciones en tabla
+    - Actualizar estadísticas
+    """
     
     def __init__(self, signals=None, parent=None):
         self.scanner = None
         self.scan_thread = None
+        self.tag_processor = None
         self.is_scanning = False
-        self.antenna_roles = {}  # 🔥 {port(int): [roles]}
-        self.antenna_names = {}  # {port(int): name}
+        self.antenna_roles = {}   # {port: [roles]}
+        self.antenna_names = {}   # {port: name}
         self.detected_tags = set()
         
         super().__init__(signals=signals, parent=parent)
     
     def setup_ui(self):
-        """Configura la interfaz de usuario"""
+        """Configurar interfaz de usuario"""
         
+        # Título
         title = QLabel("🔍 Detección de Chips RFID")
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         self.layout.addWidget(title)
@@ -126,12 +96,13 @@ class DetectionTab(BaseTab):
         self.layout.addLayout(stats_layout)
     
     def connect_signals(self):
-        """Conecta señales del sistema"""
+        """Conectar señales del sistema"""
         self.safe_connect('scanner_ready', self.on_scanner_ready)
         self.safe_connect('connection_status_changed', self.on_connection_status)
     
+    @pyqtSlot(bool, str)
     def on_connection_status(self, connected, message):
-        """Actualiza UI según estado de conexión"""
+        """Actualizar UI según estado de conexión"""
         if connected:
             self.log(f"✓ {message}")
         else:
@@ -140,6 +111,7 @@ class DetectionTab(BaseTab):
             if self.is_scanning:
                 self.stop_scanning()
     
+    @pyqtSlot(object)
     def on_scanner_ready(self, scanner):
         """Callback cuando el scanner está listo"""
         self.scanner = scanner
@@ -147,22 +119,16 @@ class DetectionTab(BaseTab):
         self.start_btn.setEnabled(True)
         self.log("✓ Scanner listo para detección")
     
-    # 🔥 NUEVO MÉTODO: Actualizar roles desde MainWindow
     def update_antenna_roles_from_config(self, antennas_config):
         """
-        🔥 MÉTODO CRÍTICO: Actualizar roles desde configuración del wizard
+        🔥 MÉTODO CRÍTICO: Actualizar roles desde configuración
         
         Args:
             antennas_config: dict {port(int): {'name', 'start', 'finish', 'checkpoint', ...}}
         """
         logger.info("=" * 80)
-        logger.info("📡 DetectionTab.update_antenna_roles_from_config() LLAMADO")
+        logger.info("📡 DetectionTab: Actualizando roles desde config")
         logger.info("=" * 80)
-        
-        # Debug: Ver qué llegó
-        logger.info(f"📥 Recibido antennas_config:")
-        logger.info(f"   Keys: {list(antennas_config.keys())}")
-        logger.info(f"   Tipos: {[type(k).__name__ for k in antennas_config.keys()]}")
         
         # Limpiar datos anteriores
         self.antenna_roles.clear()
@@ -170,14 +136,12 @@ class DetectionTab(BaseTab):
         
         # Procesar cada antena
         for port, config in antennas_config.items():
-            # 🔥 Asegurar que port es int
             port_int = int(port) if isinstance(port, str) else port
             
             if not config.get('enabled', False):
-                logger.info(f"⏭️  Puerto {port_int}: deshabilitado, omitiendo")
                 continue
             
-            # Extraer TODOS los roles (puede tener múltiples)
+            # Extraer TODOS los roles
             roles = []
             if config.get('start', False):
                 roles.append('start')
@@ -186,25 +150,23 @@ class DetectionTab(BaseTab):
             if config.get('checkpoint', False):
                 roles.append('checkpoint')
             
-            # Guardar información
             self.antenna_roles[port_int] = roles
             self.antenna_names[port_int] = config.get('name', f'Antena {port_int}')
             
-            logger.info(f"✅ Puerto {port_int}:")
-            logger.info(f"      Nombre: {self.antenna_names[port_int]}")
-            logger.info(f"      Roles: {roles}")
+            logger.info(f"✅ Puerto {port_int}: {self.antenna_names[port_int]} → {roles}")
         
-        logger.info(f"📊 Total antenas configuradas: {len(self.antenna_roles)}")
-        logger.info(f"📊 Puertos activos: {sorted(self.antenna_roles.keys())}")
+        logger.info(f"📊 Total: {len(self.antenna_roles)} antenas configuradas")
         logger.info("=" * 80)
         
         # Actualizar UI
         self.update_antenna_list_ui()
+        
+        # Actualizar procesador de tags si existe
+        if self.tag_processor:
+            self.tag_processor.update_antenna_roles(self.antenna_roles)
     
     def update_antenna_list_ui(self):
         """Actualizar lista visual de antenas configuradas"""
-        logger.info("🎨 Actualizando UI de lista de antenas...")
-        
         # Limpiar layout anterior
         while self.antenna_info_layout.count():
             child = self.antenna_info_layout.takeAt(0)
@@ -215,82 +177,27 @@ class DetectionTab(BaseTab):
             no_antennas = QLabel("⚠️ No hay antenas configuradas")
             no_antennas.setStyleSheet("color: orange;")
             self.antenna_info_layout.addWidget(no_antennas)
-            logger.warning("⚠️  No hay antenas configuradas para mostrar")
             return
+        
+        # Crear procesador temporal para formatear texto
+        temp_processor = TagProcessor(self.antenna_roles, self.signals)
         
         # Crear widgets para cada antena
         for port in sorted(self.antenna_roles.keys()):
             roles = self.antenna_roles[port]
             name = self.antenna_names.get(port, f'Antena {port}')
+            role_text = temp_processor.format_role_text(roles)
             
-            # Construir texto de roles
-            if not roles:
-                role_text = "⚪ Sin rol"
-            else:
-                role_parts = []
-                if 'start' in roles:
-                    role_parts.append('🟢 Largada')
-                if 'finish' in roles:
-                    role_parts.append('🏁 Meta')
-                if 'checkpoint' in roles:
-                    role_parts.append('🔵 Checkpoint')
-                role_text = ' + '.join(role_parts)
-            
-            # Crear label
             info = QLabel(f"Puerto {port}: {name} ({role_text})")
             self.antenna_info_layout.addWidget(info)
-            
-            logger.info(f"✅ Widget creado: Puerto {port} - {name} - {role_text}")
-        
-        logger.info("✅ UI de antenas actualizada")
     
     def update_antenna_info(self):
-        """
-        MÉTODO LEGACY: Actualiza información de antenas desde scanner
-        Mantener por compatibilidad, pero preferir update_antenna_roles_from_config()
-        """
-        if not self.scanner:
-            return
-        
-        # Si ya tenemos roles configurados, solo actualizar UI
+        """Método legacy para compatibilidad"""
         if self.antenna_roles:
             self.update_antenna_list_ui()
-            return
-        
-        # Si no, intentar obtener desde MainWindow (modo legacy)
-        main_window = self.get_main_window()
-        if not main_window:
-            logger.warning("No se puede acceder a MainWindow")
-            return
-        
-        if not self.scanner.available_antennas:
-            self.update_antenna_list_ui()  # Mostrará "no hay antenas"
-            return
-        
-        # Obtener roles desde MainWindow
-        self.antenna_roles.clear()
-        self.antenna_names.clear()
-        
-        for port in sorted(self.scanner.available_antennas):
-            roles = main_window.get_antenna_roles(port)
-            name = main_window.get_antenna_name(port)
-            
-            self.antenna_roles[port] = roles
-            self.antenna_names[port] = name
-        
-        self.update_antenna_list_ui()
-
-    def get_main_window(self):
-        """Obtiene referencia a MainWindow"""
-        parent = self.parent()
-        while parent:
-            if hasattr(parent, 'get_antenna_role') or hasattr(parent, 'get_antenna_roles'):
-                return parent
-            parent = parent.parent()
-        return None
     
     def start_scanning(self):
-        """Inicia detección continua"""
+        """Iniciar detección continua"""
         if not self.scanner:
             self.log("ERROR: Scanner no disponible")
             QMessageBox.warning(self, "Error", "Scanner no disponible")
@@ -299,22 +206,26 @@ class DetectionTab(BaseTab):
         if self.is_scanning:
             return
         
-        self.is_scanning = True
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
+        # Crear procesador de tags
+        self.tag_processor = TagProcessor(self.antenna_roles, self.signals)
         
+        # Crear y arrancar thread de scanning
         self.scan_thread = ScanThread(self.scanner)
         self.scan_thread.tag_detected.connect(self.on_tag_detected)
         self.scan_thread.error_occurred.connect(self.on_scan_error)
         self.scan_thread.start()
         
+        self.is_scanning = True
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        
         self.log("🟢 Detección iniciada - Escaneando antenas...")
     
     def stop_scanning(self):
-        """Detiene detección"""
+        """Detener detección"""
         if self.scan_thread:
             self.scan_thread.stop()
-            self.scan_thread.wait(2000)
+            self.scan_thread.wait(2000)  # Esperar max 2 segundos
             self.scan_thread = None
         
         self.is_scanning = False
@@ -323,103 +234,73 @@ class DetectionTab(BaseTab):
         
         self.log("🔴 Detección detenida")
     
+    @pyqtSlot(str)
     def on_scan_error(self, error_msg):
-        """Maneja errores del scan"""
+        """Manejar errores del scan"""
         self.log(f"❌ Error: {error_msg}")
     
+    @pyqtSlot(dict)
     def on_tag_detected(self, tag_info):
-        """Procesa tag detectado"""
-        try:
-            tag_number = tag_info['number']
-            port = tag_info.get('antenna', 0)
-            timestamp = tag_info['timestamp'].strftime('%H:%M:%S.%f')[:-3]
+        """Procesar tag detectado"""
+        # Delegar procesamiento al TagProcessor
+        processed = self.tag_processor.process_tag(tag_info)
+        
+        if not processed:
+            return
+        
+        # Agregar tag a conjunto de únicos
+        self.detected_tags.add(processed['tag_id'])
+        
+        # Agregar a la tabla
+        self.add_detection_to_table(processed)
+        
+        # Actualizar estadísticas
+        self.update_statistics()
+    
+    def add_detection_to_table(self, processed: dict):
+        """
+        Agregar detección a la tabla
+        
+        Args:
+            processed: Dict con información procesada del tag
+        """
+        row = self.detections_table.rowCount()
+        self.detections_table.insertRow(row)
+        
+        # Agregar datos
+        self.detections_table.setItem(row, 0, QTableWidgetItem(processed['timestamp']))
+        self.detections_table.setItem(row, 1, QTableWidgetItem(processed['tag_id']))
+        self.detections_table.setItem(row, 2, QTableWidgetItem(str(processed['port'])))
+        
+        # Formatear texto de roles
+        role_text = self.tag_processor.format_role_text(processed['roles'])
+        self.detections_table.setItem(row, 3, QTableWidgetItem(role_text))
+        
+        # Usar nombre de antena si está disponible
+        antenna_name = self.antenna_names.get(processed['port'], processed['antenna_name'])
+        self.detections_table.setItem(row, 4, QTableWidgetItem(antenna_name))
+        
+        # Aplicar color si existe
+        if processed['color_code'] != 'none':
+            rgb = self.tag_processor.get_color_rgb(processed['color_code'])
+            color = QColor(*rgb)
             
-            # 🔥 Convertir port a int si es necesario
-            port = int(port) if isinstance(port, str) else port
-            
-            # Verificar que el puerto esté configurado
-            if port not in self.antenna_roles:
-                logger.warning(f"Tag {tag_number} detectado en puerto {port} no configurado")
-                logger.warning(f"Puertos configurados: {list(self.antenna_roles.keys())}")
-                return
-            
-            # Obtener roles y nombre
-            roles = self.antenna_roles.get(port, [])
-            antenna_name = self.antenna_names.get(port, f"Puerto {port}")
-            
-            # Si es string (compatibilidad), convertir a lista
-            if isinstance(roles, str):
-                roles = [roles]
-            
-            self.detected_tags.add(tag_number)
-            
-            # Agregar a la tabla
-            row = self.detections_table.rowCount()
-            self.detections_table.insertRow(row)
-            
-            self.detections_table.setItem(row, 0, QTableWidgetItem(timestamp))
-            self.detections_table.setItem(row, 1, QTableWidgetItem(tag_number))
-            self.detections_table.setItem(row, 2, QTableWidgetItem(str(port)))
-            
-            # Mostrar TODOS los roles
-            role_text_parts = []
-            if 'start' in roles:
-                role_text_parts.append('🟢 Largada')
-            if 'finish' in roles:
-                role_text_parts.append('🏁 Meta')
-            if 'checkpoint' in roles:
-                role_text_parts.append('🔵 Checkpoint')
-            
-            role_text = ' + '.join(role_text_parts) if role_text_parts else '⚪ Sin rol'
-            self.detections_table.setItem(row, 3, QTableWidgetItem(role_text))
-            
-            self.detections_table.setItem(row, 4, QTableWidgetItem(antenna_name))
-            
-            # Color según rol principal
-            if 'start' in roles and 'finish' in roles:
-                color = QColor(255, 200, 100)  # Naranja (largada+meta)
-            elif 'start' in roles:
-                color = QColor(144, 238, 144)  # Verde
-            elif 'finish' in roles:
-                color = QColor(255, 215, 0)    # Dorado
-            elif 'checkpoint' in roles:
-                color = QColor(173, 216, 230)  # Azul
-            else:
-                color = None
-            
-            if color:
-                for col in range(5):
-                    self.detections_table.item(row, col).setBackground(color)
-            
-            self.detections_table.scrollToBottom()
-            
-            # Actualizar estadísticas
-            total_detections = self.detections_table.rowCount()
-            unique_tags = len(self.detected_tags)
-            self.stats_label.setText(
-                f"Detecciones: {total_detections} | Tags únicos: {unique_tags}"
-            )
-            
-            # Emitir señales para TODOS los roles
-            if 'start' in roles:
-                self.signals.start_detected.emit(tag_number, timestamp)
-                self.log(f"🟢 LARGADA: Tag {tag_number}")
-            
-            if 'finish' in roles:
-                self.signals.finish_detected.emit(tag_number, timestamp)
-                self.log(f"🏁 META: Tag {tag_number}")
-            
-            if 'checkpoint' in roles:
-                self.signals.checkpoint_detected.emit(tag_number, port, timestamp)
-                self.log(f"🔵 CHECKPOINT {port}: Tag {tag_number}")
-                
-        except Exception as e:
-            logger.error(f"Error procesando tag: {e}")
-            import traceback
-            traceback.print_exc()
+            for col in range(5):
+                self.detections_table.item(row, col).setBackground(color)
+        
+        # Scroll al final
+        self.detections_table.scrollToBottom()
+    
+    def update_statistics(self):
+        """Actualizar estadísticas de detecciones"""
+        total_detections = self.detections_table.rowCount()
+        unique_tags = len(self.detected_tags)
+        self.stats_label.setText(
+            f"Detecciones: {total_detections} | Tags únicos: {unique_tags}"
+        )
     
     def clear_detections(self):
-        """Limpia la tabla de detecciones"""
+        """Limpiar la tabla de detecciones"""
         reply = QMessageBox.question(
             self,
             "Limpiar Detecciones",
@@ -430,7 +311,7 @@ class DetectionTab(BaseTab):
         if reply == QMessageBox.StandardButton.Yes:
             self.detections_table.setRowCount(0)
             self.detected_tags.clear()
-            self.stats_label.setText("Detecciones: 0 | Tags únicos: 0")
+            self.update_statistics()
             self.log("🗑️ Detecciones limpiadas")
     
     def closeEvent(self, event):
