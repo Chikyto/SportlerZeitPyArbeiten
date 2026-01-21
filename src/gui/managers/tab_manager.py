@@ -67,12 +67,13 @@ class TabManager:
     def create_all_tabs(self):
         """
         Crear todos los tabs de la aplicación
-        
+
         Orden de tabs:
         1. Detección
         2. Gestión de Eventos
-        3. Competencia
-        4. Configuración
+        3. Asignación de Chips
+        4. Competencia
+        5. Configuración
         """
         logger.info("=" * 80)
         logger.info("🏗️  Creando todos los tabs")
@@ -81,9 +82,10 @@ class TabManager:
         try:
             self.create_detection_tab()
             self.create_event_config_tab()
+            self.create_chip_assignment_tab()
             self.create_race_monitoring_tab()
             self.create_configuration_tab()
-            
+
             logger.info(f"✅ {len(self.tabs)} tabs creados exitosamente")
             logger.info("=" * 80)
             
@@ -116,7 +118,22 @@ class TabManager:
         self.tabs['events'] = event_config_widget
 
         logger.info("✅ EventConfigWidget creado")
-    
+
+    def create_chip_assignment_tab(self):
+        """Crear tab de asignación de chips"""
+        logger.info("🏷️ Creando ChipAssignmentWidget...")
+
+        from ..widgets.chip_assignment_widget import ChipAssignmentWidget
+
+        chip_widget = ChipAssignmentWidget(
+            race_manager=self.race_manager,
+            scanner=self.scanner
+        )
+        self.tab_widget.addTab(chip_widget, "🏷️ Asignación de Chips")
+        self.tabs['chip_assignment'] = chip_widget
+
+        logger.info("✅ ChipAssignmentWidget creado")
+
     def create_race_monitoring_tab(self):
         """Crear tab de monitoreo de carrera"""
         logger.info("🏃 Creando RaceMonitoringWidget...")
