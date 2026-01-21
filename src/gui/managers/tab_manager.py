@@ -24,22 +24,24 @@ class TabManager:
     - Proporcionar acceso a tabs específicos
     """
     
-    def __init__(self, tab_widget: QTabWidget, signals, scanner=None, antenna_manager=None):
+    def __init__(self, tab_widget: QTabWidget, signals, scanner=None, antenna_manager=None, race_manager=None):
         """
         Inicializar gestor de tabs
-        
+
         Args:
             tab_widget: QTabWidget donde se agregarán los tabs
             signals: Objeto AppSignals para comunicación
             scanner: Scanner RFID (opcional, se puede agregar después)
             antenna_manager: Gestor de antenas (opcional)
+            race_manager: Gestor de carreras para timing (opcional)
         """
         self.tab_widget = tab_widget
         self.signals = signals
         self.scanner = scanner
         self.antenna_manager = antenna_manager
+        self.race_manager = race_manager
         self.tabs = {}  # Dict para acceder a tabs por nombre
-        
+
         logger.info("📋 TabManager inicializado")
     
     def set_scanner(self, scanner):
@@ -106,25 +108,25 @@ class TabManager:
     def create_event_config_tab(self):
         """Crear tab de gestión de eventos"""
         logger.info("📋 Creando EventConfigWidget...")
-        
+
         from ..widgets.event_config_widget import EventConfigWidget
-        
-        event_config_widget = EventConfigWidget()
+
+        event_config_widget = EventConfigWidget(race_manager=self.race_manager)
         self.tab_widget.addTab(event_config_widget, "📋 Gestión de Eventos")
         self.tabs['events'] = event_config_widget
-        
+
         logger.info("✅ EventConfigWidget creado")
     
     def create_race_monitoring_tab(self):
         """Crear tab de monitoreo de carrera"""
         logger.info("🏃 Creando RaceMonitoringWidget...")
-        
+
         from ..widgets.race_monitoring_widget import RaceMonitoringWidget
-        
-        race_monitoring_widget = RaceMonitoringWidget()
+
+        race_monitoring_widget = RaceMonitoringWidget(race_manager=self.race_manager)
         self.tab_widget.addTab(race_monitoring_widget, "🏃 Competencia")
         self.tabs['race'] = race_monitoring_widget
-        
+
         logger.info("✅ RaceMonitoringWidget creado")
     
     def create_configuration_tab(self):

@@ -244,18 +244,23 @@ class DetectionTab(BaseTab):
         """Procesar tag detectado"""
         # Delegar procesamiento al TagProcessor
         processed = self.tag_processor.process_tag(tag_info)
-        
+
         if not processed:
             return
-        
+
         # Agregar tag a conjunto de únicos
         self.detected_tags.add(processed['tag_id'])
-        
+
         # Agregar a la tabla
         self.add_detection_to_table(processed)
-        
+
         # Actualizar estadísticas
         self.update_statistics()
+
+        # 🏁 EMITIR SEÑAL PARA RACE MANAGER
+        # Enviar información completa de la detección para procesamiento de carrera
+        if self.signals:
+            self.signals.tag_detected.emit(processed)
     
     def add_detection_to_table(self, processed: dict):
         """

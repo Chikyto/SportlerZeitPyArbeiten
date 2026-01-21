@@ -1,34 +1,38 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                            QLabel, QGroupBox, QLineEdit, QTableWidget, 
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+                            QLabel, QGroupBox, QLineEdit, QTableWidget,
                             QTableWidgetItem, QHeaderView, QTimeEdit, QSpinBox,
                             QTextEdit, QComboBox, QMessageBox, QGridLayout)
 from PyQt6.QtCore import pyqtSignal, QTime, Qt
 from PyQt6.QtGui import QFont
 from datetime import datetime, time
+import logging
 
-# Importar el sistema de eventos que acabamos de crear
+# Importar modelos de race tracking
 import sys
 from pathlib import Path
 src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(src_path))
 
 try:
-    from src.core.event_manager import EventManager, RaceCategory, RaceStatus
-except ImportError:
+    from src.core.race_tracking.models import Athlete, RaceCategory, RaceStatus
+    from src.core.race_tracking.race_manager import RaceManager
+except ImportError as e:
     # Fallback si no se puede importar
-    print("Warning: No se pudo importar event_manager")
+    print(f"Warning: No se pudo importar race_tracking: {e}")
+
+logger = logging.getLogger(__name__)
 
 class EventConfigWidget(QWidget):
     """Widget para configuración de eventos con múltiples categorías"""
-    
+
     # Señales
     event_updated = pyqtSignal(dict)
     category_started = pyqtSignal(str)  # category_id
     category_finished = pyqtSignal(str)  # category_id
-    
-    def __init__(self):
+
+    def __init__(self, race_manager=None):
         super().__init__()
-        self.event_manager = EventManager()
+        self.race_manager = race_manager if race_manager else RaceManager()
         self.setup_ui()
         self.load_sample_event()
         
@@ -146,20 +150,29 @@ class EventConfigWidget(QWidget):
         
     def load_sample_event(self):
         """Cargar evento de ejemplo"""
-        # Crear categorías de ejemplo
+        # Crear categorías de ejemplo usando el modelo de race_tracking
         categories = [
-            ("100k", "Ultra 100K", "100 km", QTime(2, 0), 16, "Ultramaratón de 100 kilómetros"),
-            ("50k", "Trail 50K", "50 km", QTime(4, 0), 8, "Trail running de 50 kilómetros"), 
-            ("30k", "Mountain 30K", "30 km", QTime(6, 0), 6, "Carrera de montaña 30K"),
-            ("21k", "Half Marathon", "21 km", QTime(9, 0), 4, "Media maratón")
+            ("100k", "Ultra 100K", 100000.0, 5, "Ultramaratón de 100 kilómetros"),
+            ("50k", "Trail 50K", 50000.0, 3, "Trail running de 50 kilómetros"),
+            ("30k", "Mountain 30K", 30000.0, 2, "Carrera de montaña 30K"),
+            ("21k", "Half Marathon", 21000.0, 1, "Media maratón")
         ]
-        
-        for cat_id, name, distance, start_time, duration, desc in categories:
-            # Convertir QTime a time
-            start_time_py = time(start_time.hour(), start_time.minute())
-            category = RaceCategory(cat_id, name, distance, start_time_py, duration, desc)
-            self.event_manager.add_category(category)
-        
+
+        for cat_id, name, distance_m, checkpoints, desc in categories:
+            category = RaceCategory(
+                category_id=cat_id,
+                name=name,
+                distance=distance_m,
+                expected_checkpoints=checkpoints,
+                participants=[],
+                status=RaceStatus.PENDING,
+                notes=desc
+            )
+            try:
+                self.race_manager.add_category(category)
+            except ValueError as e:
+                logger.warning(f"No se pudo agregar categoría {cat_id}: {e}")
+
         self.refresh_categories_table()
         self.refresh_category_combo()
         
@@ -168,7 +181,7 @@ class EventConfigWidget(QWidget):
         dialog = CategoryDialog(self)
         if dialog.exec():
             category = dialog.get_category()
-            self.event_manager.add_category(category)
+            self.race_manager.add_category(category)
             self.refresh_categories_table()
             self.refresh_category_combo()
             
@@ -178,17 +191,19 @@ class EventConfigWidget(QWidget):
         if current_row < 0:
             QMessageBox.warning(self, "Error", "Selecciona una categoría para editar")
             return
-            
+
         category_id = self.categories_table.item(current_row, 0).text()
-        category = self.event_manager.categories.get(category_id)
-        
+        category = self.race_manager.get_category(category_id)
+
         if category:
-            dialog = CategoryDialog(self, category)
-            if dialog.exec():
-                updated_category = dialog.get_category()
-                self.event_manager.add_category(updated_category)  # Sobrescribe
-                self.refresh_categories_table()
-                self.refresh_category_combo()
+            # TODO: Implementar diálogo de edición para el nuevo modelo
+            QMessageBox.information(self, "Info", "Edición de categorías próximamente")
+            # dialog = CategoryDialog(self, category)
+            # if dialog.exec():
+            #     updated_category = dialog.get_category()
+            #     self.race_manager.add_category(updated_category)
+            #     self.refresh_categories_table()
+            #     self.refresh_category_combo()
                 
     def delete_selected_category(self):
         """Eliminar categoría seleccionada"""
@@ -204,16 +219,16 @@ class EventConfigWidget(QWidget):
                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
         if reply == QMessageBox.StandardButton.Yes:
-            self.event_manager.remove_category(category_id)
+            self.race_manager.remove_category(category_id)
             self.refresh_categories_table()
             self.refresh_category_combo()
             
     def load_preset_categories(self):
         """Cargar categorías predefinidas"""
         # Limpiar categorías existentes
-        category_ids = list(self.event_manager.categories.keys())
+        category_ids = list(self.race_manager.categories.keys())
         for cat_id in category_ids:
-            self.event_manager.remove_category(cat_id)
+            self.race_manager.remove_category(cat_id)
             
         # Cargar preset
         self.load_sample_event()
@@ -227,7 +242,7 @@ class EventConfigWidget(QWidget):
             
         category_id = self.categories_table.item(current_row, 0).text()
         
-        if self.event_manager.start_category(category_id):
+        if self.race_manager.start_category(category_id):
             self.refresh_categories_table()
             self.update_active_categories_label()
             self.category_started.emit(category_id)
@@ -241,7 +256,7 @@ class EventConfigWidget(QWidget):
             
         category_id = self.categories_table.item(current_row, 0).text()
         
-        if self.event_manager.finish_category(category_id):
+        if self.race_manager.finish_category(category_id):
             self.refresh_categories_table()
             self.update_active_categories_label()
             self.category_finished.emit(category_id)
@@ -251,62 +266,90 @@ class EventConfigWidget(QWidget):
         chip_id = self.chip_id_input.text().strip()
         category_id = self.participant_category_combo.currentText().split(" - ")[0] if self.participant_category_combo.currentText() else ""
         participant_name = self.participant_name_input.text().strip()
-        
+
         if not chip_id or not category_id:
             QMessageBox.warning(self, "Error", "Completa Chip ID y Categoría")
             return
-            
+
         try:
-            self.event_manager.register_participant(chip_id, category_id, participant_name)
+            # Obtener categoría
+            category = self.race_manager.get_category(category_id)
+            if not category:
+                raise ValueError(f"Categoría {category_id} no existe")
+
+            # Generar dorsal automático (siguiente disponible)
+            existing_bibs = [p.bib_number for p in category.participants]
+            next_bib = max(existing_bibs) + 1 if existing_bibs else 1
+
+            # Crear atleta
+            athlete = Athlete(
+                tag_id=chip_id,
+                bib_number=next_bib,
+                name=participant_name if participant_name else f"Corredor-{chip_id}",
+                category_id=category_id
+            )
+
+            # Agregar a categoría
+            category.add_participant(athlete)
+
             self.chip_id_input.clear()
             self.participant_name_input.clear()
             self.refresh_categories_table()  # Actualizar conteo de participantes
-            QMessageBox.information(self, "Éxito", f"Participante {chip_id} registrado en {category_id}")
+            QMessageBox.information(self, "Éxito",
+                                  f"Participante {athlete.name} (#{next_bib}) registrado en {category_id}")
+            logger.info(f"✅ Atleta registrado: {athlete.name} (Chip: {chip_id}, Dorsal: {next_bib})")
+
         except ValueError as e:
             QMessageBox.warning(self, "Error", str(e))
+            logger.error(f"❌ Error registrando participante: {e}")
             
     def refresh_categories_table(self):
         """Actualizar tabla de categorías"""
         self.categories_table.setRowCount(0)
-        
-        for cat_id in self.event_manager.get_categories_by_time():
-            info = self.event_manager.get_category_info(cat_id)
-            category = info['category']
-            status = info['status']
-            participant_count = info['participant_count']
-            
+
+        for category in self.race_manager.get_all_categories():
             row = self.categories_table.rowCount()
             self.categories_table.insertRow(row)
-            
-            self.categories_table.setItem(row, 0, QTableWidgetItem(cat_id))
+
+            # Formatear distancia (de metros a km)
+            distance_km = f"{category.distance/1000:.1f} km"
+
+            # Hora de largada (si existe)
+            start_time_str = category.start_time.strftime('%H:%M') if category.start_time else "-"
+
+            # Duración estimada basada en distancia (aproximado: 1 hora cada 10km)
+            est_duration = int(category.distance / 10000) + 1
+
+            self.categories_table.setItem(row, 0, QTableWidgetItem(category.category_id))
             self.categories_table.setItem(row, 1, QTableWidgetItem(category.name))
-            self.categories_table.setItem(row, 2, QTableWidgetItem(category.distance))
-            self.categories_table.setItem(row, 3, QTableWidgetItem(category.start_time.strftime('%H:%M')))
-            self.categories_table.setItem(row, 4, QTableWidgetItem(f"{category.max_duration_hours}h"))
-            
+            self.categories_table.setItem(row, 2, QTableWidgetItem(distance_km))
+            self.categories_table.setItem(row, 3, QTableWidgetItem(start_time_str))
+            self.categories_table.setItem(row, 4, QTableWidgetItem(f"{est_duration}h"))
+
             # Colorear estado
-            status_item = QTableWidgetItem(status.value.title())
-            if status == RaceStatus.ACTIVE:
+            status_item = QTableWidgetItem(category.status.value.title())
+            if category.status == RaceStatus.RUNNING:
                 status_item.setBackground(Qt.GlobalColor.green)
-            elif status == RaceStatus.FINISHED:
+            elif category.status == RaceStatus.FINISHED:
                 status_item.setBackground(Qt.GlobalColor.gray)
             self.categories_table.setItem(row, 5, status_item)
-            
+
+            # Número de participantes
+            participant_count = len(category.participants)
             self.categories_table.setItem(row, 6, QTableWidgetItem(str(participant_count)))
             
     def refresh_category_combo(self):
         """Actualizar combo de categorías"""
         self.participant_category_combo.clear()
-        
-        for cat_id in self.event_manager.get_categories_by_time():
-            category = self.event_manager.categories[cat_id]
-            self.participant_category_combo.addItem(f"{cat_id} - {category.name}")
+
+        for category in self.race_manager.get_all_categories():
+            self.participant_category_combo.addItem(f"{category.category_id} - {category.name}")
             
     def update_active_categories_label(self):
         """Actualizar label de categorías activas"""
-        active = self.event_manager.get_active_categories()
+        active = self.race_manager.get_active_categories()
         if active:
-            names = [self.event_manager.categories[cat_id].name for cat_id in active]
+            names = [cat.name for cat in active]
             self.active_categories_label.setText(f"Categorías activas: {', '.join(names)}")
             self.active_categories_label.setStyleSheet("font-weight: bold; font-size: 14px; color: green;")
         else:
@@ -315,7 +358,7 @@ class EventConfigWidget(QWidget):
             
     def get_event_manager(self):
         """Obtener el manager de eventos"""
-        return self.event_manager
+        return self.race_manager
 
 # Dialog para agregar/editar categorías
 class CategoryDialog(QWidget):

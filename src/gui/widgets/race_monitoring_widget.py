@@ -7,16 +7,15 @@ from datetime import datetime
 
 class RaceMonitoringWidget(QWidget):
     """Widget para monitoreo de carreras en tiempo real"""
-    
+
     # Señales
     refresh_requested = pyqtSignal()
-    
-    def __init__(self):
+
+    def __init__(self, race_manager=None):
         super().__init__()
-        self.race_tracker = None
-        self.event_manager = None
+        self.race_manager = race_manager
         self.setup_ui()
-        
+
         # Timer para actualización automática
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.refresh_all_data)
@@ -167,27 +166,25 @@ class RaceMonitoringWidget(QWidget):
         
         layout.addWidget(events_group)
         
-    def set_race_tracker(self, race_tracker):
-        """Establecer el tracker de carreras"""
-        self.race_tracker = race_tracker
-        if race_tracker:
-            self.event_manager = race_tracker.event_manager
+    def set_race_manager(self, race_manager):
+        """Establecer el race manager"""
+        self.race_manager = race_manager
+        if race_manager:
             self.refresh_category_combo()
             self.system_status_label.setText("Sistema: Conectado")
             self.system_status_label.setStyleSheet("font-weight: bold; color: green;")
         
     def refresh_category_combo(self):
         """Actualizar combo de categorías"""
-        if not self.event_manager:
+        if not self.race_manager:
             return
-            
+
         current_text = self.category_combo.currentText()
         self.category_combo.clear()
         self.category_combo.addItem("Todas las categorías")
-        
-        for cat_id in self.event_manager.get_categories_by_time():
-            category = self.event_manager.categories[cat_id]
-            self.category_combo.addItem(f"{cat_id} - {category.name}")
+
+        for category in self.race_manager.get_all_categories():
+            self.category_combo.addItem(f"{category.category_id} - {category.name}")
             
         # Restaurar selección si es posible
         index = self.category_combo.findText(current_text)
@@ -211,7 +208,7 @@ class RaceMonitoringWidget(QWidget):
             
     def refresh_all_data(self):
         """Actualizar todos los datos"""
-        if not self.race_tracker or not self.event_manager:
+        if not self.race_manager or not self.race_manager:
             return
             
         self.refresh_categories_overview()
@@ -220,54 +217,58 @@ class RaceMonitoringWidget(QWidget):
         
     def refresh_categories_overview(self):
         """Actualizar resumen de categorías"""
-        if not self.event_manager:
+        if not self.race_manager:
             return
-            
+
         self.categories_overview_table.setRowCount(0)
-        
-        for cat_id in self.event_manager.get_categories_by_time():
-            category_info = self.event_manager.get_category_info(cat_id)
-            category = category_info['category']
-            status = category_info['status']
-            
-            # Obtener estadísticas de participantes
-            if self.race_tracker:
-                results = self.race_tracker.get_category_results(cat_id)
-                not_started = len([p for p in results if p.status == 'not_started'])
-                in_progress = len([p for p in results if p.status == 'in_progress'])
-                finished = len([p for p in results if p.status == 'finished'])
-                total_participants = len(results)
-                
-                # Última actividad
-                last_checkpoint = "N/A"
-                if results:
-                    last_active = max((p for p in results if p.last_reading), 
-                                    key=lambda x: x.last_reading.timestamp, default=None)
-                    if last_active and last_active.last_reading:
-                        last_checkpoint = last_active.last_reading.timestamp.strftime('%H:%M:%S')
-            else:
-                not_started = in_progress = finished = total_participants = 0
-                last_checkpoint = "N/A"
-            
+
+        for category in self.race_manager.get_all_categories():
+            # Obtener resultados de esta categoría
+            results = self.race_manager.get_results(category.category_id)
+
+            # Contar por estado
+            from src.core.race_tracking.models import AthleteStatus
+            not_started = len([r for r in results if r.status == AthleteStatus.NOT_STARTED])
+            in_progress = len([r for r in results if r.status == AthleteStatus.RUNNING])
+            finished = len([r for r in results if r.status == AthleteStatus.FINISHED])
+            total_participants = len(results)
+
+            # Última actividad
+            last_checkpoint = "N/A"
+            if results:
+                # Encontrar el último timestamp de cualquier resultado
+                timestamps = []
+                for r in results:
+                    if r.start_time:
+                        timestamps.append(r.start_time)
+                    if r.finish_time:
+                        timestamps.append(r.finish_time)
+                    for cp_time in r.checkpoint_times.values():
+                        timestamps.append(cp_time)
+
+                if timestamps:
+                    last_checkpoint = max(timestamps).strftime('%H:%M:%S')
+
             # Agregar fila
             row = self.categories_overview_table.rowCount()
             self.categories_overview_table.insertRow(row)
-            
-            self.categories_overview_table.setItem(row, 0, QTableWidgetItem(f"{cat_id} - {category.name}"))
-            
+
+            self.categories_overview_table.setItem(row, 0,
+                                                  QTableWidgetItem(f"{category.category_id} - {category.name}"))
+
             # Estado con color
-            status_item = QTableWidgetItem(status.value.title())
-            if status.value == "active":
+            from src.core.race_tracking.models import RaceStatus
+            status_item = QTableWidgetItem(category.status.value.title())
+            if category.status == RaceStatus.RUNNING:
                 status_item.setBackground(Qt.GlobalColor.green)
-            elif status.value == "finished":
+            elif category.status == RaceStatus.FINISHED:
                 status_item.setBackground(Qt.GlobalColor.gray)
             self.categories_overview_table.setItem(row, 1, status_item)
-            
+
             # Hora de inicio
-            start_time = category_info.get('actual_start_time')
-            start_time_str = start_time.strftime('%H:%M:%S') if start_time else "No iniciada"
+            start_time_str = category.start_time.strftime('%H:%M:%S') if category.start_time else "No iniciada"
             self.categories_overview_table.setItem(row, 2, QTableWidgetItem(start_time_str))
-            
+
             self.categories_overview_table.setItem(row, 3, QTableWidgetItem(str(total_participants)))
             self.categories_overview_table.setItem(row, 4, QTableWidgetItem(str(not_started)))
             self.categories_overview_table.setItem(row, 5, QTableWidgetItem(str(in_progress)))
@@ -276,7 +277,7 @@ class RaceMonitoringWidget(QWidget):
             
     def refresh_participants_table(self):
         """Actualizar tabla de participantes"""
-        if not self.race_tracker:
+        if not self.race_manager:
             return
             
         self.participants_table.setRowCount(0)
@@ -293,18 +294,19 @@ class RaceMonitoringWidget(QWidget):
         # Obtener participantes
         all_participants = []
         if selected_category:
-            all_participants = self.race_tracker.get_category_results(selected_category)
+            all_participants = self.race_manager.get_results(selected_category)
         else:
             # Todas las categorías
-            for cat_id in self.event_manager.categories.keys():
-                all_participants.extend(self.race_tracker.get_category_results(cat_id))
+            for category in self.race_manager.get_all_categories():
+                all_participants.extend(self.race_manager.get_results(category.category_id))
         
         # Filtrar por estado
         if status_filter != "todos":
+            from src.core.race_tracking.models import AthleteStatus
             status_map = {
-                "no iniciados": "not_started",
-                "en carrera": "in_progress", 
-                "finalizados": "finished"
+                "no iniciados": AthleteStatus.NOT_STARTED,
+                "en carrera": AthleteStatus.RUNNING,
+                "finalizados": AthleteStatus.FINISHED
             }
             filter_status = status_map.get(status_filter)
             if filter_status:
@@ -314,71 +316,109 @@ class RaceMonitoringWidget(QWidget):
         self.participants_count_label.setText(f"Total: {len(all_participants)} participantes")
         
         # Llenar tabla
-        for participant in all_participants:
+        from src.core.race_tracking.models import AthleteStatus
+        for result in all_participants:
             row = self.participants_table.rowCount()
             self.participants_table.insertRow(row)
-            
-            self.participants_table.setItem(row, 0, QTableWidgetItem(participant.chip_id))
-            self.participants_table.setItem(row, 1, QTableWidgetItem(participant.category_id))
-            
+
+            # Chip ID, Categoría
+            self.participants_table.setItem(row, 0, QTableWidgetItem(result.athlete.tag_id))
+            self.participants_table.setItem(row, 1, QTableWidgetItem(result.category_id))
+
             # Estado con color
-            status_item = QTableWidgetItem(participant.status.replace('_', ' ').title())
-            if participant.status == "in_progress":
+            status_item = QTableWidgetItem(result.status.value.replace('_', ' ').title())
+            if result.status == AthleteStatus.RUNNING:
                 status_item.setBackground(Qt.GlobalColor.yellow)
-            elif participant.status == "finished":
+            elif result.status == AthleteStatus.FINISHED:
                 status_item.setBackground(Qt.GlobalColor.green)
             self.participants_table.setItem(row, 2, status_item)
-            
+
             # Tiempos
-            start_time_str = participant.start_time.strftime('%H:%M:%S') if participant.start_time else "N/A"
+            start_time_str = result.start_time.strftime('%H:%M:%S') if result.start_time else "N/A"
             self.participants_table.setItem(row, 3, QTableWidgetItem(start_time_str))
-            
+
             # Tiempo actual/total
-            if participant.status == "finished" and participant.total_time:
-                time_str = f"{participant.total_time:.1f}s"
-            elif participant.status == "in_progress" and participant.start_time:
-                current_time = (datetime.now() - participant.start_time).total_seconds()
-                time_str = f"{current_time:.1f}s (en curso)"
+            if result.status == AthleteStatus.FINISHED and result.total_time:
+                time_str = result.get_formatted_time()
+            elif result.status == AthleteStatus.RUNNING and result.start_time:
+                current_time = (datetime.now() - result.start_time).total_seconds()
+                minutes = int(current_time // 60)
+                seconds = int(current_time % 60)
+                time_str = f"{minutes:02d}:{seconds:02d} (en curso)"
             else:
                 time_str = "N/A"
             self.participants_table.setItem(row, 4, QTableWidgetItem(time_str))
-            
-            self.participants_table.setItem(row, 5, QTableWidgetItem(str(participant.checkpoints_passed)))
-            
-            # Última lectura
-            if participant.last_reading:
-                last_reading_str = participant.last_reading.timestamp.strftime('%H:%M:%S')
-                antenna_str = str(participant.last_reading.antenna_id)
-            else:
-                last_reading_str = "N/A"
-                antenna_str = "N/A"
-                
+
+            # Checkpoints
+            checkpoints_passed = len(result.checkpoint_times)
+            self.participants_table.setItem(row, 5, QTableWidgetItem(str(checkpoints_passed)))
+
+            # Última lectura (último timestamp conocido)
+            last_time = None
+            last_antenna = "N/A"
+            if result.finish_time:
+                last_time = result.finish_time
+                last_antenna = "Finish"
+            elif result.checkpoint_times:
+                last_checkpoint = max(result.checkpoint_times.keys())
+                last_time = result.checkpoint_times[last_checkpoint]
+                last_antenna = f"CP{last_checkpoint}"
+            elif result.start_time:
+                last_time = result.start_time
+                last_antenna = "Start"
+
+            last_reading_str = last_time.strftime('%H:%M:%S') if last_time else "N/A"
+
             self.participants_table.setItem(row, 6, QTableWidgetItem(last_reading_str))
-            self.participants_table.setItem(row, 7, QTableWidgetItem(antenna_str))
+            self.participants_table.setItem(row, 7, QTableWidgetItem(last_antenna))
             
     def refresh_statistics(self):
         """Actualizar estadísticas"""
-        if not self.race_tracker:
+        if not self.race_manager:
             return
-            
-        system_status = self.race_tracker.get_system_status()
-        
+
+        # Calcular estadísticas
+        active_categories = self.race_manager.get_active_categories()
+        all_categories = self.race_manager.get_all_categories()
+
+        total_participants = 0
+        total_in_race = 0
+        total_finished = 0
+        total_detections = len(self.race_manager.detection_history)
+
+        from src.core.race_tracking.models import AthleteStatus
+
         stats_text = f"""ESTADÍSTICAS DEL SISTEMA
 {'='*30}
-Categorías activas: {len(system_status['active_categories'])}
-Participantes registrados: {system_status['registered_participants']}
-Antenas configuradas: {system_status['configured_antennas']}
-Total de lecturas: {system_status['total_readings']}
+Categorías activas: {len(active_categories)}
+Total de categorías: {len(all_categories)}
+Total de detecciones: {total_detections}
 
-PARTICIPANTES ACTIVOS POR CATEGORÍA:
+PARTICIPANTES POR CATEGORÍA:
 """
-        
-        for cat_id, count in system_status['active_participants'].items():
-            category_name = self.event_manager.categories[cat_id].name
-            stats_text += f"• {cat_id} ({category_name}): {count} en carrera\n"
-            
-        stats_text += f"\nÚltima actualización: {datetime.now().strftime('%H:%M:%S')}"
-        
+
+        for category in all_categories:
+            results = self.race_manager.get_results(category.category_id)
+            num_participants = len(results)
+            num_running = len([r for r in results if r.status == AthleteStatus.RUNNING])
+            num_finished = len([r for r in results if r.status == AthleteStatus.FINISHED])
+
+            total_participants += num_participants
+            total_in_race += num_running
+            total_finished += num_finished
+
+            stats_text += f"• {category.name}:\n"
+            stats_text += f"  - Inscritos: {num_participants}\n"
+            stats_text += f"  - En carrera: {num_running}\n"
+            stats_text += f"  - Finalizados: {num_finished}\n\n"
+
+        stats_text += f"""TOTALES:
+- Total inscritos: {total_participants}
+- Total en carrera: {total_in_race}
+- Total finalizados: {total_finished}
+
+Última actualización: {datetime.now().strftime('%H:%M:%S')}"""
+
         self.statistics_text.setPlainText(stats_text)
         
     def log_event(self, message):

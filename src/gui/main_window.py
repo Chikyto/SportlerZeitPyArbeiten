@@ -9,12 +9,13 @@ Delegación: AntennaManager para antenas, TabManager para tabs
 """
 
 import logging
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, 
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                             QTabWidget, QLabel, QMessageBox)
 from PyQt6.QtCore import pyqtSlot
 
 from src.utils.signals import AppSignals
 from ..core.advanced_scanner import AdvancedYR8900Scanner
+from ..core.race_tracking.race_manager import RaceManager
 from .managers.antenna_manager import AntennaManager
 from .managers.tab_manager import TabManager
 
@@ -34,23 +35,24 @@ class MainWindow(QMainWindow):
     
     def __init__(self, wizard_config=None):
         super().__init__()
-        
+
         # Configuración y managers
         self.wizard_config = self._normalize_config(wizard_config)
         self.antenna_manager = AntennaManager(self.wizard_config)
+        self.race_manager = RaceManager()  # Sistema de timing de carreras
         self.signals = AppSignals()
         self.scanner = None
-        
+
         # Setup
         self.setWindowTitle("RFID Athletics Timer")
         self.setMinimumSize(1200, 800)
-        
+
         # Orden crítico de inicialización
         self.setup_ui()           # 1. Crear UI básica
         self.setup_scanner()      # 2. Configurar scanner
         self.apply_config()       # 3. Aplicar config a tabs
         self.connect_signals()    # 4. Conectar señales
-        
+
         logger.info("✅ MainWindow inicializado correctamente")
     
     def _normalize_config(self, config):
@@ -104,7 +106,8 @@ class MainWindow(QMainWindow):
             self.tab_widget,
             self.signals,
             self.scanner,
-            self.antenna_manager
+            self.antenna_manager,
+            self.race_manager
         )
         self.tab_manager.create_all_tabs()
         
@@ -184,10 +187,13 @@ class MainWindow(QMainWindow):
     def connect_signals(self):
         """Conectar señales del sistema"""
         logger.info("🔌 Conectando señales...")
-        
+
         # Señal de estado de conexión
         self.signals.connection_status_changed.connect(self.on_connection_status_changed)
-        
+
+        # Señal de detección de tags → RaceManager
+        self.signals.tag_detected.connect(self.on_tag_detected_for_race)
+
         logger.info("✅ Señales conectadas")
     
     @pyqtSlot(bool, str)
@@ -199,6 +205,53 @@ class MainWindow(QMainWindow):
         else:
             self.status_label.setText(f"✗ {message}")
             logger.warning(f"✗ {message}")
+
+    @pyqtSlot(dict)
+    def on_tag_detected_for_race(self, tag_data):
+        """
+        Procesar detección de tag para sistema de carreras
+
+        Args:
+            tag_data: Dict con información del tag procesado
+                {
+                    'tag_id': str,
+                    'antenna_port': int,
+                    'roles': List[str],
+                    'antenna_name': str,
+                    'timestamp': datetime
+                }
+        """
+        try:
+            # Extraer datos necesarios
+            tag_id = tag_data.get('tag_id')
+            antenna_port = tag_data.get('antenna')  # o 'antenna_port'
+            if not antenna_port:
+                antenna_port = tag_data.get('antenna_port')
+            timestamp = tag_data.get('timestamp')
+            roles = tag_data.get('roles', [])
+
+            # Validar datos mínimos
+            if not tag_id or not antenna_port or not timestamp:
+                logger.warning(f"⚠️  Detección incompleta: {tag_data}")
+                return
+
+            # Procesar con RaceManager
+            event = self.race_manager.process_detection(
+                tag_id=tag_id,
+                timestamp=timestamp,
+                antenna_port=antenna_port,
+                roles=roles
+            )
+
+            if event:
+                logger.info(f"🏁 Evento procesado: {event}")
+            else:
+                logger.debug(f"Tag {tag_id} detectado pero sin evento de carrera asociado")
+
+        except Exception as e:
+            logger.error(f"❌ Error procesando detección para carrera: {e}")
+            import traceback
+            traceback.print_exc()
     
     # ========================================================================
     # Métodos de acceso (delegan a AntennaManager)
