@@ -559,13 +559,112 @@ class ChipAssignmentWidget(QWidget):
             logger.info(f"🗑️ Asignación limpiada para {self.selected_athlete.name}")
 
     def import_from_web(self):
-        """Importar atletas desde el sistema web"""
-        # TODO: Implementar diálogo de configuración
+        """Importar atletas desde CSV o API web"""
+        from PyQt6.QtWidgets import QFileDialog
+
+        # Diálogo para elegir método
+        reply = QMessageBox.question(
+            self,
+            "Método de Importación",
+            "¿Cómo deseas importar los atletas?\n\n"
+            "• CSV: Archivo exportado desde Firebase\n"
+            "• API: Conectar directamente a Cloud Run",
+            QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Open
+        )
+
+        if reply == QMessageBox.StandardButton.Cancel:
+            return
+
+        if reply == QMessageBox.StandardButton.Open:
+            # Importar desde CSV
+            self.import_from_csv()
+        elif reply == QMessageBox.StandardButton.Apply:
+            # Importar desde API
+            self.import_from_api()
+
+    def import_from_csv(self):
+        """Importar desde archivo CSV"""
+        from PyQt6.QtWidgets import QFileDialog
+        from src.core.csv_importer import CSVAthleteImporter
+
+        # Seleccionar archivo
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar archivo CSV de inscriptos",
+            "",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            # Crear importador
+            importer = CSVAthleteImporter()
+
+            # Importar
+            athletes_by_cat = importer.import_from_csv(
+                csv_path=file_path,
+                encoding='utf-8',
+                filter_approved=True
+            )
+
+            # Crear categorías
+            categories = importer.create_categories()
+
+            # Agregar a race_manager
+            for category in categories:
+                # Verificar si ya existe
+                existing = self.race_manager.get_category(category.category_id)
+                if existing:
+                    # Agregar participantes a categoría existente
+                    for athlete in category.participants:
+                        try:
+                            existing.add_participant(athlete)
+                        except ValueError as e:
+                            logger.warning(f"No se pudo agregar {athlete.name}: {e}")
+                else:
+                    # Agregar categoría nueva
+                    self.race_manager.add_category(category)
+
+            # Actualizar tabla
+            self.refresh_athletes_table()
+            self.refresh_category_filter()
+
+            # Mostrar resumen
+            total = sum(len(athletes_by_cat[cat.category_id]) for cat in categories if cat.category_id in athletes_by_cat)
+
+            QMessageBox.information(
+                self,
+                "Importación Exitosa",
+                f"✅ Importados desde CSV:\n\n"
+                f"• {len(categories)} categorías\n"
+                f"• {total} atletas\n"
+                f"• Dorsales asignados automáticamente\n\n"
+                f"Ahora puedes asignar chips RFID a cada corredor."
+            )
+
+            logger.info(f"✅ Importación CSV completa: {total} atletas en {len(categories)} categorías")
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error importando CSV:\n{str(e)}\n\n"
+                f"Verifica que el archivo tenga el formato correcto."
+            )
+            logger.error(f"❌ Error importando CSV: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def import_from_api(self):
+        """Importar desde Cloud Run API"""
         QMessageBox.information(
             self,
-            "Importación",
-            "Funcionalidad de importación próximamente.\n\n"
-            "Por ahora, usa el script de importación manual."
+            "API Cloud Run",
+            "Importación desde Cloud Run próximamente.\n\n"
+            "Por ahora, usa importación desde CSV exportado de Firebase."
         )
 
     def save_assignments(self):
