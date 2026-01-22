@@ -16,7 +16,7 @@ Versión: 1.2.0
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-from models import Athlete, RaceCategory, DetectionEvent, AthleteResult, AthleteStatus, RaceStatus, EventType
+from .models import Athlete, RaceCategory, DetectionEvent, AthleteResult, AthleteStatus, RaceStatus, EventType
 
 logger = logging.getLogger(__name__)
 
