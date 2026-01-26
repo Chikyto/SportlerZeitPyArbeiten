@@ -603,15 +603,41 @@ class ChipAssignmentWidget(QWidget):
             # Crear importador
             importer = CSVAthleteImporter()
 
-            # Importar
-            athletes_by_cat = importer.import_from_csv(
-                csv_path=file_path,
-                encoding='utf-8',
-                filter_approved=True
-            )
+            # Importar con diferentes encodings si falla
+            athletes_by_cat = None
+            encodings_to_try = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+
+            for encoding in encodings_to_try:
+                try:
+                    logger.info(f"Intentando importar con encoding: {encoding}")
+                    athletes_by_cat = importer.import_from_csv(
+                        csv_path=file_path,
+                        encoding=encoding,
+                        filter_approved=True
+                    )
+                    logger.info(f"✅ Importación exitosa con encoding: {encoding}")
+                    break
+                except UnicodeDecodeError:
+                    logger.warning(f"⚠️  Encoding {encoding} falló, probando siguiente...")
+                    continue
+
+            if athletes_by_cat is None:
+                raise ValueError("No se pudo leer el archivo con ningún encoding soportado")
+
+            # Verificar si se importó algo
+            if not athletes_by_cat:
+                raise ValueError(
+                    "No se importaron atletas. Verifica:\n"
+                    "1. Que el CSV tenga datos\n"
+                    "2. Que la columna 'Estado Pago' contenga 'Aprobado' o 'Approved'\n"
+                    "3. Que las columnas 'Nombre', 'Apellido' y 'Distancia' tengan datos"
+                )
 
             # Crear categorías
             categories = importer.create_categories()
+
+            if not categories:
+                raise ValueError("No se pudieron crear categorías. Verifica la columna 'Distancia' en el CSV.")
 
             # Agregar a race_manager
             for category in categories:
@@ -632,8 +658,8 @@ class ChipAssignmentWidget(QWidget):
             self.refresh_athletes_table()
             self.refresh_category_filter()
 
-            # Mostrar resumen
-            total = sum(len(athletes_by_cat[cat.category_id]) for cat in categories if cat.category_id in athletes_by_cat)
+            # Mostrar resumen (calcular total correctamente)
+            total = sum(len(cat.participants) for cat in categories)
 
             QMessageBox.information(
                 self,

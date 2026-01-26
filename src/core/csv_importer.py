@@ -97,9 +97,17 @@ class CSVAthleteImporter:
             with open(csv_path, 'r', encoding=encoding) as f:
                 reader = csv.DictReader(f, delimiter=delimiter)
 
+                # Log columnas detectadas
+                if reader.fieldnames:
+                    logger.info(f"📋 Columnas detectadas en CSV: {', '.join(reader.fieldnames)}")
+                else:
+                    logger.warning("⚠️  No se detectaron columnas en el CSV")
+
                 row_count = 0
                 imported_count = 0
                 skipped_count = 0
+                skipped_payment = 0
+                skipped_error = 0
 
                 for row in reader:
                     row_count += 1
@@ -109,8 +117,9 @@ class CSVAthleteImporter:
                         if filter_approved:
                             estado_pago = row.get('Estado Pago', '').strip().lower()
                             if estado_pago not in ['approved', 'aprobado', 'confirmado']:
-                                logger.debug(f"⏭️  Fila {row_count}: Pago no aprobado ({estado_pago})")
-                                skipped_count += 1
+                                if row_count <= 5:  # Log las primeras 5
+                                    logger.info(f"⏭️  Fila {row_count}: Pago no aprobado ('{estado_pago}')")
+                                skipped_payment += 1
                                 continue
 
                         # Crear atleta
@@ -124,16 +133,19 @@ class CSVAthleteImporter:
 
                             self.athletes_by_category[cat_id].append(athlete)
                             imported_count += 1
+                        else:
+                            skipped_error += 1
 
                     except Exception as e:
                         logger.error(f"❌ Error en fila {row_count}: {e}")
-                        skipped_count += 1
+                        skipped_error += 1
                         continue
 
             logger.info(f"✅ Importación completa:")
             logger.info(f"   • Total filas: {row_count}")
             logger.info(f"   • Importados: {imported_count}")
-            logger.info(f"   • Omitidos: {skipped_count}")
+            logger.info(f"   • Omitidos por pago: {skipped_payment}")
+            logger.info(f"   • Omitidos por error: {skipped_error}")
 
             for cat_id, athletes in self.athletes_by_category.items():
                 logger.info(f"   • {cat_id}: {len(athletes)} atletas")
