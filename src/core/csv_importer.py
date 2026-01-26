@@ -204,8 +204,12 @@ class CSVAthleteImporter:
             category_info = self.DISTANCE_MAPPING[distancia]
             category_id = category_info['category_id']
 
-            # Intentar leer dorsal del CSV (columna "N°")
-            bib_from_csv = row.get('N°', '').strip() or row.get('Nº', '').strip() or row.get('Pecho', '').strip()
+            # Intentar leer dorsal del CSV (columna "N° Pecho", "N°", etc.)
+            bib_from_csv = (row.get('N° Pecho', '').strip() or
+                           row.get('N°', '').strip() or
+                           row.get('Nº', '').strip() or
+                           row.get('Pecho', '').strip() or
+                           row.get('Dorsal', '').strip())
 
             if bib_from_csv and bib_from_csv.isdigit():
                 # Usar dorsal del CSV
