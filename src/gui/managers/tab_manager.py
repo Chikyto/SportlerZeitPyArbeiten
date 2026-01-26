@@ -47,12 +47,18 @@ class TabManager:
     def set_scanner(self, scanner):
         """
         Establecer scanner (para cuando se inicializa después)
-        
+
         Args:
             scanner: Instancia de AdvancedYR8900Scanner
         """
         self.scanner = scanner
         logger.info("🔄 Scanner asignado a TabManager")
+
+        # Actualizar scanner en tabs que ya existen
+        if 'chip_assignment' in self.tabs:
+            chip_widget = self.tabs['chip_assignment']
+            chip_widget.scanner = scanner
+            logger.info("✅ Scanner actualizado en ChipAssignmentWidget")
     
     def set_antenna_manager(self, antenna_manager):
         """
@@ -127,7 +133,8 @@ class TabManager:
 
         chip_widget = ChipAssignmentWidget(
             race_manager=self.race_manager,
-            scanner=self.scanner
+            scanner=self.scanner,
+            signals=self.signals
         )
         self.tab_widget.addTab(chip_widget, "🏷️ Asignación de Chips")
         self.tabs['chip_assignment'] = chip_widget

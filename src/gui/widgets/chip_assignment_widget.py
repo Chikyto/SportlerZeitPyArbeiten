@@ -39,16 +39,21 @@ class ChipAssignmentWidget(QWidget):
     chip_scanned = pyqtSignal(str)  # chip_id
     assignment_completed = pyqtSignal()
 
-    def __init__(self, race_manager=None, scanner=None):
+    def __init__(self, race_manager=None, scanner=None, signals=None):
         super().__init__()
         self.race_manager = race_manager
         self.scanner = scanner
+        self.signals = signals
         self.scan_mode = False
         self.selected_athlete = None
         self.assignments = {}  # {athlete_id: chip_id}
 
         self.setup_ui()
         self.refresh_athletes_table()
+
+        # Conectar señal global de tags detectados
+        if self.signals:
+            self.signals.tag_detected.connect(self.on_chip_scanned)
 
     def setup_ui(self):
         """Configurar interfaz"""
@@ -473,17 +478,27 @@ class ChipAssignmentWidget(QWidget):
         """Detener modo de escaneo"""
         logger.info("⏸️ Modo de escaneo desactivado")
 
-    @pyqtSlot(str)
-    def on_chip_scanned(self, chip_id: str):
+    @pyqtSlot(dict)
+    def on_chip_scanned(self, tag_info: dict):
         """
         Callback cuando se escanea un chip
 
-        Conectar esto con la señal del scanner
+        Args:
+            tag_info: Dict con información del tag (tag_id, antenna_port, timestamp, etc.)
         """
-        if not self.scan_mode or not self.selected_athlete:
+        # Extraer chip_id del dict
+        chip_id = tag_info.get('tag_id') or tag_info.get('epc', '')
+
+        if not chip_id:
+            logger.warning("⚠️  Tag detectado pero sin ID válido")
             return
 
-        logger.info(f"📡 Chip escaneado: {chip_id}")
+        # Solo procesar si estamos en modo escaneo y hay atleta seleccionado
+        if not self.scan_mode or not self.selected_athlete:
+            logger.debug(f"📡 Chip detectado: {chip_id} (ignorado - no en modo asignación)")
+            return
+
+        logger.info(f"📡 Chip escaneado para asignación: {chip_id}")
 
         # Detener escaneo
         self.toggle_scan_mode()
