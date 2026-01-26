@@ -234,7 +234,12 @@ class ChipAssignmentWidget(QWidget):
         self.import_button.clicked.connect(self.import_from_web)
         bottom_buttons.addWidget(self.import_button)
 
-        self.export_button = QPushButton("💾 Guardar Asignaciones")
+        self.import_assignments_button = QPushButton("📤 Importar Asignaciones")
+        self.import_assignments_button.setToolTip("Importar chips ya asignados desde CSV externo")
+        self.import_assignments_button.clicked.connect(self.import_assignments_from_csv)
+        bottom_buttons.addWidget(self.import_assignments_button)
+
+        self.export_button = QPushButton("💾 Exportar Asignaciones")
         self.export_button.clicked.connect(self.save_assignments)
         bottom_buttons.addWidget(self.export_button)
 
@@ -708,14 +713,200 @@ class ChipAssignmentWidget(QWidget):
             "Por ahora, usa importación desde CSV exportado de Firebase."
         )
 
-    def save_assignments(self):
-        """Guardar asignaciones a archivo"""
-        # TODO: Implementar exportación
-        QMessageBox.information(
+    def import_assignments_from_csv(self):
+        """Importar asignaciones de chips desde CSV externo"""
+        from PyQt6.QtWidgets import QFileDialog
+        import csv
+
+        # Seleccionar archivo
+        file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Guardar",
-            "Asignaciones guardadas exitosamente."
+            "Seleccionar CSV con Asignaciones",
+            "",
+            "CSV Files (*.csv);;All Files (*)"
         )
+
+        if not file_path:
+            return
+
+        try:
+            updated = 0
+            not_found = 0
+            errors = []
+
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+
+                # Verificar que tenga las columnas necesarias
+                required_cols = ['Dorsal', 'Chip RFID']
+                if not all(col in reader.fieldnames for col in required_cols):
+                    raise ValueError(
+                        f"El CSV debe tener las columnas: {', '.join(required_cols)}\n"
+                        f"Columnas encontradas: {', '.join(reader.fieldnames)}"
+                    )
+
+                for row in reader:
+                    dorsal = row.get('Dorsal', '').strip()
+                    chip_id = row.get('Chip RFID', '').strip()
+
+                    if not dorsal or not chip_id:
+                        continue
+
+                    try:
+                        dorsal_num = int(dorsal)
+                    except ValueError:
+                        errors.append(f"Dorsal inválido: {dorsal}")
+                        continue
+
+                    # Buscar atleta por dorsal
+                    found = False
+                    for category in self.race_manager.get_all_categories():
+                        for athlete in category.participants:
+                            if athlete.bib_number == dorsal_num:
+                                # Verificar que el chip no esté usado
+                                chip_in_use = False
+                                for cat in self.race_manager.get_all_categories():
+                                    for ath in cat.participants:
+                                        if ath.tag_id == chip_id and ath.athlete_id != athlete.athlete_id:
+                                            chip_in_use = True
+                                            break
+                                    if chip_in_use:
+                                        break
+
+                                if chip_in_use:
+                                    errors.append(f"Chip {chip_id} ya asignado a otro atleta")
+                                else:
+                                    # Asignar chip
+                                    athlete.tag_id = chip_id
+                                    updated += 1
+                                    logger.info(f"✓ Chip {chip_id} asignado a {athlete.name} (#{dorsal_num})")
+
+                                found = True
+                                break
+                        if found:
+                            break
+
+                    if not found:
+                        not_found += 1
+                        errors.append(f"Atleta con dorsal {dorsal_num} no encontrado")
+
+            # Actualizar tabla
+            self.refresh_athletes_table()
+            self.update_stats()
+
+            # Mostrar resultado
+            msg = f"✅ Importación completada:\n\n"
+            msg += f"• Chips asignados: {updated}\n"
+            if not_found > 0:
+                msg += f"• No encontrados: {not_found}\n"
+            if errors:
+                msg += f"\n⚠️ Advertencias:\n"
+                msg += '\n'.join(errors[:5])  # Mostrar solo las primeras 5
+                if len(errors) > 5:
+                    msg += f"\n... y {len(errors) - 5} más"
+
+            if updated > 0:
+                QMessageBox.information(self, "Importación Completada", msg)
+            else:
+                QMessageBox.warning(self, "Sin Cambios", msg)
+
+            logger.info(f"✅ Importación de asignaciones: {updated} actualizados, {not_found} no encontrados")
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error importando asignaciones:\n{str(e)}"
+            )
+            logger.error(f"❌ Error importando asignaciones: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def save_assignments(self):
+        """Exportar asignaciones de chips a CSV"""
+        from PyQt6.QtWidgets import QFileDialog
+        import csv
+        from datetime import datetime
+
+        # Seleccionar archivo de salida
+        default_name = f"asignaciones_chips_{datetime.now().strftime('%Y-%m-%d_%H%M')}.csv"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exportar Asignaciones de Chips",
+            default_name,
+            "CSV Files (*.csv);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+
+                # Header
+                writer.writerow([
+                    'Dorsal', 'Nombre', 'Categoría', 'Chip RFID', 'Estado',
+                    'DNI', 'Email', 'Teléfono', 'Notas'
+                ])
+
+                # Datos de todos los atletas
+                for category in self.race_manager.get_all_categories():
+                    for athlete in category.participants:
+                        # Extraer info adicional de las notas
+                        dni = email = telefono = ''
+                        if athlete.notes:
+                            for part in athlete.notes.split('|'):
+                                part = part.strip()
+                                if part.startswith('DNI:'):
+                                    dni = part.replace('DNI:', '').strip()
+                                elif part.startswith('Email:'):
+                                    email = part.replace('Email:', '').strip()
+                                elif part.startswith('Tel:'):
+                                    telefono = part.replace('Tel:', '').strip()
+
+                        estado = '✅ Asignado' if athlete.has_chip_assigned() else '⏳ Pendiente'
+
+                        writer.writerow([
+                            athlete.bib_number,
+                            athlete.name,
+                            category.name,
+                            athlete.tag_id or '',
+                            estado,
+                            dni,
+                            email,
+                            telefono,
+                            athlete.notes or ''
+                        ])
+
+            # Contar asignaciones
+            total = 0
+            assigned = 0
+            for category in self.race_manager.get_all_categories():
+                for athlete in category.participants:
+                    total += 1
+                    if athlete.has_chip_assigned():
+                        assigned += 1
+
+            QMessageBox.information(
+                self,
+                "Exportación Exitosa",
+                f"✅ Asignaciones exportadas:\n\n"
+                f"• Total atletas: {total}\n"
+                f"• Con chip asignado: {assigned}\n"
+                f"• Pendientes: {total - assigned}\n\n"
+                f"Archivo guardado en:\n{file_path}"
+            )
+
+            logger.info(f"✅ Asignaciones exportadas a: {file_path}")
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error exportando asignaciones:\n{str(e)}"
+            )
+            logger.error(f"❌ Error exportando asignaciones: {e}")
 
     def update_stats(self):
         """Actualizar panel de estadísticas"""
