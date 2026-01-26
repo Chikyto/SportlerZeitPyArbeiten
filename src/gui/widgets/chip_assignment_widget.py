@@ -532,11 +532,15 @@ class ChipAssignmentWidget(QWidget):
 
         logger.info(f"✅ Chip {chip_id} escaneado para asignación a {self.selected_athlete.name}")
 
+        # IMPORTANTE: Guardar referencia al atleta antes de toggle_scan_mode
+        # porque toggle_scan_mode puede afectar selected_athlete
+        athlete_to_assign = self.selected_athlete
+
         # Detener escaneo
         self.toggle_scan_mode()
 
-        # Asignar chip
-        self.assign_chip(chip_id)
+        # Asignar chip (usando referencia guardada)
+        self._assign_chip_to_athlete(athlete_to_assign, chip_id)
 
     def assign_chip_manually(self):
         """Asignar chip manualmente desde el input"""
@@ -548,32 +552,40 @@ class ChipAssignmentWidget(QWidget):
             QMessageBox.warning(self, "Error", "Ingresa un Chip ID")
             return
 
-        self.assign_chip(chip_id)
+        # Asignar usando referencia local
+        self._assign_chip_to_athlete(self.selected_athlete, chip_id)
 
-    def assign_chip(self, chip_id: str):
-        """Asignar chip a atleta seleccionado"""
-        if not self.selected_athlete:
+    def _assign_chip_to_athlete(self, athlete, chip_id: str):
+        """
+        Asignar chip a un atleta específico (método interno)
+
+        Args:
+            athlete: Objeto Athlete al que asignar el chip
+            chip_id: ID del chip RFID
+        """
+        if not athlete:
+            logger.error("❌ Intento de asignar chip a atleta None")
             return
 
-        # Verificar si el chip ya está asignado
+        # Verificar si el chip ya está asignado a otro atleta
         for category in self.race_manager.get_all_categories():
-            for athlete in category.participants:
-                if athlete.tag_id == chip_id and athlete.athlete_id != self.selected_athlete.athlete_id:
+            for other_athlete in category.participants:
+                if other_athlete.tag_id == chip_id and other_athlete.athlete_id != athlete.athlete_id:
                     QMessageBox.warning(
                         self,
                         "Chip Ya Asignado",
-                        f"El chip {chip_id} ya está asignado a:\n{athlete.name} (#{athlete.bib_number})"
+                        f"El chip {chip_id} ya está asignado a:\n{other_athlete.name} (#{other_athlete.bib_number})"
                     )
                     return
 
-        # Asignar
-        old_chip = self.selected_athlete.tag_id
-        self.selected_athlete.tag_id = chip_id
+        # Asignar chip
+        old_chip = athlete.tag_id
+        athlete.tag_id = chip_id
 
-        logger.info(f"✅ Chip {chip_id} asignado a {self.selected_athlete.name}")
+        logger.info(f"✅ Chip {chip_id} asignado a {athlete.name} (#{athlete.bib_number})")
 
         # Emitir señal
-        self.chip_assigned.emit(self.selected_athlete.athlete_id, chip_id)
+        self.chip_assigned.emit(athlete.athlete_id, chip_id)
 
         # Actualizar tabla
         self.refresh_athletes_table()
@@ -585,7 +597,7 @@ class ChipAssignmentWidget(QWidget):
         QMessageBox.information(
             self,
             "Asignación Exitosa",
-            f"Chip {chip_id} asignado a:\n{self.selected_athlete.name} (#{self.selected_athlete.bib_number})"
+            f"✅ Chip {chip_id} asignado a:\n{athlete.name} (#{athlete.bib_number})"
         )
 
     def clear_assignment(self):
