@@ -11,7 +11,7 @@ importados desde el sistema web.
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QLineEdit, QComboBox, QMessageBox, QSplitter, QTextEdit
+    QLineEdit, QComboBox, QMessageBox, QSplitter, QTextEdit, QRadioButton, QButtonGroup
 )
 from PyQt6.QtCore import pyqtSignal, pyqtSlot, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont
@@ -42,16 +42,20 @@ class ChipAssignmentWidget(QWidget):
     def __init__(self, race_manager=None, scanner=None, signals=None):
         super().__init__()
         self.race_manager = race_manager
-        self.scanner = scanner
+        self.scanner = scanner  # YR8900 (network scanner)
         self.signals = signals
         self.scan_mode = False
         self.selected_athlete = None
         self.assignments = {}  # {athlete_id: chip_id}
 
+        # Lector USB YR9011 para kiosco de asignación
+        self.usb_scanner = None
+        self.scanner_mode = "network"  # "network" o "usb"
+
         self.setup_ui()
         self.refresh_athletes_table()
 
-        # Conectar señal global de tags detectados
+        # Conectar señal global de tags detectados (YR8900)
         if self.signals:
             self.signals.tag_detected.connect(self.on_chip_scanned)
 
@@ -157,6 +161,29 @@ class ChipAssignmentWidget(QWidget):
         mode_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         assignment_layout.addWidget(mode_label)
 
+        # Selector de tipo de lector
+        scanner_type_group = QGroupBox("Tipo de Lector")
+        scanner_type_layout = QVBoxLayout(scanner_type_group)
+
+        self.scanner_button_group = QButtonGroup()
+
+        self.network_scanner_radio = QRadioButton("🌐 Antenas de Competencia (YR8900)")
+        self.network_scanner_radio.setChecked(True)
+        self.network_scanner_radio.toggled.connect(lambda: self.set_scanner_mode("network"))
+        self.scanner_button_group.addButton(self.network_scanner_radio)
+        scanner_type_layout.addWidget(self.network_scanner_radio)
+
+        self.usb_scanner_radio = QRadioButton("🔌 Lector USB Kiosco (YR9011)")
+        self.usb_scanner_radio.toggled.connect(lambda: self.set_scanner_mode("usb"))
+        self.scanner_button_group.addButton(self.usb_scanner_radio)
+        scanner_type_layout.addWidget(self.usb_scanner_radio)
+
+        self.usb_status_label = QLabel("📴 Lector USB no conectado")
+        self.usb_status_label.setStyleSheet("color: #666; font-size: 11px; margin-left: 20px;")
+        scanner_type_layout.addWidget(self.usb_status_label)
+
+        assignment_layout.addWidget(scanner_type_group)
+
         # Botón de escaneo
         self.scan_button = QPushButton("📡 Escanear Chip")
         self.scan_button.setEnabled(False)
@@ -260,6 +287,87 @@ class ChipAssignmentWidget(QWidget):
         self.race_manager = race_manager
         self.refresh_category_filter()
         self.refresh_athletes_table()
+
+    def set_scanner_mode(self, mode: str):
+        """
+        Cambiar modo de scanner
+
+        Args:
+            mode: "network" para YR8900, "usb" para YR9011
+        """
+        self.scanner_mode = mode
+        logger.info(f"🔄 Modo de scanner cambiado a: {mode}")
+
+        if mode == "usb":
+            # Conectar lector USB
+            self.connect_usb_scanner()
+        elif mode == "network":
+            # Desconectar lector USB si está conectado
+            if self.usb_scanner and self.usb_scanner.connected:
+                self.usb_scanner.disconnect()
+
+    def connect_usb_scanner(self):
+        """Conectar lector USB YR9011"""
+        try:
+            from src.core.yr9011_usb_scanner import YR9011USBScanner
+
+            logger.info("📡 Conectando lector USB YR9011...")
+            self.usb_status_label.setText("⏳ Conectando lector USB...")
+
+            # Crear scanner USB
+            self.usb_scanner = YR9011USBScanner()
+
+            # Conectar señales
+            self.usb_scanner.tag_detected.connect(self.on_chip_scanned)
+            self.usb_scanner.error_occurred.connect(self.on_usb_scanner_error)
+
+            # Intentar conectar
+            if self.usb_scanner.connect():
+                self.usb_status_label.setText("✅ Lector USB conectado y listo")
+                self.usb_status_label.setStyleSheet("color: #10b981; font-size: 11px; margin-left: 20px; font-weight: bold;")
+                logger.info("✅ Lector USB YR9011 conectado")
+
+                # Iniciar lectura continua
+                self.usb_scanner.start_continuous_reading()
+            else:
+                self.usb_status_label.setText("❌ No se pudo conectar lector USB")
+                self.usb_status_label.setStyleSheet("color: #ef4444; font-size: 11px; margin-left: 20px;")
+                QMessageBox.warning(
+                    self,
+                    "Lector USB No Disponible",
+                    "No se pudo conectar al lector USB YR9011.\n\n"
+                    "Verifica:\n"
+                    "• Que esté conectado al puerto USB\n"
+                    "• Que los drivers estén instalados\n"
+                    "• Que no esté siendo usado por otra aplicación"
+                )
+                # Volver a modo network
+                self.network_scanner_radio.setChecked(True)
+
+        except ImportError as e:
+            logger.error(f"❌ Error importando YR9011USBScanner: {e}")
+            self.usb_status_label.setText("❌ Error: módulo no disponible")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"No se pudo cargar el driver del lector USB:\n{str(e)}"
+            )
+            self.network_scanner_radio.setChecked(True)
+        except Exception as e:
+            logger.error(f"❌ Error conectando lector USB: {e}")
+            self.usb_status_label.setText(f"❌ Error: {str(e)[:30]}...")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error conectando lector USB:\n{str(e)}"
+            )
+            self.network_scanner_radio.setChecked(True)
+
+    def on_usb_scanner_error(self, error_msg: str):
+        """Manejar errores del lector USB"""
+        logger.error(f"❌ Error lector USB: {error_msg}")
+        self.usb_status_label.setText(f"⚠️ {error_msg[:40]}...")
+        self.usb_status_label.setStyleSheet("color: #f59e0b; font-size: 11px; margin-left: 20px;")
 
     def refresh_category_filter(self):
         """Actualizar combo de categorías"""
@@ -436,13 +544,23 @@ class ChipAssignmentWidget(QWidget):
             )
             return
 
-        if not self.scanner:
-            QMessageBox.warning(
-                self,
-                "Scanner No Disponible",
-                "No hay scanner conectado. Usa asignación manual."
-            )
-            return
+        # Verificar que haya scanner disponible según el modo
+        if self.scanner_mode == "network":
+            if not self.scanner:
+                QMessageBox.warning(
+                    self,
+                    "Scanner No Disponible",
+                    "No hay scanner de red conectado. Cambia a modo USB o usa asignación manual."
+                )
+                return
+        elif self.scanner_mode == "usb":
+            if not self.usb_scanner or not self.usb_scanner.connected:
+                QMessageBox.warning(
+                    self,
+                    "Lector USB No Disponible",
+                    "El lector USB no está conectado. Cambia a modo de red o usa asignación manual."
+                )
+                return
 
         self.scan_mode = not self.scan_mode
 
@@ -487,8 +605,10 @@ class ChipAssignmentWidget(QWidget):
     def start_scanning(self):
         """Iniciar modo de escaneo"""
         athlete_name = self.selected_athlete.name if self.selected_athlete else "???"
+        scanner_type = "YR9011 USB" if self.scanner_mode == "usb" else "YR8900 Network"
         logger.info(f"🔍 Modo de escaneo activado para: {athlete_name}")
         logger.info(f"   • Dorsal: #{self.selected_athlete.bib_number if self.selected_athlete else '?'}")
+        logger.info(f"   • Lector: {scanner_type}")
         logger.info(f"   • Esperando detección de chip...")
 
     def stop_scanning(self):
@@ -983,3 +1103,14 @@ class ChipAssignmentWidget(QWidget):
             stats_text += f"• {cat_name}: {stats['assigned']}/{stats['total']} ({cat_progress:.0f}%)<br>"
 
         self.stats_text.setHtml(stats_text)
+
+    def __del__(self):
+        """Limpieza al destruir widget"""
+        try:
+            # Desconectar lector USB si está conectado
+            if self.usb_scanner and self.usb_scanner.connected:
+                self.usb_scanner.stop_continuous_reading()
+                self.usb_scanner.disconnect()
+                logger.info("✅ Lector USB desconectado")
+        except Exception as e:
+            logger.debug(f"Error en limpieza de widget: {e}")
