@@ -59,16 +59,16 @@ class EventType(Enum):
 class Athlete:
     """
     Participante en una carrera
-    
+
     Attributes:
-        tag_id: ID del chip RFID (ej: "7662")
+        tag_id: ID del chip RFID (ej: "7662") - puede estar vacío si aún no se asignó
         bib_number: Número de dorsal (ej: 101)
         name: Nombre completo del atleta
         category_id: ID de la categoría a la que pertenece
         team: Equipo o club (opcional)
         notes: Notas adicionales (opcional)
         athlete_id: ID único generado automáticamente
-    
+
     Example:
         >>> athlete = Athlete(
         ...     tag_id="7662",
@@ -77,26 +77,32 @@ class Athlete:
         ...     category_id="100m-varones"
         ... )
     """
-    tag_id: str
-    bib_number: int
-    name: str
-    category_id: str
+    tag_id: str = ""  # Vacío por defecto, se asigna luego
+    bib_number: int = 0
+    name: str = ""
+    category_id: str = ""
     team: Optional[str] = None
     notes: Optional[str] = None
     athlete_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    
+
     def __post_init__(self):
         """Validar datos al crear"""
-        if not self.tag_id:
-            raise ValueError("tag_id no puede estar vacío")
-        if self.bib_number <= 0:
-            raise ValueError("bib_number debe ser mayor a 0")
+        # tag_id puede estar vacío (se asigna después)
+        if self.bib_number < 0:
+            raise ValueError("bib_number debe ser mayor o igual a 0")
         if not self.name or not self.name.strip():
             raise ValueError("name no puede estar vacío")
-    
+        if not self.category_id or not self.category_id.strip():
+            raise ValueError("category_id no puede estar vacío")
+
+    def has_chip_assigned(self) -> bool:
+        """Verifica si el atleta tiene chip asignado"""
+        return bool(self.tag_id and self.tag_id.strip())
+
     def __str__(self) -> str:
         """Representación legible"""
-        return f"#{self.bib_number} {self.name} (Tag: {self.tag_id})"
+        chip_info = f"Tag: {self.tag_id}" if self.has_chip_assigned() else "Sin chip"
+        return f"#{self.bib_number} {self.name} ({chip_info})"
     
     def __repr__(self) -> str:
         """Representación para debugging"""
