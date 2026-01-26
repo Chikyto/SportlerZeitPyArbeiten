@@ -192,8 +192,17 @@ class CSVAthleteImporter:
             category_info = self.DISTANCE_MAPPING[distancia]
             category_id = category_info['category_id']
 
-            # Generar dorsal automáticamente
-            bib_number = self._generate_bib_number(category_id)
+            # Intentar leer dorsal del CSV (columna "N°")
+            bib_from_csv = row.get('N°', '').strip() or row.get('Nº', '').strip() or row.get('Pecho', '').strip()
+
+            if bib_from_csv and bib_from_csv.isdigit():
+                # Usar dorsal del CSV
+                bib_number = int(bib_from_csv)
+                logger.debug(f"✓ Fila {row_number}: Usando dorsal del CSV: {bib_number}")
+            else:
+                # Generar dorsal automáticamente
+                bib_number = self._generate_bib_number(category_id)
+                logger.debug(f"⚙️  Fila {row_number}: Generando dorsal automático: {bib_number}")
 
             # Calcular edad
             edad = self._calculate_age(fecha_nacimiento)
