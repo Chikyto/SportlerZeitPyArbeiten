@@ -426,6 +426,16 @@ class ChipAssignmentWidget(QWidget):
 
     def toggle_scan_mode(self):
         """Activar/desactivar modo de escaneo"""
+        # Verificar que haya atleta seleccionado PRIMERO
+        if not self.selected_athlete:
+            QMessageBox.warning(
+                self,
+                "Selecciona un Atleta",
+                "⚠️ Primero selecciona un atleta de la tabla.\n\n"
+                "Luego haz click en 'Escanear Chip' para activar el modo de asignación."
+            )
+            return
+
         if not self.scanner:
             QMessageBox.warning(
                 self,
@@ -449,7 +459,8 @@ class ChipAssignmentWidget(QWidget):
                 }
                 QPushButton:hover { background: #dc2626; }
             """)
-            self.scan_status_label.setText("🔴 ESCANEANDO... Acerca el chip al lector")
+            athlete_name = self.selected_athlete.name if self.selected_athlete else "???"
+            self.scan_status_label.setText(f"🔴 ESCANEANDO para {athlete_name}... Acerca el chip al lector")
             self.scan_status_label.setStyleSheet("color: #ef4444; font-weight: bold;")
 
             # Iniciar escaneo (implementar según tu scanner)
@@ -475,9 +486,10 @@ class ChipAssignmentWidget(QWidget):
 
     def start_scanning(self):
         """Iniciar modo de escaneo"""
-        # TODO: Implementar según tu scanner
-        # Por ahora, simular con timer
-        logger.info("🔍 Modo de escaneo activado")
+        athlete_name = self.selected_athlete.name if self.selected_athlete else "???"
+        logger.info(f"🔍 Modo de escaneo activado para: {athlete_name}")
+        logger.info(f"   • Dorsal: #{self.selected_athlete.bib_number if self.selected_athlete else '?'}")
+        logger.info(f"   • Esperando detección de chip...")
 
     def stop_scanning(self):
         """Detener modo de escaneo"""
@@ -498,12 +510,27 @@ class ChipAssignmentWidget(QWidget):
             logger.warning("⚠️  Tag detectado pero sin ID válido")
             return
 
+        # LOGGING DETALLADO para debugging
+        logger.info(f"📡 Tag detectado: {chip_id}")
+        logger.info(f"   • Modo escaneo activo: {self.scan_mode}")
+        logger.info(f"   • Atleta seleccionado: {self.selected_athlete.name if self.selected_athlete else 'Ninguno'}")
+
         # Solo procesar si estamos en modo escaneo y hay atleta seleccionado
-        if not self.scan_mode or not self.selected_athlete:
-            logger.debug(f"📡 Chip detectado: {chip_id} (ignorado - no en modo asignación)")
+        if not self.scan_mode:
+            logger.warning(f"⚠️  Chip {chip_id} ignorado: Modo escaneo NO activo. Haz click en '📡 Escanear Chip' primero.")
+            # Mostrar notificación visual
+            self.scan_status_label.setText(f"⚠️ Chip detectado ({chip_id[:8]}...) pero modo escaneo NO activo")
+            self.scan_status_label.setStyleSheet("color: #f59e0b; font-weight: bold;")
             return
 
-        logger.info(f"📡 Chip escaneado para asignación: {chip_id}")
+        if not self.selected_athlete:
+            logger.warning(f"⚠️  Chip {chip_id} ignorado: No hay atleta seleccionado. Selecciona un atleta en la tabla primero.")
+            # Mostrar notificación visual
+            self.scan_status_label.setText(f"⚠️ Chip detectado ({chip_id[:8]}...) pero no hay atleta seleccionado")
+            self.scan_status_label.setStyleSheet("color: #f59e0b; font-weight: bold;")
+            return
+
+        logger.info(f"✅ Chip {chip_id} escaneado para asignación a {self.selected_athlete.name}")
 
         # Detener escaneo
         self.toggle_scan_mode()
