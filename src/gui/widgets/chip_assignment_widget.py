@@ -307,41 +307,59 @@ class ChipAssignmentWidget(QWidget):
                 self.usb_scanner.disconnect()
 
     def connect_usb_scanner(self):
-        """Conectar lector USB YR9011"""
+        """Conectar lector USB YR9011 con diálogo de configuración"""
         try:
             from src.core.yr9011_usb_scanner import YR9011USBScanner
+            from src.gui.usb_scanner_config_dialog import USBScannerConfigDialog
 
-            logger.info("📡 Conectando lector USB YR9011...")
-            self.usb_status_label.setText("⏳ Conectando lector USB...")
+            logger.info("📡 Abriendo configuración de lector USB...")
 
-            # Crear scanner USB
-            self.usb_scanner = YR9011USBScanner()
+            # Mostrar diálogo de configuración
+            dialog = USBScannerConfigDialog(self)
 
-            # Conectar señales
-            self.usb_scanner.tag_detected.connect(self.on_chip_scanned)
-            self.usb_scanner.error_occurred.connect(self.on_usb_scanner_error)
+            if dialog.exec() == dialog.DialogCode.Accepted:
+                config = dialog.get_config()
 
-            # Intentar conectar
-            if self.usb_scanner.connect():
-                self.usb_status_label.setText("✅ Lector USB conectado y listo")
-                self.usb_status_label.setStyleSheet("color: #10b981; font-size: 11px; margin-left: 20px; font-weight: bold;")
-                logger.info("✅ Lector USB YR9011 conectado")
+                if not config['port']:
+                    self.usb_status_label.setText("❌ No se seleccionó puerto")
+                    self.network_scanner_radio.setChecked(True)
+                    return
 
-                # Iniciar lectura continua
-                self.usb_scanner.start_continuous_reading()
+                logger.info(f"📡 Conectando a {config['port']} @ {config['baudrate']} bps...")
+                self.usb_status_label.setText(f"⏳ Conectando a {config['port']}...")
+
+                # Crear scanner USB con configuración
+                self.usb_scanner = YR9011USBScanner(port=config['port'])
+
+                # Conectar señales
+                self.usb_scanner.tag_detected.connect(self.on_chip_scanned)
+                self.usb_scanner.error_occurred.connect(self.on_usb_scanner_error)
+
+                # Intentar conectar
+                if self.usb_scanner.connect():
+                    self.usb_status_label.setText(f"✅ Conectado a {config['port']}")
+                    self.usb_status_label.setStyleSheet("color: #10b981; font-size: 11px; margin-left: 20px; font-weight: bold;")
+                    logger.info(f"✅ Lector USB conectado en {config['port']}")
+
+                    # Iniciar lectura continua
+                    self.usb_scanner.start_continuous_reading()
+                else:
+                    self.usb_status_label.setText("❌ No se pudo conectar")
+                    self.usb_status_label.setStyleSheet("color: #ef4444; font-size: 11px; margin-left: 20px;")
+                    QMessageBox.warning(
+                        self,
+                        "Conexión Fallida",
+                        f"No se pudo conectar al puerto {config['port']}.\n\n"
+                        "Verifica que:\n"
+                        "• El puerto sea el correcto\n"
+                        "• No esté siendo usado por otra aplicación\n"
+                        "• El lector esté encendido"
+                    )
+                    # Volver a modo network
+                    self.network_scanner_radio.setChecked(True)
             else:
-                self.usb_status_label.setText("❌ No se pudo conectar lector USB")
-                self.usb_status_label.setStyleSheet("color: #ef4444; font-size: 11px; margin-left: 20px;")
-                QMessageBox.warning(
-                    self,
-                    "Lector USB No Disponible",
-                    "No se pudo conectar al lector USB YR9011.\n\n"
-                    "Verifica:\n"
-                    "• Que esté conectado al puerto USB\n"
-                    "• Que los drivers estén instalados\n"
-                    "• Que no esté siendo usado por otra aplicación"
-                )
-                # Volver a modo network
+                # Usuario canceló
+                logger.info("⏭️ Usuario canceló configuración USB")
                 self.network_scanner_radio.setChecked(True)
 
         except ImportError as e:
