@@ -17,12 +17,41 @@ def calculate_checksum(data):
 
 def build_command(cmd, data=b''):
     """Construir comando INVELION"""
-    address = 0x00
+    address = 0x01
     length = 1 + 1 + len(data)  # Address + Cmd + Data
     packet = bytes([length, address, cmd]) + data
     checksum = calculate_checksum(packet)
     full_cmd = b'\xA0' + packet + bytes([checksum])
     return full_cmd
+
+def parse_inventory_response(response):
+    if len(response) < 7:
+        return None
+
+    if response[0] != 0xA0:
+        return None
+
+    length = response[1]
+    cmd = response[3]
+
+    if cmd != 0x89:
+        return None
+
+    rssi = response[4]
+    pc = response[5]
+
+    epc_length = length - 5  # len - addr - cmd - rssi - pc - checksum
+
+    epc_start = 6
+    epc_end = epc_start + epc_length
+
+    epc = response[epc_start:epc_end]
+
+    return {
+        "rssi": rssi,
+        "pc": pc,
+        "epc": epc.hex().upper()
+    }
 
 def hex_dump(data, label=""):
     """Mostrar bytes en formato legible"""
