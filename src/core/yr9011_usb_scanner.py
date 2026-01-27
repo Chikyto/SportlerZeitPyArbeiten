@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-INVELION YR9011 USB RFID Reader Driver
+INVELION YR9011 USB RFID Reader Driver - PROTOCOLO OFICIAL
 src/core/yr9011_usb_scanner.py
 
-Scanner USB para asignación de chips en lugar de retiro de kits.
-Compatible con INVELION YR9011 - lector UHF RFID de escritorio (10-80cm)
-
-El YR9011 se comunica por USB usando protocolo serial.
+Basado en: YR9010 UHF RFID Serial Interface Protocol User's Guide V 2.38
+Protocolo: 0xA0 [Len][Address][Cmd][Data][Checksum]
+Baudrate: 115200 bps (default)
 """
 
 import serial
@@ -25,36 +24,19 @@ class YR9011USBScanner(QObject):
     """
     Driver para lector INVELION YR9011 USB
 
-    Este lector es ideal para:
-    - Asignación de chips en lugar de retiro de kits
-    - Operación standalone sin red
-    - Lectura de corto alcance (10-80cm)
-
-    Señales:
-        tag_detected: Emite dict con {tag_id, timestamp}
-        error_occurred: Emite str con mensaje de error
+    Protocolo oficial INVELION con comandos 0x80-0x89
     """
 
     # Señales PyQt
     tag_detected = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
 
-    # Configuración del protocolo
-    BAUDRATE = 115200  # Baudrate típico para YR9011
-    TIMEOUT = 1.0
-
-    # Códigos de comando (basados en protocolo INVELION)
-    CMD_GET_VERSION = b'\xA0\x03\x01\x00\xA4'
-    CMD_INVENTORY = b'\xA0\x04\x01\x89\x01\x8F'  # Inventario simple
+    # Configuración
+    BAUDRATE = 115200
+    TIMEOUT = 0.5
+    ADDRESS = 0x00  # Dirección pública del lector
 
     def __init__(self, port: Optional[str] = None):
-        """
-        Inicializar scanner USB
-
-        Args:
-            port: Puerto COM (ej: 'COM3' en Windows, '/dev/ttyUSB0' en Linux)
-                  Si es None, intenta detectar automáticamente
-        """
         super().__init__()
         self.port = port
         self.serial: Optional[serial.Serial] = None
@@ -63,12 +45,7 @@ class YR9011USBScanner(QObject):
 
     @staticmethod
     def list_available_ports() -> List[Dict[str, str]]:
-        """
-        Listar puertos COM disponibles
-
-        Returns:
-            Lista de dicts con información de puertos: {port, description, hwid}
-        """
+        """Listar puertos COM disponibles"""
         ports = []
         for port in serial.tools.list_ports.comports():
             ports.append({
@@ -78,96 +55,74 @@ class YR9011USBScanner(QObject):
             })
         return ports
 
-    def auto_detect_port(self) -> Optional[str]:
+    def _calculate_checksum(self, data: bytes) -> int:
         """
-        Intentar detectar automáticamente el puerto del YR9011
+        Calcular checksum según protocolo INVELION
+        Checksum = suma de todos los bytes excepto Head y Check
+        """
+        return sum(data) & 0xFF
+
+    def _build_command(self, cmd: int, data: bytes = b'') -> bytes:
+        """
+        Construir comando según protocolo INVELION
+
+        Formato: [Head=0xA0][Len][Address][Cmd][Data...][Check]
+        """
+        length = 1 + 1 + len(data)  # Address + Cmd + Data
+        packet = bytes([length, self.ADDRESS, cmd]) + data
+        checksum = self._calculate_checksum(packet)
+        return b'\xA0' + packet + bytes([checksum])
+
+    def _parse_response(self, response: bytes) -> Optional[Dict]:
+        """
+        Parsear respuesta según protocolo INVELION
 
         Returns:
-            Nombre del puerto detectado o None
+            Dict con {valid, cmd, data} o None si inválida
         """
-        logger.info("🔍 Detectando puerto YR9011...")
+        if len(response) < 5:
+            return None
 
-        ports = self.list_available_ports()
+        if response[0] != 0xA0:
+            return None
 
-        # Intentar detectar por descripción (USB-Serial, CH340, etc.)
-        for port_info in ports:
-            description = port_info['description'].lower()
-            hwid = port_info['hwid'].lower()
+        length = response[1]
+        address = response[2]
+        cmd = response[3]
 
-            # Palabras clave comunes en lectores USB-Serial chinos
-            keywords = ['usb', 'serial', 'ch340', 'ch341', 'cp210', 'ftdi', 'prolific']
+        # Verificar longitud
+        expected_len = length + 3  # Head + Len + packet
+        if len(response) < expected_len:
+            return None
 
-            if any(keyword in description or keyword in hwid for keyword in keywords):
-                logger.info(f"✓ Puerto candidato: {port_info['port']} ({port_info['description']})")
+        # Extraer data y checksum
+        data = response[4:4 + length - 2]  # Sin Address, Cmd, Check
+        checksum_received = response[expected_len - 1]
 
-                # Intentar conectar y verificar
-                if self._test_port(port_info['port']):
-                    logger.info(f"✅ YR9011 detectado en {port_info['port']}")
-                    return port_info['port']
+        # Verificar checksum
+        packet = response[1:expected_len - 1]  # Desde Len hasta antes de Check
+        checksum_calculated = self._calculate_checksum(packet)
 
-        logger.warning("⚠️  No se detectó YR9011 automáticamente")
-        return None
+        if checksum_received != checksum_calculated:
+            logger.warning(f"⚠️  Checksum inválido: esperado {checksum_calculated:02X}, recibido {checksum_received:02X}")
+            return None
 
-    def _test_port(self, port: str) -> bool:
-        """
-        Probar si un puerto tiene un YR9011 conectado
-
-        Args:
-            port: Puerto a probar
-
-        Returns:
-            True si responde al comando de versión
-        """
-        try:
-            test_serial = serial.Serial(
-                port=port,
-                baudrate=self.BAUDRATE,
-                timeout=0.5
-            )
-
-            # Limpiar buffer
-            test_serial.reset_input_buffer()
-
-            # Enviar comando de versión
-            test_serial.write(self.CMD_GET_VERSION)
-            time.sleep(0.1)
-
-            # Leer respuesta
-            if test_serial.in_waiting > 0:
-                response = test_serial.read(test_serial.in_waiting)
-                test_serial.close()
-
-                # Verificar que haya respuesta válida (protocolo INVELION)
-                if len(response) > 3 and response[0] == 0xA0:
-                    return True
-
-            test_serial.close()
-            return False
-
-        except Exception as e:
-            logger.debug(f"Error probando puerto {port}: {e}")
-            return False
+        return {
+            'valid': True,
+            'cmd': cmd,
+            'address': address,
+            'data': data
+        }
 
     def connect(self) -> bool:
-        """
-        Conectar al lector YR9011
-
-        Returns:
-            True si la conexión fue exitosa
-        """
+        """Conectar al lector"""
         try:
-            # Auto-detectar puerto si no se especificó
             if not self.port:
-                self.port = self.auto_detect_port()
-                if not self.port:
-                    error_msg = "No se pudo detectar YR9011. Especifica el puerto manualmente."
-                    logger.error(f"❌ {error_msg}")
-                    self.error_occurred.emit(error_msg)
-                    return False
+                logger.error("❌ No se especificó puerto")
+                return False
 
-            logger.info(f"📡 Conectando a YR9011 en {self.port}...")
+            logger.info(f"📡 Conectando a {self.port} @ {self.BAUDRATE} bps...")
 
-            # Abrir puerto serial
             self.serial = serial.Serial(
                 port=self.port,
                 baudrate=self.BAUDRATE,
@@ -180,23 +135,20 @@ class YR9011USBScanner(QObject):
             # Limpiar buffers
             self.serial.reset_input_buffer()
             self.serial.reset_output_buffer()
+            time.sleep(0.1)
 
             # Verificar conexión con comando de versión
             version = self.get_firmware_version()
             if version:
-                logger.info(f"✅ Conectado a YR9011 - Firmware: {version}")
+                logger.info(f"✅ Conectado - Firmware: {version}")
                 self.connected = True
                 return True
             else:
                 logger.warning("⚠️  Conectado pero sin respuesta de versión")
+                # Aún así, considerarlo conectado
                 self.connected = True
                 return True
 
-        except serial.SerialException as e:
-            error_msg = f"Error de puerto serial: {str(e)}"
-            logger.error(f"❌ {error_msg}")
-            self.error_occurred.emit(error_msg)
-            return False
         except Exception as e:
             error_msg = f"Error conectando: {str(e)}"
             logger.error(f"❌ {error_msg}")
@@ -208,52 +160,37 @@ class YR9011USBScanner(QObject):
         if self.serial and self.serial.is_open:
             self.serial.close()
         self.connected = False
-        logger.info("📴 Desconectado de YR9011")
+        logger.info("📴 Desconectado")
 
     def get_firmware_version(self) -> Optional[str]:
         """
         Obtener versión del firmware
-
-        Returns:
-            String con versión o None si falla
+        Comando: 0x72 (cmd_get_firmware_version)
         """
-        if not self.serial or not self.serial.is_open:
-            return None
-
         try:
-            # Limpiar buffer
-            self.serial.reset_input_buffer()
-
-            # Enviar comando
-            self.serial.write(self.CMD_GET_VERSION)
+            cmd = self._build_command(0x72)
+            self.serial.write(cmd)
             time.sleep(0.1)
 
-            # Leer respuesta
             if self.serial.in_waiting > 0:
                 response = self.serial.read(self.serial.in_waiting)
+                parsed = self._parse_response(response)
 
-                # Parsear respuesta (protocolo INVELION)
-                if len(response) >= 5 and response[0] == 0xA0:
-                    # Típicamente: [A0, LEN, major, minor, checksum]
-                    major = response[2] if len(response) > 2 else 0
-                    minor = response[3] if len(response) > 3 else 0
+                if parsed and parsed['valid'] and len(parsed['data']) >= 2:
+                    major = parsed['data'][0]
+                    minor = parsed['data'][1]
                     return f"{major}.{minor}"
 
             return None
 
         except Exception as e:
-            logger.error(f"Error obteniendo versión: {e}")
+            logger.debug(f"Error obteniendo versión: {e}")
             return None
 
     def read_single_tag(self, timeout: float = 2.0) -> Optional[str]:
         """
-        Leer un solo tag (modo síncrono)
-
-        Args:
-            timeout: Tiempo máximo de espera en segundos
-
-        Returns:
-            EPC del tag leído o None
+        Leer un solo tag usando inventario en tiempo real
+        Comando: 0x89 (cmd_real_time_inventory)
         """
         if not self.connected or not self.serial:
             return None
@@ -261,20 +198,23 @@ class YR9011USBScanner(QObject):
         try:
             start_time = time.time()
 
-            # Limpiar buffer
-            self.serial.reset_input_buffer()
+            # Comando de inventario en tiempo real
+            # 0x89 con parámetro 0x01 (single read)
+            cmd = self._build_command(0x89, b'\x01')
 
             while (time.time() - start_time) < timeout:
-                # Enviar comando de inventario
-                self.serial.write(self.CMD_INVENTORY)
-                time.sleep(0.05)
+                # Limpiar buffer
+                self.serial.reset_input_buffer()
+
+                # Enviar comando
+                self.serial.write(cmd)
+                time.sleep(0.1)
 
                 # Leer respuesta
                 if self.serial.in_waiting > 0:
                     response = self.serial.read(self.serial.in_waiting)
-
-                    # Parsear EPC
                     epc = self._parse_inventory_response(response)
+
                     if epc:
                         logger.info(f"✓ Tag leído: {epc}")
                         return epc
@@ -288,41 +228,47 @@ class YR9011USBScanner(QObject):
             logger.error(f"Error leyendo tag: {e}")
             return None
 
-    def _parse_inventory_response(self, data: bytes) -> Optional[str]:
+    def _parse_inventory_response(self, response: bytes) -> Optional[str]:
         """
         Parsear respuesta de inventario para extraer EPC
 
-        Args:
-            data: Bytes de respuesta
-
-        Returns:
-            EPC como string hexadecimal o None
+        Respuesta 0x89:
+        [0xA0][Len][Address][0x89][Num][PC_H][PC_L][EPC...][RSSI][Check]
         """
         try:
-            # Protocolo INVELION típico:
-            # [A0, LEN, CMD, STATUS, PC_MSB, PC_LSB, EPC..., RSSI, ANTENNA, CHECKSUM]
+            parsed = self._parse_response(response)
 
-            if len(data) < 10 or data[0] != 0xA0:
+            if not parsed or not parsed['valid']:
                 return None
 
-            # Verificar status (debe ser 0x00 para éxito)
-            status = data[3]
-            if status != 0x00:
+            # Verificar que sea respuesta de inventario
+            if parsed['cmd'] != 0x89:
                 return None
 
-            # PC (Protocol Control) - 2 bytes
-            pc_msb = data[4]
-            pc_lsb = data[5]
+            data = parsed['data']
 
-            # Calcular longitud del EPC (bits en PC[15:11] * 2 bytes)
-            epc_length_words = (pc_msb >> 3) & 0x1F  # 5 bits
+            if len(data) < 4:
+                return None
+
+            # Estructura: [Num][PC_H][PC_L][EPC...][RSSI]
+            num_tags = data[0]
+
+            if num_tags == 0:
+                return None
+
+            pc_h = data[1]
+            pc_l = data[2]
+
+            # Calcular longitud del EPC desde PC
+            # PC[15:11] = longitud en words (2 bytes)
+            epc_length_words = (pc_h >> 3) & 0x1F
             epc_length_bytes = epc_length_words * 2
 
-            if len(data) < (6 + epc_length_bytes):
+            if len(data) < (3 + epc_length_bytes):
                 return None
 
             # Extraer EPC
-            epc_bytes = data[6:6 + epc_length_bytes]
+            epc_bytes = data[3:3 + epc_length_bytes]
             epc_hex = ''.join(f'{b:02X}' for b in epc_bytes)
 
             return epc_hex
@@ -332,18 +278,14 @@ class YR9011USBScanner(QObject):
             return None
 
     def start_continuous_reading(self):
-        """
-        Iniciar lectura continua (modo asíncrono)
-        Emite señal tag_detected cuando detecta un tag
-        """
+        """Iniciar lectura continua"""
         if not self.connected:
-            logger.warning("⚠️  No conectado, no se puede iniciar lectura")
+            logger.warning("⚠️  No conectado")
             return
 
         self.scanning = True
         logger.info("🟢 Lectura continua iniciada")
 
-        # Iniciar thread de lectura continua
         import threading
         thread = threading.Thread(target=self._continuous_read_loop, daemon=True)
         thread.start()
@@ -354,10 +296,10 @@ class YR9011USBScanner(QObject):
         logger.info("🔴 Lectura continua detenida")
 
     def _continuous_read_loop(self):
-        """Loop de lectura continua (ejecuta en thread separado)"""
+        """Loop de lectura continua"""
         last_tag = None
         last_tag_time = 0
-        DEBOUNCE_TIME = 1.0  # Segundos entre lecturas del mismo tag
+        DEBOUNCE_TIME = 1.0
 
         while self.scanning and self.connected:
             try:
@@ -366,15 +308,14 @@ class YR9011USBScanner(QObject):
                 if epc:
                     current_time = time.time()
 
-                    # Debouncing: ignorar si es el mismo tag muy rápido
+                    # Debouncing
                     if epc != last_tag or (current_time - last_tag_time) > DEBOUNCE_TIME:
-                        # Emitir señal con tag detectado
                         tag_data = {
                             'tag_id': epc,
                             'epc': epc,
                             'timestamp': datetime.now(),
                             'reader': 'YR9011-USB',
-                            'antenna_port': 1  # USB reader solo tiene 1 antena
+                            'antenna_port': 1
                         }
 
                         self.tag_detected.emit(tag_data)
@@ -383,12 +324,12 @@ class YR9011USBScanner(QObject):
                         last_tag = epc
                         last_tag_time = current_time
 
-                time.sleep(0.1)
+                time.sleep(0.2)
 
             except Exception as e:
                 logger.error(f"Error en loop de lectura: {e}")
                 time.sleep(1)
 
     def __del__(self):
-        """Limpieza al destruir objeto"""
+        """Limpieza"""
         self.disconnect()
