@@ -303,8 +303,18 @@ class ChipAssignmentWidget(QWidget):
             self.connect_usb_scanner()
         elif mode == "network":
             # Desconectar lector USB si está conectado
-            if self.usb_scanner and self.usb_scanner.connected:
-                self.usb_scanner.disconnect()
+            if self.usb_scanner:
+                # Detener escaneo continuo si está activo
+                if self.usb_scanner.scanning:
+                    logger.info("🔴 Deteniendo escaneo USB antes de desconectar...")
+                    self.usb_scanner.stop_continuous_reading()
+
+                # Desconectar
+                if self.usb_scanner.connected:
+                    logger.info("🔌 Desconectando lector USB...")
+                    self.usb_scanner.disconnect()
+                    self.usb_status_label.setText("📴 Lector USB no conectado")
+                    self.usb_status_label.setStyleSheet("")
 
     def connect_usb_scanner(self):
         """Conectar lector USB YR9011 con diálogo de configuración"""
@@ -340,9 +350,7 @@ class ChipAssignmentWidget(QWidget):
                     self.usb_status_label.setText(f"✅ Conectado a {config['port']}")
                     self.usb_status_label.setStyleSheet("color: #10b981; font-size: 11px; margin-left: 20px; font-weight: bold;")
                     logger.info(f"✅ Lector USB conectado en {config['port']}")
-
-                    # Iniciar lectura continua
-                    self.usb_scanner.start_continuous_reading()
+                    logger.info(f"💡 Lector USB listo. Escaneo iniciará al presionar 'Escanear Chip'")
                 else:
                     self.usb_status_label.setText("❌ No se pudo conectar")
                     self.usb_status_label.setStyleSheet("color: #ef4444; font-size: 11px; margin-left: 20px;")
@@ -629,9 +637,19 @@ class ChipAssignmentWidget(QWidget):
         logger.info(f"   • Lector: {scanner_type}")
         logger.info(f"   • Esperando detección de chip...")
 
+        # Si estamos en modo USB, iniciar lectura continua
+        if self.scanner_mode == "usb" and self.usb_scanner:
+            logger.info("🟢 Iniciando escaneo continuo USB...")
+            self.usb_scanner.start_continuous_reading()
+
     def stop_scanning(self):
         """Detener modo de escaneo"""
         logger.info("⏸️ Modo de escaneo desactivado")
+
+        # Si estamos en modo USB, detener lectura continua
+        if self.scanner_mode == "usb" and self.usb_scanner:
+            logger.info("🔴 Deteniendo escaneo continuo USB...")
+            self.usb_scanner.stop_continuous_reading()
 
     @pyqtSlot(dict)
     def on_chip_scanned(self, tag_info: dict):
