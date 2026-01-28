@@ -305,33 +305,25 @@ class ChipAssignmentWidget(QWidget):
         self.refresh_category_filter()
         self.refresh_athletes_table()
 
+    # Propiedades para delegar al scanner_manager (compatibilidad hacia atrás)
+    @property
+    def usb_scanner(self):
+        """Acceso al USB scanner a través del scanner_manager"""
+        return self.scanner_manager.usb_scanner if hasattr(self, 'scanner_manager') else None
+
+    @property
+    def scanner_mode(self):
+        """Acceso al modo de scanner a través del scanner_manager"""
+        return self.scanner_manager.scanner_mode if hasattr(self, 'scanner_manager') else "network"
+
     def set_scanner_mode(self, mode: str):
         """
-        Cambiar modo de scanner
+        Cambiar modo de scanner (delegado al scanner_manager)
 
         Args:
             mode: "network" para YR8900, "usb" para YR9011
         """
-        self.scanner_mode = mode
-        logger.info(f"🔄 Modo de scanner cambiado a: {mode}")
-
-        if mode == "usb":
-            # Conectar lector USB
-            self.connect_usb_scanner()
-        elif mode == "network":
-            # Desconectar lector USB si está conectado
-            if self.usb_scanner:
-                # Detener escaneo continuo si está activo
-                if self.usb_scanner.scanning:
-                    logger.info("🔴 Deteniendo escaneo USB antes de desconectar...")
-                    self.usb_scanner.stop_continuous_reading()
-
-                # Desconectar
-                if self.usb_scanner.connected:
-                    logger.info("🔌 Desconectando lector USB...")
-                    self.usb_scanner.disconnect()
-                    self.usb_status_label.setText("📴 Lector USB no conectado")
-                    self.usb_status_label.setStyleSheet("")
+        self.scanner_manager.set_scanner_mode(mode)
 
     def connect_usb_scanner(self):
         """Conectar lector USB YR9011 con diálogo de configuración"""
@@ -356,16 +348,19 @@ class ChipAssignmentWidget(QWidget):
                 self.usb_status_label.setText(f"⏳ Conectando a {config['port']}...")
 
                 # Crear scanner USB con configuración
-                self.usb_scanner = YR9011USBScanner(port=config['port'])
+                usb_scanner = YR9011USBScanner(port=config['port'])
 
                 # Conectar señales
-                self.usb_scanner.tag_detected.connect(self.on_chip_scanned)
-                self.usb_scanner.error_occurred.connect(self.on_usb_scanner_error)
+                usb_scanner.tag_detected.connect(self.on_chip_scanned)
+                usb_scanner.error_occurred.connect(self.on_usb_scanner_error)
 
                 # Intentar conectar
-                if self.usb_scanner.connect():
+                if usb_scanner.connect():
                     # CRÍTICO: Asegurar que NO esté en modo escaneo continuo al conectar
-                    self.usb_scanner.stop_continuous_reading()
+                    usb_scanner.stop_continuous_reading()
+
+                    # Asignar al scanner_manager
+                    self.scanner_manager.usb_scanner = usb_scanner
 
                     self.usb_status_label.setText(f"✅ Conectado a {config['port']}")
                     self.usb_status_label.setStyleSheet("color: #10b981; font-size: 11px; margin-left: 20px; font-weight: bold;")
