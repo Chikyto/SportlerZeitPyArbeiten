@@ -51,6 +51,10 @@ class ChipAssignmentWidget(QWidget):
         self.selected_athlete = None
         self.assignments = {}  # {athlete_id: chip_id}
 
+        # Chip detection buffer for multi-chip selection
+        self.detected_chips_buffer = []  # List of chip dicts
+        self.chip_accumulation_timer = None
+
         # Initialize helper modules
         self.csv_handler = ChipAssignmentCSVHandler(self, race_manager)
         self.scanner_manager = ChipAssignmentScannerManager(self)
@@ -715,17 +719,96 @@ class ChipAssignmentWidget(QWidget):
             self.scan_status_label.setStyleSheet("color: #f59e0b; font-weight: bold;")
             return
 
-        logger.info(f"✅ Chip {chip_id} escaneado para asignación a {self.selected_athlete.name}")
+        logger.info(f"✅ Chip {chip_id} detectado en modo escaneo")
 
-        # IMPORTANTE: Guardar referencia al atleta antes de toggle_scan_mode
-        # porque toggle_scan_mode puede afectar selected_athlete
+        # Acumular chip en buffer (para manejar múltiples chips cercanos)
+        # Evitar duplicados en el buffer
+        if not any(c['tag_id'] == chip_id for c in self.detected_chips_buffer):
+            self.detected_chips_buffer.append(tag_info)
+            logger.info(f"📋 Chip agregado al buffer ({len(self.detected_chips_buffer)} chips acumulados)")
+
+        # Cancelar timer previo si existe
+        if self.chip_accumulation_timer:
+            self.chip_accumulation_timer.stop()
+            self.chip_accumulation_timer = None
+
+        # Iniciar timer de 1.5 segundos para procesar chips acumulados
+        self.chip_accumulation_timer = QTimer()
+        self.chip_accumulation_timer.setSingleShot(True)
+        self.chip_accumulation_timer.timeout.connect(self.process_accumulated_chips)
+        self.chip_accumulation_timer.start(1500)  # 1.5 segundos para acumular
+
+        # Mostrar status temporal
+        if len(self.detected_chips_buffer) == 1:
+            self.scan_status_label.setText(f"📡 Chip detectado: {chip_id}")
+        else:
+            self.scan_status_label.setText(f"📡 {len(self.detected_chips_buffer)} chips detectados...")
+        self.scan_status_label.setStyleSheet("color: #3b82f6; font-weight: bold;")
+
+    def process_accumulated_chips(self):
+        """
+        Procesar chips acumulados después del período de acumulación
+
+        Si hay un solo chip, asigna directamente.
+        Si hay múltiples, muestra diálogo de selección.
+        """
+        if not self.detected_chips_buffer:
+            logger.warning("⚠️  Buffer de chips vacío")
+            return
+
+        # Guardar referencia al atleta antes de cualquier cambio
         athlete_to_assign = self.selected_athlete
 
-        # Detener escaneo
-        self.toggle_scan_mode()
+        if not athlete_to_assign:
+            logger.error("❌ No hay atleta seleccionado")
+            self.detected_chips_buffer.clear()
+            return
 
-        # Asignar chip (usando referencia guardada)
-        self._assign_chip_to_athlete(athlete_to_assign, chip_id)
+        num_chips = len(self.detected_chips_buffer)
+        logger.info(f"📊 Procesando {num_chips} chip(s) acumulado(s)")
+
+        if num_chips == 1:
+            # Un solo chip - asignar directamente
+            chip_id = self.detected_chips_buffer[0]['tag_id']
+            logger.info(f"✓ Un solo chip detectado: {chip_id}")
+
+            # Detener escaneo
+            self.toggle_scan_mode()
+
+            # Asignar
+            self._assign_chip_to_athlete(athlete_to_assign, chip_id)
+
+        else:
+            # Múltiples chips - mostrar diálogo de selección
+            logger.info(f"🔀 Múltiples chips detectados ({num_chips}), mostrando selector...")
+
+            from src.gui.multiple_chip_dialog import MultipleChipDialog
+
+            # Detener escaneo primero
+            self.toggle_scan_mode()
+
+            # Mostrar diálogo
+            dialog = MultipleChipDialog(self.detected_chips_buffer, self)
+            result = dialog.exec()
+
+            if result == dialog.DialogCode.Accepted:
+                selected_chip = dialog.get_selected_chip()
+
+                if selected_chip:
+                    logger.info(f"✓ Usuario seleccionó chip: {selected_chip}")
+                    self._assign_chip_to_athlete(athlete_to_assign, selected_chip)
+                else:
+                    logger.warning("⚠️  No se seleccionó ningún chip")
+                    QMessageBox.warning(
+                        self,
+                        "Sin Selección",
+                        "No se seleccionó ningún chip.\n\nVuelve a escanear si quieres asignar."
+                    )
+            else:
+                logger.info("ℹ️  Usuario canceló selección de chip")
+
+        # Limpiar buffer
+        self.detected_chips_buffer.clear()
 
     def assign_chip_manually(self):
         """Asignar chip manualmente desde el input"""
