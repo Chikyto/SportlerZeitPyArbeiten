@@ -45,6 +45,17 @@ class CSVAthleteImporter:
         '100K': {'category_id': '100k', 'name': 'Ultra 100K', 'distance_m': 100000, 'checkpoints': 5},
     }
 
+    # Columnas posibles para hora de largada en el CSV
+    START_TIME_COLUMNS = [
+        'Hora Largada',
+        'Hora de Largada',
+        'Start Time',
+        'Hora Inicio',
+        'Largada',
+        'Inicio',
+        'Start'
+    ]
+
     # Rangos de dorsales por categoría (inicio)
     BIB_RANGES = {
         '5k': 1,      # 1-999
@@ -60,6 +71,7 @@ class CSVAthleteImporter:
         """Inicializar importador"""
         self.athletes_by_category: Dict[str, List[Athlete]] = {}
         self.bib_counters: Dict[str, int] = {}  # Contador de dorsales por categoría
+        self.category_start_times: Dict[str, Optional[datetime]] = {}  # Hora largada por categoría
 
     def import_from_csv(
         self,
@@ -132,6 +144,14 @@ class CSVAthleteImporter:
                                 self.athletes_by_category[cat_id] = []
 
                             self.athletes_by_category[cat_id].append(athlete)
+
+                            # Capturar hora de largada si viene en el CSV
+                            if cat_id not in self.category_start_times:
+                                start_time = self._extract_start_time(row)
+                                self.category_start_times[cat_id] = start_time
+                                if start_time:
+                                    logger.debug(f"✓ Hora largada para {cat_id}: {start_time}")
+
                             imported_count += 1
                         else:
                             skipped_error += 1
@@ -158,6 +178,45 @@ class CSVAthleteImporter:
         except Exception as e:
             logger.error(f"❌ Error importando CSV: {e}")
             raise
+
+    def _extract_start_time(self, row: dict) -> Optional[datetime]:
+        """
+        Extraer hora de largada del CSV (si existe)
+
+        Busca en columnas posibles: 'Hora Largada', 'Start Time', etc.
+
+        Args:
+            row: Diccionario con datos de la fila
+
+        Returns:
+            datetime o None si no se encuentra
+        """
+        for col_name in self.START_TIME_COLUMNS:
+            if col_name in row:
+                value = row[col_name].strip()
+                if value:
+                    try:
+                        # Intentar parsear diferentes formatos
+                        formats = [
+                            '%d/%m/%Y %H:%M:%S',
+                            '%d/%m/%Y %H:%M',
+                            '%Y-%m-%d %H:%M:%S',
+                            '%Y-%m-%d %H:%M',
+                            '%d-%m-%Y %H:%M:%S',
+                            '%d-%m-%Y %H:%M',
+                        ]
+
+                        for fmt in formats:
+                            try:
+                                return datetime.strptime(value, fmt)
+                            except ValueError:
+                                continue
+
+                        logger.debug(f"⚠️  No se pudo parsear fecha '{value}' en columna '{col_name}'")
+                    except Exception as e:
+                        logger.debug(f"Error parseando hora largada: {e}")
+
+        return None
 
     def _parse_row(self, row: dict, row_number: int) -> Optional[Athlete]:
         """
@@ -408,6 +467,9 @@ class CSVAthleteImporter:
                 logger.warning(f"⚠️  No se encontró info para categoría {category_id}")
                 continue
 
+            # Obtener hora de largada si fue capturada del CSV
+            start_time = self.category_start_times.get(category_id)
+
             # Crear categoría
             category = RaceCategory(
                 category_id=category_id,
@@ -415,11 +477,17 @@ class CSVAthleteImporter:
                 distance=cat_info['distance_m'],
                 expected_checkpoints=cat_info['checkpoints'],
                 participants=athletes.copy(),  # Copiar lista de atletas
+                start_time=start_time,  # Puede ser None si no vino en CSV
                 notes=f"Importado desde CSV - {len(athletes)} participantes"
             )
 
             categories.append(category)
-            logger.info(f"✅ Categoría creada: {category.name} ({len(athletes)} atletas)")
+
+            if start_time:
+                logger.info(f"✅ Categoría creada: {category.name} ({len(athletes)} atletas) - Largada: {start_time.strftime('%H:%M')}")
+            else:
+                logger.info(f"✅ Categoría creada: {category.name} ({len(athletes)} atletas) - ⚠️ Sin hora de largada")
+                logger.info(f"   💡 Configura la hora de largada antes de usar las antenas")
 
         return categories
 
