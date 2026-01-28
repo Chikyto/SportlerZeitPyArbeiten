@@ -57,22 +57,35 @@ class YR9011USBScanner(QObject):
 
     def _calculate_checksum(self, data: bytes) -> int:
         """
-        Calcular checksum según protocolo INVELION
-        Checksum = suma de todos los bytes excepto Head y Check
+        Calcular checksum según protocolo YR9011
+        Checksum = (sum(data) + 0x42) & 0xFF
+
+        Descubierto mediante reverse engineering del lector real
         """
-        return sum(data) & 0xFF
+        return (sum(data) + 0x42) & 0xFF
 
     def _build_command(self, cmd: int, data: bytes = b'') -> bytes:
         """
-        Construir comando según protocolo INVELION
+        Construir comando según protocolo YR9011
 
         Formato: [Head=0xA0][Len][Address][Cmd][Data...][Check]
-        Length = Address(1) + Cmd(1) + Checksum(1) + len(Data)
+
+        IMPORTANTE: El comando Inventory (0x89) tiene comportamiento especial
+        con length fijo = 0x04
         """
-        length = 3 + len(data)  # Address + Cmd + Checksum + Data
-        packet = bytes([length, self.ADDRESS, cmd]) + data
-        checksum = self._calculate_checksum(packet)
-        return b'\xA0' + packet + bytes([checksum])
+        # Inventory es especial - length fijo
+        if cmd == 0x89:
+            length = 0x04
+            body = bytes([length, self.ADDRESS, cmd]) + data
+            fake = b"\x00"
+            checksum = self._calculate_checksum(body + fake)
+            return b'\xA0' + body + bytes([checksum])
+
+        # Otros comandos normales
+        length = 1 + 1 + len(data) + 1  # Addr + Cmd + Data + Checksum
+        body = bytes([length, self.ADDRESS, cmd]) + data + b"\x00"
+        checksum = self._calculate_checksum(body)
+        return b'\xA0' + body + bytes([checksum])
 
     def _parse_response(self, response: bytes) -> Optional[Dict]:
         """
@@ -136,40 +149,32 @@ class YR9011USBScanner(QObject):
             # Limpiar buffers
             self.serial.reset_input_buffer()
             self.serial.reset_output_buffer()
-            time.sleep(0.5)
+            time.sleep(1)
 
             # Secuencia de inicialización del lector
+            # Exactamente como en el código verificado que funciona
             logger.info("⚙️  Inicializando lector...")
 
             # 1. Reset del lector
-            self.serial.write(self._build_command(0x70))
-            time.sleep(0.3)
+            self.serial.write(self._build_command(0x70, b'\x00'))
+            time.sleep(1)
 
-            # 2. Inicializar antena
-            self.serial.write(self._build_command(0x74, b'\x00'))
-            time.sleep(0.3)
-
-            # 3. Modo Host (CRÍTICO - sin esto no responde)
+            # 2. Modo Host (CRÍTICO - sin esto no responde)
             self.serial.write(self._build_command(0x75, b'\x01'))
             time.sleep(0.3)
 
-            # 4. Activar RF
-            self.serial.write(self._build_command(0x74, b'\x10'))
-            time.sleep(0.5)
+            # 3. Activar RF
+            self.serial.write(self._build_command(0x74, b'\x00'))
+            time.sleep(0.3)
 
-            logger.info("📡 RF activado")
+            # 4. Power default
+            self.serial.write(self._build_command(0x7A, b'\x00'))
+            time.sleep(0.3)
 
-            # Verificar conexión con comando de versión
-            version = self.get_firmware_version()
-            if version:
-                logger.info(f"✅ Conectado - Firmware: {version}")
-                self.connected = True
-                return True
-            else:
-                logger.warning("⚠️  Conectado pero sin respuesta de versión")
-                # Aún así, considerarlo conectado si la inicialización fue exitosa
-                self.connected = True
-                return True
+            logger.info("✅ Lector inicializado y RF activado")
+
+            self.connected = True
+            return True
 
         except Exception as e:
             error_msg = f"Error conectando: {str(e)}"
@@ -284,61 +289,40 @@ class YR9011USBScanner(QObject):
 
     def _parse_inventory_response(self, response: bytes) -> Optional[str]:
         """
-        Parsear respuesta de inventario para extraer EPC
+        Parsear respuesta de inventario para extraer UID del tag
 
         Respuesta 0x89:
-        [0xA0][Len][Address][0x89][RSSI][PC][EPC...][Check]
+        [0xA0][Len][Address][0x89][Data...][Check]
 
-        Basado en código verificado que funciona con el lector
+        Extrae los últimos 2 bytes del payload como UID
+        Basado en código verificado que funciona con el lector real
         """
         try:
-            # Validaciones básicas
-            if len(response) < 9:
-                return None
-
-            if response[0] != 0xA0:
-                return None
-
             # Verificar que sea respuesta de inventario
-            cmd = response[3]
-            if cmd != 0x89:
+            if len(response) < 4:
                 return None
 
-            # Verificar checksum
-            checksum_calc = self._calculate_checksum(response[1:-1])
-            checksum_recv = response[-1]
-            if checksum_calc != checksum_recv:
-                logger.debug(f"Checksum inválido: esperado {checksum_calc:02X}, recibido {checksum_recv:02X}")
+            if response[3] != 0x89:
                 return None
 
-            # Extraer datos
-            length = response[1]
-            rssi = response[4]
+            # Extraer data (desde byte 4 hasta antes del checksum)
+            data = response[4:-1]
 
-            # Calcular longitud del EPC
-            # Length = addr(1) + cmd(1) + rssi(1) + pc(1) + epc(...) + checksum(1)
-            # epc_len = length - 5
-            epc_len = length - 5
-
-            if epc_len <= 0:
+            # Paquete largo = tag detectado
+            if len(data) < 16:
                 return None
 
-            epc_start = 6
-            epc_end = epc_start + epc_len
+            # Extraer UID - últimos 2 bytes del payload
+            uid_bytes = data[-4:-2]
 
-            if len(response) < epc_end:
+            if not uid_bytes or len(uid_bytes) < 2:
                 return None
 
-            epc_bytes = response[epc_start:epc_end]
+            uid_hex = uid_bytes.hex().upper()
 
-            if not epc_bytes:
-                return None
+            logger.debug(f"Tag parseado: UID={uid_hex}")
 
-            epc_hex = ''.join(f'{b:02X}' for b in epc_bytes)
-
-            logger.debug(f"Tag parseado: EPC={epc_hex}, RSSI={rssi}")
-
-            return epc_hex
+            return uid_hex
 
         except Exception as e:
             logger.debug(f"Error parseando respuesta: {e}")
