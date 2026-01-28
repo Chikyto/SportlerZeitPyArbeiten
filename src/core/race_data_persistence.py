@@ -76,7 +76,9 @@ class RaceDataPersistence:
                 category_data = {
                     'category_id': category.category_id,
                     'name': category.name,
-                    'description': category.description,
+                    'distance': category.distance,
+                    'expected_checkpoints': category.expected_checkpoints,
+                    'notes': category.notes,
                     'start_time': category.start_time.isoformat() if category.start_time else None,
                     'athletes': []
                 }
@@ -155,7 +157,9 @@ class RaceDataPersistence:
                 category = RaceCategory(
                     category_id=cat_data['category_id'],
                     name=cat_data['name'],
-                    description=cat_data.get('description', '')
+                    distance=cat_data.get('distance', 0.0),
+                    expected_checkpoints=cat_data.get('expected_checkpoints', 0),
+                    notes=cat_data.get('notes')
                 )
 
                 # Add athletes
