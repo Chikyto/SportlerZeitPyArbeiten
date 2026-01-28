@@ -34,7 +34,7 @@ class YR9011USBScanner(QObject):
     # Configuración
     BAUDRATE = 115200
     TIMEOUT = 0.5
-    ADDRESS = 0x00  # Dirección pública del lector
+    ADDRESS = 0x01  # Dirección del lector (detectada por sniffing)
 
     def __init__(self, port: Optional[str] = None):
         super().__init__()
