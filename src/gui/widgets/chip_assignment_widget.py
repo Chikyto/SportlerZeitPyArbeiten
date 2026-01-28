@@ -318,12 +318,23 @@ class ChipAssignmentWidget(QWidget):
 
     def set_scanner_mode(self, mode: str):
         """
-        Cambiar modo de scanner (delegado al scanner_manager)
+        Cambiar modo de scanner
 
         Args:
             mode: "network" para YR8900, "usb" para YR9011
         """
-        self.scanner_manager.set_scanner_mode(mode)
+        # Update scanner_manager mode
+        self.scanner_manager.scanner_mode = mode
+        logger.info(f"🔄 Modo de scanner cambiado a: {mode}")
+
+        if mode == "usb":
+            # Connect USB scanner (handled by widget to connect signals properly)
+            self.connect_usb_scanner()
+        elif mode == "network":
+            # Disconnect USB scanner
+            self.scanner_manager.disconnect_usb_scanner()
+            self.usb_status_label.setText("📴 Lector USB no conectado")
+            self.usb_status_label.setStyleSheet("")
 
     def connect_usb_scanner(self):
         """Conectar lector USB YR9011 con diálogo de configuración"""
