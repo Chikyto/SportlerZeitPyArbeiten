@@ -19,6 +19,10 @@ import logging
 from datetime import datetime
 from typing import Optional, Dict, List
 
+# Import helper modules
+from .chip_assignment_csv_handler import ChipAssignmentCSVHandler
+from .chip_assignment_scanner_manager import ChipAssignmentScannerManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,15 +46,20 @@ class ChipAssignmentWidget(QWidget):
     def __init__(self, race_manager=None, scanner=None, signals=None):
         super().__init__()
         self.race_manager = race_manager
-        self.scanner = scanner  # YR8900 (network scanner)
         self.signals = signals
         self.scan_mode = False
         self.selected_athlete = None
         self.assignments = {}  # {athlete_id: chip_id}
 
-        # Lector USB YR9011 para kiosco de asignación
-        self.usb_scanner = None
-        self.scanner_mode = "network"  # "network" o "usb"
+        # Initialize helper modules
+        self.csv_handler = ChipAssignmentCSVHandler(self, race_manager)
+        self.scanner_manager = ChipAssignmentScannerManager(self)
+        self.scanner_manager.set_network_scanner(scanner)
+
+        # Connect scanner manager signals
+        self.scanner_manager.scanner_mode_changed.connect(self.on_scanner_mode_changed)
+        self.scanner_manager.scanner_connected.connect(self.on_scanner_connected)
+        self.scanner_manager.scanner_disconnected.connect(self.on_scanner_disconnected)
 
         self.setup_ui()
         self.refresh_athletes_table()
