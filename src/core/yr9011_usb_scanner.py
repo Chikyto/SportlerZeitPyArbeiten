@@ -312,8 +312,8 @@ class YR9011USBScanner(QObject):
             if len(data) < 16:
                 return None
 
-            # Extraer UID - penúltimos 2 bytes del payload (corrido 1 byte a la derecha)
-            uid_bytes = data[-3:-1]
+            # Extraer UID - exactamente como en test_cgpt.py que funciona
+            uid_bytes = data[-4:-2]
 
             if not uid_bytes or len(uid_bytes) < 2:
                 return None

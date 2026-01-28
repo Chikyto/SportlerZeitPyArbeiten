@@ -347,6 +347,9 @@ class ChipAssignmentWidget(QWidget):
 
                 # Intentar conectar
                 if self.usb_scanner.connect():
+                    # CRÍTICO: Asegurar que NO esté en modo escaneo continuo al conectar
+                    self.usb_scanner.stop_continuous_reading()
+
                     self.usb_status_label.setText(f"✅ Conectado a {config['port']}")
                     self.usb_status_label.setStyleSheet("color: #10b981; font-size: 11px; margin-left: 20px; font-weight: bold;")
                     logger.info(f"✅ Lector USB conectado en {config['port']}")
@@ -674,9 +677,12 @@ class ChipAssignmentWidget(QWidget):
         # Solo procesar si estamos en modo escaneo y hay atleta seleccionado
         if not self.scan_mode:
             logger.warning(f"⚠️  Chip {chip_id} ignorado: Modo escaneo NO activo. Haz click en '📡 Escanear Chip' primero.")
-            # Mostrar notificación visual
-            self.scan_status_label.setText(f"⚠️ Chip detectado ({chip_id[:8]}...) pero modo escaneo NO activo")
-            self.scan_status_label.setStyleSheet("color: #f59e0b; font-weight: bold;")
+            # Mostrar notificación visual AMARILLA (útil para ver qué chips hay sin asignar)
+            self.scan_status_label.setText(f"⚠️ Chip detectado ({chip_id}) pero modo escaneo NO activo")
+            self.scan_status_label.setStyleSheet("color: #f59e0b; font-weight: bold; font-size: 13px;")
+
+            # Auto-limpiar después de 5 segundos
+            QTimer.singleShot(5000, lambda: self.scan_status_label.setText(""))
             return
 
         if not self.selected_athlete:
