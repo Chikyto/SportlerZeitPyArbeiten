@@ -56,12 +56,20 @@ class ChipAssignmentWidget(QWidget):
         self.scanner_manager = ChipAssignmentScannerManager(self)
         self.scanner_manager.set_network_scanner(scanner)
 
+        # Initialize persistence manager
+        from src.core.race_data_persistence import RaceDataPersistence
+        self.persistence = RaceDataPersistence()
+
         # Connect scanner manager signals
         self.scanner_manager.scanner_mode_changed.connect(self.on_scanner_mode_changed)
         self.scanner_manager.scanner_connected.connect(self.on_scanner_connected)
         self.scanner_manager.scanner_disconnected.connect(self.on_scanner_disconnected)
 
         self.setup_ui()
+
+        # Auto-load saved data if available
+        self.auto_load_saved_data()
+
         self.refresh_athletes_table()
 
         # Conectar señal global de tags detectados (YR8900)
@@ -771,6 +779,9 @@ class ChipAssignmentWidget(QWidget):
             f"✅ Chip {chip_id} asignado a:\n{athlete.name} (#{athlete.bib_number})"
         )
 
+        # AUTO-SAVE: Guardar datos automáticamente después de cada asignación
+        self.auto_save_data()
+
     def clear_assignment(self):
         """Limpiar asignación de chip del atleta seleccionado"""
         if not self.selected_athlete or not self.selected_athlete.tag_id:
@@ -1155,13 +1166,135 @@ class ChipAssignmentWidget(QWidget):
 
         self.stats_text.setHtml(stats_text)
 
+    def auto_save_data(self):
+        """Guardar datos automáticamente (llamado después de cada asignación)"""
+        try:
+            if not self.race_manager:
+                return
+
+            success = self.persistence.save_race_data(self.race_manager)
+
+            if success:
+                logger.info("💾 Datos guardados automáticamente")
+                # Actualizar indicador de última guardado si existe
+                if hasattr(self, 'last_save_label'):
+                    now = datetime.now().strftime("%H:%M:%S")
+                    self.last_save_label.setText(f"💾 Guardado: {now}")
+                    self.last_save_label.setStyleSheet("color: #10b981; font-size: 10px;")
+            else:
+                logger.warning("⚠️  Error en auto-guardado")
+
+        except Exception as e:
+            logger.error(f"❌ Error en auto-guardado: {e}")
+
+    def auto_load_saved_data(self):
+        """Cargar datos guardados automáticamente al iniciar"""
+        try:
+            if not self.race_manager:
+                return
+
+            if not self.persistence.has_saved_data():
+                logger.info("ℹ️  No hay datos guardados previos")
+                return
+
+            # Preguntar al usuario si desea cargar los datos guardados
+            last_save = self.persistence.get_last_save_time()
+            if last_save:
+                last_save_str = last_save.strftime("%d/%m/%Y %H:%M:%S")
+            else:
+                last_save_str = "desconocida"
+
+            reply = QMessageBox.question(
+                self,
+                "Datos Guardados Encontrados",
+                f"Se encontraron datos guardados de una sesión anterior.\n\n"
+                f"Última guardado: {last_save_str}\n\n"
+                f"¿Deseas cargar estos datos?\n\n"
+                f"Si seleccionas 'No', comenzarás con una sesión nueva vacía.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                success = self.persistence.load_race_data(self.race_manager)
+
+                if success:
+                    logger.info("✅ Datos cargados exitosamente")
+                    QMessageBox.information(
+                        self,
+                        "Datos Cargados",
+                        "✅ Datos de la sesión anterior cargados exitosamente.\n\n"
+                        "Se restauraron todas las asignaciones de chips."
+                    )
+                else:
+                    logger.error("❌ Error cargando datos guardados")
+                    QMessageBox.warning(
+                        self,
+                        "Error de Carga",
+                        "No se pudieron cargar los datos guardados.\n\n"
+                        "Comenzarás con una sesión nueva."
+                    )
+
+        except Exception as e:
+            logger.error(f"❌ Error en auto-carga: {e}")
+
+    def manual_save_data(self):
+        """Guardar datos manualmente (con confirmación)"""
+        try:
+            if not self.race_manager:
+                QMessageBox.warning(self, "Error", "No hay datos para guardar")
+                return
+
+            success = self.persistence.save_race_data(self.race_manager)
+
+            if success:
+                logger.info("💾 Guardado manual exitoso")
+                QMessageBox.information(
+                    self,
+                    "Guardado Exitoso",
+                    "✅ Datos guardados correctamente.\n\n"
+                    f"Archivo: {self.persistence.data_file}"
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    "❌ Error al guardar los datos.\n\nRevisa los logs para más información."
+                )
+
+        except Exception as e:
+            logger.error(f"❌ Error en guardado manual: {e}")
+            QMessageBox.critical(self, "Error", f"Error al guardar:\n{str(e)}")
+
+    def on_scanner_mode_changed(self, mode: str):
+        """Callback cuando cambia el modo de scanner"""
+        logger.debug(f"Scanner mode changed to: {mode}")
+
+    def on_scanner_connected(self, scanner_type: str):
+        """Callback cuando se conecta un scanner"""
+        if hasattr(self, 'usb_status_label') and scanner_type == "usb":
+            self.usb_status_label.setText(f"✅ Conectado")
+            self.usb_status_label.setStyleSheet("color: #10b981; font-size: 11px; margin-left: 20px; font-weight: bold;")
+
+    def on_scanner_disconnected(self, scanner_type: str):
+        """Callback cuando se desconecta un scanner"""
+        if hasattr(self, 'usb_status_label') and scanner_type == "usb":
+            self.usb_status_label.setText("📴 Lector USB no conectado")
+            self.usb_status_label.setStyleSheet("")
+
     def __del__(self):
         """Limpieza al destruir widget"""
         try:
+            # AUTO-SAVE: Guardar datos al cerrar la aplicación
+            if hasattr(self, 'persistence') and hasattr(self, 'race_manager'):
+                logger.info("💾 Guardando datos al cerrar aplicación...")
+                self.persistence.save_race_data(self.race_manager)
+
             # Desconectar lector USB si está conectado
-            if self.usb_scanner and self.usb_scanner.connected:
+            if hasattr(self, 'usb_scanner') and self.usb_scanner and self.usb_scanner.connected:
                 self.usb_scanner.stop_continuous_reading()
                 self.usb_scanner.disconnect()
                 logger.info("✅ Lector USB desconectado")
+
         except Exception as e:
             logger.debug(f"Error en limpieza de widget: {e}")
