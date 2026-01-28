@@ -10,7 +10,7 @@ Dialog to configure race category details: distance, start time, checkpoints, et
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QSpinBox, QDoubleSpinBox, QDateTimeEdit, QTextEdit,
-    QFormLayout, QGroupBox
+    QFormLayout, QGroupBox, QMessageBox
 )
 from PyQt6.QtCore import Qt, QDateTime
 from PyQt6.QtGui import QFont
