@@ -67,8 +67,9 @@ class YR9011USBScanner(QObject):
         Construir comando según protocolo INVELION
 
         Formato: [Head=0xA0][Len][Address][Cmd][Data...][Check]
+        Length = Address(1) + Cmd(1) + Checksum(1) + len(Data)
         """
-        length = 1 + 1 + len(data)  # Address + Cmd + Data
+        length = 3 + len(data)  # Address + Cmd + Checksum + Data
         packet = bytes([length, self.ADDRESS, cmd]) + data
         checksum = self._calculate_checksum(packet)
         return b'\xA0' + packet + bytes([checksum])
@@ -135,7 +136,28 @@ class YR9011USBScanner(QObject):
             # Limpiar buffers
             self.serial.reset_input_buffer()
             self.serial.reset_output_buffer()
-            time.sleep(0.1)
+            time.sleep(0.5)
+
+            # Secuencia de inicialización del lector
+            logger.info("⚙️  Inicializando lector...")
+
+            # 1. Reset del lector
+            self.serial.write(self._build_command(0x70))
+            time.sleep(0.3)
+
+            # 2. Inicializar antena
+            self.serial.write(self._build_command(0x74, b'\x00'))
+            time.sleep(0.3)
+
+            # 3. Modo Host (CRÍTICO - sin esto no responde)
+            self.serial.write(self._build_command(0x75, b'\x01'))
+            time.sleep(0.3)
+
+            # 4. Activar RF
+            self.serial.write(self._build_command(0x74, b'\x10'))
+            time.sleep(0.5)
+
+            logger.info("📡 RF activado")
 
             # Verificar conexión con comando de versión
             version = self.get_firmware_version()
@@ -145,7 +167,7 @@ class YR9011USBScanner(QObject):
                 return True
             else:
                 logger.warning("⚠️  Conectado pero sin respuesta de versión")
-                # Aún así, considerarlo conectado
+                # Aún así, considerarlo conectado si la inicialización fue exitosa
                 self.connected = True
                 return True
 
@@ -228,48 +250,93 @@ class YR9011USBScanner(QObject):
             logger.error(f"Error leyendo tag: {e}")
             return None
 
+    def _extract_frames(self, buffer: bytes) -> List[bytes]:
+        """
+        Extraer frames completos del buffer
+
+        Busca todos los frames que comienzan con 0xA0 y tienen longitud válida
+        """
+        frames = []
+        i = 0
+        while i < len(buffer):
+            # Buscar inicio de frame
+            if buffer[i] != 0xA0:
+                i += 1
+                continue
+
+            # Verificar que haya suficientes bytes para leer length
+            if i + 2 >= len(buffer):
+                break
+
+            length = buffer[i + 1]
+            total = length + 2  # length + header(0xA0) + length_byte
+
+            # Verificar que el frame completo esté en el buffer
+            if i + total > len(buffer):
+                break
+
+            # Extraer frame
+            frame = buffer[i:i + total]
+            frames.append(frame)
+            i += total
+
+        return frames
+
     def _parse_inventory_response(self, response: bytes) -> Optional[str]:
         """
         Parsear respuesta de inventario para extraer EPC
 
         Respuesta 0x89:
-        [0xA0][Len][Address][0x89][Num][PC_H][PC_L][EPC...][RSSI][Check]
+        [0xA0][Len][Address][0x89][RSSI][PC][EPC...][Check]
+
+        Basado en código verificado que funciona con el lector
         """
         try:
-            parsed = self._parse_response(response)
+            # Validaciones básicas
+            if len(response) < 9:
+                return None
 
-            if not parsed or not parsed['valid']:
+            if response[0] != 0xA0:
                 return None
 
             # Verificar que sea respuesta de inventario
-            if parsed['cmd'] != 0x89:
+            cmd = response[3]
+            if cmd != 0x89:
                 return None
 
-            data = parsed['data']
-
-            if len(data) < 4:
+            # Verificar checksum
+            checksum_calc = self._calculate_checksum(response[1:-1])
+            checksum_recv = response[-1]
+            if checksum_calc != checksum_recv:
+                logger.debug(f"Checksum inválido: esperado {checksum_calc:02X}, recibido {checksum_recv:02X}")
                 return None
 
-            # Estructura: [Num][PC_H][PC_L][EPC...][RSSI]
-            num_tags = data[0]
+            # Extraer datos
+            length = response[1]
+            rssi = response[4]
 
-            if num_tags == 0:
+            # Calcular longitud del EPC
+            # Length = addr(1) + cmd(1) + rssi(1) + pc(1) + epc(...) + checksum(1)
+            # epc_len = length - 5
+            epc_len = length - 5
+
+            if epc_len <= 0:
                 return None
 
-            pc_h = data[1]
-            pc_l = data[2]
+            epc_start = 6
+            epc_end = epc_start + epc_len
 
-            # Calcular longitud del EPC desde PC
-            # PC[15:11] = longitud en words (2 bytes)
-            epc_length_words = (pc_h >> 3) & 0x1F
-            epc_length_bytes = epc_length_words * 2
-
-            if len(data) < (3 + epc_length_bytes):
+            if len(response) < epc_end:
                 return None
 
-            # Extraer EPC
-            epc_bytes = data[3:3 + epc_length_bytes]
+            epc_bytes = response[epc_start:epc_end]
+
+            if not epc_bytes:
+                return None
+
             epc_hex = ''.join(f'{b:02X}' for b in epc_bytes)
+
+            logger.debug(f"Tag parseado: EPC={epc_hex}, RSSI={rssi}")
 
             return epc_hex
 
@@ -296,35 +363,67 @@ class YR9011USBScanner(QObject):
         logger.info("🔴 Lectura continua detenida")
 
     def _continuous_read_loop(self):
-        """Loop de lectura continua"""
-        last_tag = None
-        last_tag_time = 0
-        DEBOUNCE_TIME = 1.0
+        """
+        Loop de lectura continua con buffer acumulativo
+
+        Basado en código verificado que funciona
+        """
+        last_seen = {}  # {epc: timestamp}
+        buffer = b""
+        DEBOUNCE_TIME = 2.0
+        SCAN_INTERVAL = 0.2
+
+        # Comando de inventario
+        cmd_inventory = self._build_command(0x89, b'\x01')
 
         while self.scanning and self.connected:
             try:
-                epc = self.read_single_tag(timeout=0.5)
+                # Enviar comando de inventario
+                self.serial.write(cmd_inventory)
+                time.sleep(SCAN_INTERVAL)
 
-                if epc:
-                    current_time = time.time()
+                # Leer datos disponibles
+                if self.serial.in_waiting > 0:
+                    data = self.serial.read(self.serial.in_waiting)
+                    buffer += data
 
-                    # Debouncing
-                    if epc != last_tag or (current_time - last_tag_time) > DEBOUNCE_TIME:
-                        tag_data = {
-                            'tag_id': epc,
-                            'epc': epc,
-                            'timestamp': datetime.now(),
-                            'reader': 'YR9011-USB',
-                            'antenna_port': 1
-                        }
+                    # Extraer frames completos
+                    frames = self._extract_frames(buffer)
 
-                        self.tag_detected.emit(tag_data)
-                        logger.info(f"📡 Tag detectado: {epc}")
+                    for frame in frames:
+                        # Parsear cada frame
+                        epc = self._parse_inventory_response(frame)
 
-                        last_tag = epc
-                        last_tag_time = current_time
+                        if epc:
+                            current_time = time.time()
 
-                time.sleep(0.2)
+                            # Debouncing - solo emitir si es nuevo o pasó suficiente tiempo
+                            if epc in last_seen:
+                                if current_time - last_seen[epc] < DEBOUNCE_TIME:
+                                    continue
+
+                            last_seen[epc] = current_time
+
+                            # Emitir señal de tag detectado
+                            tag_data = {
+                                'tag_id': epc,
+                                'epc': epc,
+                                'timestamp': datetime.now(),
+                                'reader': 'YR9011-USB',
+                                'antenna_port': 1
+                            }
+
+                            self.tag_detected.emit(tag_data)
+                            logger.info(f"📡 Tag detectado: {epc}")
+
+                    # Limpiar buffer - mantener solo datos después del último frame procesado
+                    if frames:
+                        last_frame = frames[-1]
+                        last_pos = buffer.rfind(last_frame)
+                        if last_pos != -1:
+                            buffer = buffer[last_pos + len(last_frame):]
+
+                time.sleep(0.05)
 
             except Exception as e:
                 logger.error(f"Error en loop de lectura: {e}")
