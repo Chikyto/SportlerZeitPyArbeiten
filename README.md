@@ -27,13 +27,22 @@ Sistema profesional de cronometraje deportivo con tecnología RFID para carreras
 
 ### Instalación
 
+**Opción 1: Setup Automático (Recomendado)**
+
 ```bash
 # Clonar repositorio
 git clone https://github.com/tu-usuario/rfid-athletics-timer.git
 cd rfid-athletics-timer
 
+# Ejecutar script de setup (Linux/macOS)
+./setup.sh
+```
+
+**Opción 2: Instalación Manual**
+
+```bash
 # Crear entorno virtual
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate  # En Windows: venv\Scripts\activate
 
 # Instalar dependencias
