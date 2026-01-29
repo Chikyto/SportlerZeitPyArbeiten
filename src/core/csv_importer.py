@@ -37,8 +37,11 @@ class CSVAthleteImporter:
     # Mapeo de distancias a categorías
     DISTANCE_MAPPING = {
         '5K': {'category_id': '5k', 'name': '5 Kilómetros', 'distance_m': 5000, 'checkpoints': 0},
+        '7K': {'category_id': '7k', 'name': '7 Kilómetros', 'distance_m': 7000, 'checkpoints': 0},
         '10K': {'category_id': '10k', 'name': '10 Kilómetros', 'distance_m': 10000, 'checkpoints': 1},
+        '14K': {'category_id': '14k', 'name': '14 Kilómetros', 'distance_m': 14000, 'checkpoints': 1},
         '21K': {'category_id': '21k', 'name': 'Media Maratón 21K', 'distance_m': 21000, 'checkpoints': 2},
+        '24K': {'category_id': '24k', 'name': '24 Kilómetros', 'distance_m': 24000, 'checkpoints': 2},
         '30K': {'category_id': '30k', 'name': 'Mountain 30K', 'distance_m': 30000, 'checkpoints': 2},
         '42K': {'category_id': '42k', 'name': 'Maratón 42K', 'distance_m': 42000, 'checkpoints': 3},
         '50K': {'category_id': '50k', 'name': 'Trail 50K', 'distance_m': 50000, 'checkpoints': 3},
@@ -250,15 +253,14 @@ class CSVAthleteImporter:
                 return None
 
             # Mapear distancia a categoría
+            # Normalizar: mayúsculas y limpiar variaciones (km -> K, KM -> K)
+            distancia_original = distancia
+            distancia = distancia.upper().replace('KM', 'K').strip()
+
             if distancia not in self.DISTANCE_MAPPING:
-                logger.warning(f"⚠️  Fila {row_number}: Distancia desconocida '{distancia}'")
-                # Intentar mapeo flexible
-                if 'K' in distancia:
-                    distancia = distancia.replace('KM', 'K').replace('km', 'K')
-                    if distancia not in self.DISTANCE_MAPPING:
-                        return None
-                else:
-                    return None
+                logger.warning(f"⚠️  Fila {row_number}: Distancia desconocida '{distancia_original}' (normalizada: '{distancia}')")
+                logger.warning(f"    Distancias válidas: {', '.join(self.DISTANCE_MAPPING.keys())}")
+                return None
 
             category_info = self.DISTANCE_MAPPING[distancia]
             category_id = category_info['category_id']
