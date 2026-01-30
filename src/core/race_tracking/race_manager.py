@@ -14,7 +14,7 @@ Versión: 1.2.0
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from .models import Athlete, RaceCategory, DetectionEvent, AthleteResult, AthleteStatus, RaceStatus, EventType
 
@@ -44,7 +44,14 @@ class RaceManager:
         self.categories: Dict[str, RaceCategory] = {}
         self.results: Dict[str, Dict[str, AthleteResult]] = {}  # {category_id: {athlete_id: result}}
         self.detection_history: List[DetectionEvent] = []
-        
+
+        # Configuración de períodos de latencia (anti-duplicados)
+        self.min_read_interval = timedelta(seconds=3)  # Intervalo mínimo entre lecturas en misma antena
+        self.start_grace_period = timedelta(seconds=45)  # Período de gracia después de largar (evita re-largadas)
+
+        # Trackeo de últimas lecturas: {(athlete_id, antenna_port): timestamp}
+        self.last_detections: Dict[Tuple[str, int], datetime] = {}
+
         logger.info("🏁 RaceManager inicializado")
     
     # ========================================================================
@@ -264,15 +271,19 @@ class RaceManager:
         if category.status != RaceStatus.RUNNING:
             logger.debug(f"Categoría {category.name} no está en curso, ignorando detección")
             return None
-        
-        # 2. Determinar tipo de evento según roles
+
+        # 2. Validar períodos de latencia (anti-duplicados)
+        if not self._validate_detection_timing(athlete, antenna_port, timestamp, roles):
+            return None
+
+        # 3. Determinar tipo de evento según roles
         event_type, checkpoint_num = self._determine_event_type(roles, athlete, category)
-        
+
         if not event_type:
             logger.warning(f"⚠️  No se pudo determinar tipo de evento para roles: {roles}")
             return None
-        
-        # 3. Crear evento de detección
+
+        # 4. Crear evento de detección
         event = DetectionEvent(
             tag_id=tag_id,
             timestamp=timestamp,
@@ -282,23 +293,79 @@ class RaceManager:
             athlete=athlete,
             category_id=category.category_id
         )
-        
-        # 4. Registrar en resultado del atleta
+
+        # 5. Registrar en resultado del atleta
         result = self.results[category.category_id][athlete.athlete_id]
         success = self._record_event_in_result(result, event)
-        
+
         if success:
-            # 5. Guardar en historial
+            # 6. Actualizar tracking de última detección
+            detection_key = (athlete.athlete_id, antenna_port)
+            self.last_detections[detection_key] = timestamp
+
+            # 7. Guardar en historial
             self.detection_history.append(event)
-            
-            # 6. Actualizar clasificación
+
+            # 8. Actualizar clasificación
             self._update_classification(category.category_id)
-            
+
             logger.info(f"✅ {event}")
             return event
         
         return None
-    
+
+    def _validate_detection_timing(
+        self,
+        athlete: Athlete,
+        antenna_port: int,
+        timestamp: datetime,
+        roles: List[str]
+    ) -> bool:
+        """
+        Validar períodos de latencia para evitar detecciones duplicadas
+
+        Implementa dos tipos de validación:
+        1. Latencia por antena: Evita lecturas duplicadas del mismo chip en la misma antena
+        2. Período de gracia para START: Evita re-largadas cuando un corredor vuelve
+           (ej: se olvidó algo y regresa a buscar)
+
+        Args:
+            athlete: Atleta detectado
+            antenna_port: Puerto de la antena
+            timestamp: Momento de la detección
+            roles: Roles de la antena
+
+        Returns:
+            bool: True si la detección es válida, False si debe ignorarse
+        """
+        detection_key = (athlete.athlete_id, antenna_port)
+        last_detection = self.last_detections.get(detection_key)
+
+        # Validación 1: Intervalo mínimo entre lecturas en la misma antena
+        if last_detection:
+            time_since_last = timestamp - last_detection
+            if time_since_last < self.min_read_interval:
+                logger.debug(
+                    f"⏱️  Detección ignorada (muy reciente): {athlete.name} en antena {antenna_port} "
+                    f"({time_since_last.total_seconds():.1f}s desde última lectura)"
+                )
+                return False
+
+        # Validación 2: Período de gracia para START (evitar re-largadas)
+        if 'start' in roles:
+            result = self.results.get(athlete.category_id, {}).get(athlete.athlete_id)
+            if result and result.start_time:
+                time_since_start = timestamp - result.start_time
+                if time_since_start < self.start_grace_period:
+                    logger.info(
+                        f"🔄 START ignorado (periodo de gracia): {athlete.name} "
+                        f"({time_since_start.total_seconds():.1f}s desde largada) - "
+                        f"Probablemente volvió a buscar algo"
+                    )
+                    return False
+
+        return True
+
     def _find_athlete_by_tag(self, tag_id: str) -> Tuple[Optional[Athlete], Optional[RaceCategory]]:
         """
         Buscar atleta por tag_id en categorías activas
@@ -513,12 +580,19 @@ class RaceManager:
                 athlete=athlete,
                 category_id=category_id
             )
-        
+
+        # Limpiar tracking de detecciones de esta categoría
+        athlete_ids = {a.athlete_id for a in category.participants}
+        self.last_detections = {
+            key: value for key, value in self.last_detections.items()
+            if key[0] not in athlete_ids
+        }
+
         # Resetear estado
         category.status = RaceStatus.PENDING
         category.start_time = None
         category.end_time = None
-        
+
         logger.info(f"🔄 Categoría reseteada: {category.name}")
         return True
     
