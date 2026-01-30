@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                             QTableWidgetItem, QHeaderView, QTimeEdit, QSpinBox,
                             QTextEdit, QComboBox, QMessageBox, QGridLayout)
 from PyQt6.QtCore import pyqtSignal, QTime, Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 from datetime import datetime, time
 import logging
 
@@ -82,19 +82,20 @@ class EventConfigWidget(QWidget):
         
         # Tabla de categorías
         self.categories_table = QTableWidget()
-        self.categories_table.setColumnCount(7)
+        self.categories_table.setColumnCount(8)
         self.categories_table.setHorizontalHeaderLabels([
-            "ID", "Nombre", "Distancia", "Hora Largada", "Duración Max", "Estado", "Participantes"
+            "ID", "Nombre", "Distancia", "Hora Largada", "Duración Max", "Estado", "Participantes", "Chips Asignados"
         ])
         
         # Configurar tabla
         header = self.categories_table.horizontalHeader()
         header.setStretchLastSection(True)
-        for i in range(6):
+        for i in range(7):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
         
         self.categories_table.setAlternatingRowColors(True)
         self.categories_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.categories_table.itemSelectionChanged.connect(self.on_category_selected)
         categories_layout.addWidget(self.categories_table)
         
         layout.addWidget(categories_group)
@@ -125,7 +126,38 @@ class EventConfigWidget(QWidget):
         control_layout.addWidget(self.active_categories_label)
         
         layout.addWidget(control_group)
-        
+
+        # Panel de participantes de la categoría seleccionada
+        participants_detail_group = QGroupBox("Participantes de la Categoría Seleccionada")
+        participants_detail_layout = QVBoxLayout(participants_detail_group)
+
+        # Tabla de participantes
+        self.participants_table = QTableWidget()
+        self.participants_table.setColumnCount(5)
+        self.participants_table.setHorizontalHeaderLabels([
+            "Dorsal", "Nombre", "Chip RFID", "Estado Chip", "Info Adicional"
+        ])
+
+        # Configurar tabla
+        part_header = self.participants_table.horizontalHeader()
+        part_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        part_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        part_header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        part_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        part_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+
+        self.participants_table.setAlternatingRowColors(True)
+        self.participants_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.participants_table.setMaximumHeight(200)
+        participants_detail_layout.addWidget(self.participants_table)
+
+        # Label de estadísticas
+        self.participants_stats_label = QLabel("Selecciona una categoría para ver sus participantes")
+        self.participants_stats_label.setStyleSheet("font-style: italic; color: #666;")
+        participants_detail_layout.addWidget(self.participants_stats_label)
+
+        layout.addWidget(participants_detail_group)
+
         # Registro de participantes (simplificado)
         participants_group = QGroupBox("Registro Rápido de Participantes")
         participants_layout = QHBoxLayout(participants_group)
@@ -337,6 +369,23 @@ class EventConfigWidget(QWidget):
             # Número de participantes
             participant_count = len(category.participants)
             self.categories_table.setItem(row, 6, QTableWidgetItem(str(participant_count)))
+
+            # Chips asignados / Total
+            chips_assigned = sum(1 for p in category.participants if p.tag_id)
+            chip_status_text = f"{chips_assigned}/{participant_count}"
+            chip_status_item = QTableWidgetItem(chip_status_text)
+
+            # Colorear según porcentaje de asignación
+            if participant_count > 0:
+                percentage = (chips_assigned / participant_count) * 100
+                if percentage == 100:
+                    chip_status_item.setBackground(QColor("#d1fae5"))  # Verde claro
+                elif percentage >= 50:
+                    chip_status_item.setBackground(QColor("#fef3c7"))  # Amarillo claro
+                else:
+                    chip_status_item.setBackground(QColor("#fee2e2"))  # Rojo claro
+
+            self.categories_table.setItem(row, 7, chip_status_item)
             
     def refresh_category_combo(self):
         """Actualizar combo de categorías"""
@@ -355,10 +404,97 @@ class EventConfigWidget(QWidget):
         else:
             self.active_categories_label.setText("Categorías activas: Ninguna")
             self.active_categories_label.setStyleSheet("font-weight: bold; font-size: 14px; color: gray;")
+
+    def on_category_selected(self):
+        """Manejar selección de categoría en la tabla"""
+        current_row = self.categories_table.currentRow()
+        if current_row < 0:
+            self.participants_table.setRowCount(0)
+            self.participants_stats_label.setText("Selecciona una categoría para ver sus participantes")
+            return
+
+        # Obtener ID de categoría
+        category_id = self.categories_table.item(current_row, 0).text()
+        category = self.race_manager.get_category(category_id)
+
+        if not category:
+            return
+
+        # Actualizar tabla de participantes
+        self.refresh_participants_table(category)
+
+    def refresh_participants_table(self, category):
+        """Actualizar tabla de participantes de una categoría"""
+        self.participants_table.setRowCount(0)
+
+        if not category:
+            return
+
+        participants = category.participants
+        chips_assigned = sum(1 for p in participants if p.tag_id)
+
+        for participant in participants:
+            row = self.participants_table.rowCount()
+            self.participants_table.insertRow(row)
+
+            # Dorsal
+            self.participants_table.setItem(row, 0, QTableWidgetItem(str(participant.bib_number)))
+
+            # Nombre
+            self.participants_table.setItem(row, 1, QTableWidgetItem(participant.name))
+
+            # Chip RFID
+            chip_item = QTableWidgetItem(participant.tag_id or "-")
+            if participant.tag_id:
+                chip_item.setBackground(QColor("#d1fae5"))  # Verde claro
+            else:
+                chip_item.setBackground(QColor("#fee2e2"))  # Rojo claro
+            self.participants_table.setItem(row, 2, chip_item)
+
+            # Estado Chip
+            status = "✅ Asignado" if participant.tag_id else "⏳ Pendiente"
+            self.participants_table.setItem(row, 3, QTableWidgetItem(status))
+
+            # Info adicional
+            self.participants_table.setItem(row, 4, QTableWidgetItem(participant.notes or ""))
+
+        # Actualizar estadísticas
+        total = len(participants)
+        pending = total - chips_assigned
+        percentage = (chips_assigned / total * 100) if total > 0 else 0
+
+        self.participants_stats_label.setText(
+            f"📊 Total: {total} participantes | "
+            f"✅ Con chip: {chips_assigned} ({percentage:.0f}%) | "
+            f"⏳ Pendientes: {pending}"
+        )
+
+        if percentage == 100:
+            self.participants_stats_label.setStyleSheet("font-weight: bold; color: #10b981;")
+        elif percentage >= 50:
+            self.participants_stats_label.setStyleSheet("font-weight: bold; color: #f59e0b;")
+        else:
+            self.participants_stats_label.setStyleSheet("font-weight: bold; color: #ef4444;")
             
     def get_event_manager(self):
         """Obtener el manager de eventos"""
         return self.race_manager
+
+    def refresh_all(self):
+        """Refrescar todas las tablas (llamado desde otras solapas cuando cambian datos)"""
+        self.refresh_categories_table()
+        self.refresh_category_combo()
+        self.update_active_categories_label()
+
+        # Refrescar tabla de participantes si hay categoría seleccionada
+        current_row = self.categories_table.currentRow()
+        if current_row >= 0:
+            category_id = self.categories_table.item(current_row, 0).text()
+            category = self.race_manager.get_category(category_id)
+            if category:
+                self.refresh_participants_table(category)
+
+        logger.info("✅ EventConfigWidget refrescado desde otra solapa")
 
 # Dialog para agregar/editar categorías
 class CategoryDialog(QWidget):

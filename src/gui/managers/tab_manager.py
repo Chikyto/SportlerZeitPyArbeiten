@@ -84,7 +84,7 @@ class TabManager:
         logger.info("=" * 80)
         logger.info("🏗️  Creando todos los tabs")
         logger.info("=" * 80)
-        
+
         try:
             self.create_detection_tab()
             self.create_event_config_tab()
@@ -92,9 +92,12 @@ class TabManager:
             self.create_race_monitoring_tab()
             self.create_configuration_tab()
 
+            # Conectar señales entre tabs para sincronización
+            self.connect_tab_signals()
+
             logger.info(f"✅ {len(self.tabs)} tabs creados exitosamente")
             logger.info("=" * 80)
-            
+
         except Exception as e:
             logger.error(f"❌ Error creando tabs: {e}")
             import traceback
@@ -267,7 +270,65 @@ class TabManager:
     def has_tab(self, name: str) -> bool:
         """Verificar si existe un tab específico"""
         return name in self.tabs
-    
+
+    def connect_tab_signals(self):
+        """
+        Conectar señales entre tabs para sincronización automática
+
+        Conexiones:
+        - ChipAssignmentWidget.chip_assigned → EventConfigWidget.refresh_all()
+        - ChipAssignmentWidget.assignment_completed → EventConfigWidget.refresh_all()
+        - EventConfigWidget.category_started → RaceMonitoringWidget.refresh()
+        - EventConfigWidget.category_finished → RaceMonitoringWidget.refresh()
+        """
+        logger.info("🔗 Conectando señales entre tabs...")
+
+        # Obtener referencias a los tabs
+        chip_assignment = self.get_tab('chip_assignment')
+        event_config = self.get_tab('events')
+        race_monitoring = self.get_tab('race')
+
+        # Conexión: Asignación de Chips → Gestión de Eventos
+        if chip_assignment and event_config:
+            # Cuando se asigna un chip, refrescar eventos
+            chip_assignment.chip_assigned.connect(
+                lambda athlete_id, chip_id: self._on_chip_assigned(event_config)
+            )
+            chip_assignment.assignment_completed.connect(
+                lambda: event_config.refresh_all()
+            )
+            logger.info("✅ ChipAssignmentWidget → EventConfigWidget conectado")
+
+        # Conexión: Gestión de Eventos → Monitoreo de Carrera
+        if event_config and race_monitoring:
+            # Cuando se inicia/finaliza una categoría, refrescar monitoreo
+            event_config.category_started.connect(
+                lambda cat_id: self._on_category_changed(race_monitoring, cat_id)
+            )
+            event_config.category_finished.connect(
+                lambda cat_id: self._on_category_changed(race_monitoring, cat_id)
+            )
+            logger.info("✅ EventConfigWidget → RaceMonitoringWidget conectado")
+
+        logger.info("✅ Señales entre tabs conectadas exitosamente")
+
+    def _on_chip_assigned(self, event_config_widget):
+        """Callback cuando se asigna un chip - refrescar EventConfigWidget"""
+        try:
+            logger.info("🔄 Chip asignado, refrescando EventConfigWidget...")
+            event_config_widget.refresh_all()
+        except Exception as e:
+            logger.error(f"❌ Error refrescando EventConfigWidget: {e}")
+
+    def _on_category_changed(self, race_monitoring_widget, category_id: str):
+        """Callback cuando cambia el estado de una categoría"""
+        try:
+            logger.info(f"🔄 Categoría {category_id} cambió, refrescando RaceMonitoringWidget...")
+            if hasattr(race_monitoring_widget, 'refresh'):
+                race_monitoring_widget.refresh()
+        except Exception as e:
+            logger.error(f"❌ Error refrescando RaceMonitoringWidget: {e}")
+
     def __repr__(self) -> str:
         """Representación string del manager"""
         return f"<TabManager: {self.get_tab_count()} tabs ({', '.join(self.get_tab_names())})>"
