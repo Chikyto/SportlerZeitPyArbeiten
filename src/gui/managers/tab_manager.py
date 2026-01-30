@@ -74,23 +74,23 @@ class TabManager:
         """
         Crear todos los tabs de la aplicación
 
-        Orden de tabs:
-        1. Detección
-        2. Gestión de Eventos
-        3. Asignación de Chips
-        4. Competencia
-        5. Configuración
+        Orden de tabs (siguiendo el flujo natural de trabajo):
+        1. Configuración - Conectar lector RFID, configurar antenas
+        2. Gestión de Eventos - Crear evento, categorías, distancias
+        3. Asignación de Chips - Asignar chips a corredores
+        4. Competencia - Iniciar carreras, monitorear, resultados
+        5. Detección - Historial de detecciones, debugging
         """
         logger.info("=" * 80)
-        logger.info("🏗️  Creando todos los tabs")
+        logger.info("🏗️  Creando todos los tabs (orden workflow)")
         logger.info("=" * 80)
 
         try:
-            self.create_detection_tab()
-            self.create_event_config_tab()
-            self.create_chip_assignment_tab()
-            self.create_race_monitoring_tab()
-            self.create_configuration_tab()
+            self.create_configuration_tab()       # 1º: Configurar hardware
+            self.create_event_config_tab()        # 2º: Crear evento
+            self.create_chip_assignment_tab()     # 3º: Asignar chips
+            self.create_race_monitoring_tab()     # 4º: Correr carreras
+            self.create_detection_tab()           # 5º: Debugging/historial
 
             # Conectar señales entre tabs para sincronización
             self.connect_tab_signals()
