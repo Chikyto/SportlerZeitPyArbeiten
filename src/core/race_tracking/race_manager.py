@@ -129,27 +129,39 @@ class RaceManager:
     def start_category(self, category_id: str) -> bool:
         """
         Iniciar una categoría
-        
+
         Args:
             category_id: ID de la categoría a iniciar
-        
+
         Returns:
             bool: True si se inició correctamente
-        
+
         Raises:
             ValueError: Si la categoría no existe o no está lista
+
+        Nota:
+            NO se requiere que todos los participantes tengan chips asignados.
+            La carrera puede iniciarse con chips pendientes, ya que en eventos reales
+            puede haber corredores con problemas, ausentes, etc.
         """
         category = self.get_category(category_id)
         if not category:
             raise ValueError(f"Categoría {category_id} no existe")
-        
+
         if category.status not in [RaceStatus.PENDING, RaceStatus.READY]:
             raise ValueError(f"Categoría {category.name} no está lista para iniciar")
-        
+
+        # Informar estado de chips (solo informativo, no bloqueante)
+        total_participants = len(category.participants)
+        chips_assigned = sum(1 for p in category.participants if p.has_chip_assigned())
+        chips_pending = total_participants - chips_assigned
+
         category.status = RaceStatus.RUNNING
         category.start_time = datetime.now()
-        
+
         logger.info(f"🚀 Categoría iniciada: {category.name}")
+        logger.info(f"   📊 Participantes: {total_participants} | Chips: {chips_assigned} asignados, {chips_pending} pendientes")
+
         return True
     
     def pause_category(self, category_id: str) -> bool:
