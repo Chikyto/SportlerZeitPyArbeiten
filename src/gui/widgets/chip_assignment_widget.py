@@ -22,6 +22,7 @@ from typing import Optional, Dict, List
 # Import helper modules
 from .chip_assignment_csv_handler import ChipAssignmentCSVHandler
 from .chip_assignment_scanner_manager import ChipAssignmentScannerManager
+from .quick_athlete_registration_dialog import QuickAthleteRegistrationDialog
 
 logger = logging.getLogger(__name__)
 
@@ -713,10 +714,9 @@ class ChipAssignmentWidget(QWidget):
             return
 
         if not self.selected_athlete:
-            logger.warning(f"⚠️  Chip {chip_id} ignorado: No hay atleta seleccionado. Selecciona un atleta en la tabla primero.")
-            # Mostrar notificación visual
-            self.scan_status_label.setText(f"⚠️ Chip detectado ({chip_id[:8]}...) pero no hay atleta seleccionado")
-            self.scan_status_label.setStyleSheet("color: #f59e0b; font-weight: bold;")
+            logger.warning(f"⚠️  Chip {chip_id} detectado sin atleta seleccionado")
+            # Ofrecer opción de registro rápido para casos excepcionales
+            self.handle_unassigned_chip(chip_id)
             return
 
         logger.info(f"✅ Chip {chip_id} detectado en modo escaneo")
@@ -870,6 +870,158 @@ class ChipAssignmentWidget(QWidget):
 
         # AUTO-SAVE: Guardar datos automáticamente después de cada asignación
         self.auto_save_data()
+
+    def handle_unassigned_chip(self, chip_id: str):
+        """
+        Manejar chip detectado sin corredor asignado (caso excepcional)
+
+        Muestra un diálogo preguntando si desea registrar un nuevo corredor.
+
+        Args:
+            chip_id: ID del chip detectado
+        """
+        # Detener modo escaneo primero
+        if self.scan_mode:
+            self.toggle_scan_mode()
+
+        # Mostrar diálogo de confirmación
+        reply = QMessageBox.question(
+            self,
+            "Chip sin Corredor Asignado",
+            f"Se detectó el chip {chip_id} pero no hay ningún corredor seleccionado.\n\n"
+            "¿Es un corredor excepcional que no estaba en el sistema?\n"
+            "(Por ejemplo: un atleta élite que se registra el día del evento)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            logger.info("ℹ️  Usuario rechazó registro de corredor excepcional")
+            return
+
+        # Abrir diálogo de registro rápido
+        logger.info(f"🚀 Abriendo diálogo de registro rápido para chip {chip_id}")
+
+        dialog = QuickAthleteRegistrationDialog(
+            chip_id=chip_id,
+            race_manager=self.race_manager,
+            parent=self
+        )
+
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            logger.info("ℹ️  Usuario canceló registro de corredor excepcional")
+            return
+
+        # Obtener datos del atleta
+        athlete_data = dialog.get_athlete_data()
+
+        if not athlete_data:
+            logger.error("❌ No se obtuvieron datos del atleta")
+            return
+
+        # Crear atleta
+        try:
+            from src.core.race_tracking.models import Athlete
+
+            # Generar número de dorsal si es automático
+            if athlete_data['bib_number'] is None:
+                # Obtener el siguiente número de dorsal disponible para la categoría
+                category_id = athlete_data['category_id']
+                bib_number = self._generate_bib_number(category_id)
+            else:
+                bib_number = athlete_data['bib_number']
+
+            # Crear objeto Athlete
+            athlete_id = f"{athlete_data['category_id']}_{bib_number}"
+
+            new_athlete = Athlete(
+                athlete_id=athlete_id,
+                tag_id=athlete_data['chip_id'],
+                bib_number=bib_number,
+                name=athlete_data['name'],
+                category_id=athlete_data['category_id'],
+                gender=athlete_data['gender'],
+                birth_date=athlete_data['birth_date'],
+                team='',
+                notes='Registrado el día del evento (excepcional)'
+            )
+
+            # Agregar a la categoría correspondiente
+            category = self.race_manager.get_category(athlete_data['category_id'])
+
+            if not category:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"No se encontró la categoría {athlete_data['category_id']}"
+                )
+                return
+
+            category.add_participant(new_athlete)
+
+            logger.info(f"✅ Atleta excepcional registrado: {new_athlete.name} (#{bib_number})")
+
+            # Refrescar tabla
+            self.refresh_athletes_table()
+
+            # AUTO-SAVE
+            self.auto_save_data()
+
+            # Mostrar confirmación
+            QMessageBox.information(
+                self,
+                "Registro Exitoso",
+                f"✅ Corredor registrado exitosamente:\n\n"
+                f"• Nombre: {new_athlete.name}\n"
+                f"• Dorsal: #{bib_number}\n"
+                f"• Categoría: {athlete_data['category_id']}\n"
+                f"• Chip: {athlete_data['chip_id']}"
+            )
+
+        except Exception as e:
+            logger.error(f"❌ Error creando atleta excepcional: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error al crear el corredor:\n{str(e)}"
+            )
+
+    def _generate_bib_number(self, category_id: str) -> int:
+        """
+        Generar número de dorsal automático para una categoría
+
+        Args:
+            category_id: ID de la categoría
+
+        Returns:
+            int: Número de dorsal único
+        """
+        # Rangos base por categoría (igual que en csv_importer.py)
+        BIB_RANGES = {
+            '5k': 1,      # 1-999
+            '10k': 1000,  # 1000-1999
+            '21k': 2000,  # 2000-2999
+            '30k': 3000,  # 3000-3999
+            '42k': 4000,  # 4000-4999
+            '50k': 5000,  # 5000-5999
+            '100k': 6000, # 6000-6999
+        }
+
+        base = BIB_RANGES.get(category_id, 1)
+
+        # Obtener todos los dorsales existentes en esta categoría
+        category = self.race_manager.get_category(category_id)
+        if not category:
+            return base
+
+        existing_bibs = [a.bib_number for a in category.participants]
+
+        if not existing_bibs:
+            return base
+
+        # Retornar el siguiente número disponible
+        max_bib = max(existing_bibs)
+        return max_bib + 1
 
     def clear_assignment(self):
         """Limpiar asignación de chip del atleta seleccionado"""

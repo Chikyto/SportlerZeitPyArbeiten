@@ -65,6 +65,8 @@ class Athlete:
         bib_number: Número de dorsal (ej: 101)
         name: Nombre completo del atleta
         category_id: ID de la categoría a la que pertenece
+        gender: Género (M/F/Otro) - opcional
+        birth_date: Fecha de nacimiento - opcional
         team: Equipo o club (opcional)
         notes: Notas adicionales (opcional)
         athlete_id: ID único generado automáticamente
@@ -74,13 +76,17 @@ class Athlete:
         ...     tag_id="7662",
         ...     bib_number=101,
         ...     name="Juan Pérez",
-        ...     category_id="100m-varones"
+        ...     category_id="100m-varones",
+        ...     gender="M",
+        ...     birth_date=datetime(1990, 5, 15)
         ... )
     """
     tag_id: str = ""  # Vacío por defecto, se asigna luego
     bib_number: int = 0
     name: str = ""
     category_id: str = ""
+    gender: Optional[str] = None  # M, F, Otro
+    birth_date: Optional[datetime] = None
     team: Optional[str] = None
     notes: Optional[str] = None
     athlete_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -99,11 +105,76 @@ class Athlete:
         """Verifica si el atleta tiene chip asignado"""
         return bool(self.tag_id and self.tag_id.strip())
 
+    def get_age(self) -> Optional[int]:
+        """
+        Calcular edad actual del atleta
+
+        Returns:
+            int con edad en años, None si no hay fecha de nacimiento
+        """
+        if not self.birth_date:
+            return None
+
+        today = datetime.now()
+        age = today.year - self.birth_date.year
+
+        # Ajustar si aún no cumplió años este año
+        if (today.month, today.day) < (self.birth_date.month, self.birth_date.day):
+            age -= 1
+
+        return age
+
+    def get_award_category(self) -> Optional[str]:
+        """
+        Determinar categoría de premiación basada en género y edad
+
+        Rangos de edad estándar IAAF:
+        - Sub-20 (15-19)
+        - Elite (20-34)
+        - Master A (35-39)
+        - Master B (40-44)
+        - Master C (45-49)
+        - Master D (50-54)
+        - Master E (55+)
+
+        Returns:
+            str con categoría (ej: "F15-19", "M35-39"), None si faltan datos
+        """
+        if not self.gender or not self.birth_date:
+            return None
+
+        age = self.get_age()
+        if age is None:
+            return None
+
+        # Normalizar género
+        gender_code = self.gender.upper()[0] if self.gender else "?"
+
+        # Determinar rango de edad
+        if age < 15:
+            age_range = "U15"
+        elif age < 20:
+            age_range = "15-19"
+        elif age < 35:
+            age_range = "20-34"
+        elif age < 40:
+            age_range = "35-39"
+        elif age < 45:
+            age_range = "40-44"
+        elif age < 50:
+            age_range = "45-49"
+        elif age < 55:
+            age_range = "50-54"
+        else:
+            age_range = "55+"
+
+        return f"{gender_code}{age_range}"
+
     def __str__(self) -> str:
         """Representación legible"""
         chip_info = f"Tag: {self.tag_id}" if self.has_chip_assigned() else "Sin chip"
         return f"#{self.bib_number} {self.name} ({chip_info})"
-    
+
     def __repr__(self) -> str:
         """Representación para debugging"""
         return f"<Athlete {self.bib_number}: {self.name}>"

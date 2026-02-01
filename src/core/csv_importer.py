@@ -281,8 +281,11 @@ class CSVAthleteImporter:
                 bib_number = self._generate_bib_number(category_id)
                 logger.debug(f"⚙️  Fila {row_number}: Generando dorsal automático: {bib_number}")
 
-            # Calcular edad
-            edad = self._calculate_age(fecha_nacimiento)
+            # Parsear fecha de nacimiento a datetime
+            birth_date = self._parse_birth_date(fecha_nacimiento)
+
+            # Normalizar género (M/F/Otro)
+            gender_normalized = self._normalize_gender(genero)
 
             # Construir nombre completo
             full_name = f"{nombre} {apellido}"
@@ -290,14 +293,8 @@ class CSVAthleteImporter:
             # Crear ID único
             athlete_id = f"{category_id}_{bib_number}"
 
-            # Construir notas con información adicional
+            # Construir notas con información adicional (SIN género ni edad, ya están en campos dedicados)
             notes_parts = []
-
-            if edad:
-                notes_parts.append(f"Edad: {edad}")
-
-            if genero:
-                notes_parts.append(f"Género: {genero}")
 
             if dni:
                 notes_parts.append(f"DNI: {dni}")
@@ -320,7 +317,7 @@ class CSVAthleteImporter:
             if precio:
                 notes_parts.append(f"Precio: ${precio}")
 
-            notes = " | ".join(notes_parts)
+            notes = " | ".join(notes_parts) if notes_parts else None
 
             # Crear atleta
             athlete = Athlete(
@@ -329,6 +326,8 @@ class CSVAthleteImporter:
                 bib_number=bib_number,
                 name=full_name,
                 category_id=category_id,
+                gender=gender_normalized,
+                birth_date=birth_date,
                 team='',  # Agregar si lo tienes en tu CSV
                 notes=notes
             )
@@ -403,6 +402,63 @@ class CSVAthleteImporter:
         except Exception as e:
             logger.debug(f"No se pudo parsear fecha: {fecha_nacimiento}")
             return None
+
+    def _parse_birth_date(self, fecha_nacimiento: str) -> Optional[datetime]:
+        """
+        Parsear fecha de nacimiento a datetime
+
+        Formatos soportados:
+        - DD/MM/YYYY
+        - YYYY-MM-DD
+        - DD-MM-YYYY
+
+        Args:
+            fecha_nacimiento: Fecha en string
+
+        Returns:
+            datetime o None si no se puede parsear
+        """
+        if not fecha_nacimiento or not fecha_nacimiento.strip():
+            return None
+
+        try:
+            # Intentar diferentes formatos
+            for fmt in ['%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y']:
+                try:
+                    return datetime.strptime(fecha_nacimiento.strip(), fmt)
+                except ValueError:
+                    continue
+
+            logger.debug(f"⚠️  No se pudo parsear fecha de nacimiento: '{fecha_nacimiento}'")
+            return None
+
+        except Exception as e:
+            logger.debug(f"Error parseando fecha de nacimiento: {e}")
+            return None
+
+    def _normalize_gender(self, genero: str) -> Optional[str]:
+        """
+        Normalizar género a formato estándar (M/F/Otro)
+
+        Args:
+            genero: Género desde CSV (puede ser "Masculino", "Femenino", "M", "F", etc.)
+
+        Returns:
+            str: "M", "F", "Otro" o None si está vacío
+        """
+        if not genero or not genero.strip():
+            return None
+
+        genero_lower = genero.strip().lower()
+
+        # Mapeos comunes
+        if genero_lower in ['m', 'masculino', 'male', 'hombre', 'varon', 'varón']:
+            return 'M'
+        elif genero_lower in ['f', 'femenino', 'female', 'mujer']:
+            return 'F'
+        else:
+            # Cualquier otro valor se guarda como "Otro"
+            return 'Otro'
 
     def _clean_phone(self, telefono: str) -> Optional[str]:
         """
