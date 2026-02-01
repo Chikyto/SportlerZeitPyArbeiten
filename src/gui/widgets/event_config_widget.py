@@ -29,6 +29,7 @@ class EventConfigWidget(QWidget):
     event_updated = pyqtSignal(dict)
     category_started = pyqtSignal(str)  # category_id
     category_finished = pyqtSignal(str)  # category_id
+    categories_changed = pyqtSignal()  # Se emite cuando cambian las categorías
 
     def __init__(self, race_manager=None):
         super().__init__()
@@ -207,6 +208,7 @@ class EventConfigWidget(QWidget):
 
         self.refresh_categories_table()
         self.refresh_category_combo()
+        self.categories_changed.emit()
         
     def add_new_category(self):
         """Agregar nueva categoría"""
@@ -216,6 +218,7 @@ class EventConfigWidget(QWidget):
             self.race_manager.add_category(category)
             self.refresh_categories_table()
             self.refresh_category_combo()
+            self.categories_changed.emit()
             
     def edit_selected_category(self):
         """Editar categoría seleccionada"""
@@ -254,6 +257,7 @@ class EventConfigWidget(QWidget):
             self.race_manager.remove_category(category_id)
             self.refresh_categories_table()
             self.refresh_category_combo()
+            self.categories_changed.emit()
             
     def load_preset_categories(self):
         """Cargar categorías predefinidas"""

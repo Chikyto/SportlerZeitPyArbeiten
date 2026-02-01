@@ -206,11 +206,16 @@ class RaceMonitoringWidget(QWidget):
             self.auto_refresh_btn.setText("Auto: ON")
             self.auto_refresh_btn.setStyleSheet("background-color: green; color: white;")
             
+    def refresh(self):
+        """Actualizar widget completo (para compatibilidad con señales)"""
+        self.refresh_category_combo()
+        self.refresh_all_data()
+
     def refresh_all_data(self):
         """Actualizar todos los datos"""
         if not self.race_manager or not self.race_manager:
             return
-            
+
         self.refresh_categories_overview()
         self.refresh_participants_table()
         self.refresh_statistics()

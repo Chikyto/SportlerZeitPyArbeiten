@@ -280,6 +280,7 @@ class TabManager:
         - ChipAssignmentWidget.assignment_completed → EventConfigWidget.refresh_all()
         - EventConfigWidget.category_started → RaceMonitoringWidget.refresh()
         - EventConfigWidget.category_finished → RaceMonitoringWidget.refresh()
+        - EventConfigWidget.categories_changed → RaceMonitoringWidget.refresh_category_combo()
         """
         logger.info("🔗 Conectando señales entre tabs...")
 
@@ -308,6 +309,10 @@ class TabManager:
             event_config.category_finished.connect(
                 lambda cat_id: self._on_category_changed(race_monitoring, cat_id)
             )
+            # Cuando cambian las categorías (agregar/eliminar), actualizar combo
+            event_config.categories_changed.connect(
+                lambda: self._on_categories_list_changed(race_monitoring)
+            )
             logger.info("✅ EventConfigWidget → RaceMonitoringWidget conectado")
 
         logger.info("✅ Señales entre tabs conectadas exitosamente")
@@ -328,6 +333,15 @@ class TabManager:
                 race_monitoring_widget.refresh()
         except Exception as e:
             logger.error(f"❌ Error refrescando RaceMonitoringWidget: {e}")
+
+    def _on_categories_list_changed(self, race_monitoring_widget):
+        """Callback cuando cambia la lista de categorías (agregar/eliminar)"""
+        try:
+            logger.info("🔄 Lista de categorías cambió, actualizando combo en RaceMonitoringWidget...")
+            if hasattr(race_monitoring_widget, 'refresh_category_combo'):
+                race_monitoring_widget.refresh_category_combo()
+        except Exception as e:
+            logger.error(f"❌ Error actualizando combo de categorías: {e}")
 
     def __repr__(self) -> str:
         """Representación string del manager"""
