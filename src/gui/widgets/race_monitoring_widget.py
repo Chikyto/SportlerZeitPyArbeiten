@@ -1,8 +1,8 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                            QLabel, QGroupBox, QTableWidget, QTableWidgetItem, 
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+                            QLabel, QGroupBox, QTableWidget, QTableWidgetItem,
                             QHeaderView, QComboBox, QTabWidget, QTextEdit)
 from PyQt6.QtCore import pyqtSignal, QTimer, Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 from datetime import datetime
 
 class RaceMonitoringWidget(QWidget):
@@ -66,7 +66,10 @@ class RaceMonitoringWidget(QWidget):
         
         # Tab 3: Estadísticas detalladas
         self.setup_statistics_tab()
-        
+
+        # Tab 4: Podios por categoría de premiación
+        self.setup_podiums_tab()
+
         layout.addWidget(self.monitoring_tabs)
         
     def setup_categories_overview_tab(self):
@@ -165,7 +168,317 @@ class RaceMonitoringWidget(QWidget):
         events_layout.addWidget(self.events_log)
         
         layout.addWidget(events_group)
-        
+
+    def setup_podiums_tab(self):
+        """Tab con podios por categoría de premiación"""
+        tab = QWidget()
+        self.monitoring_tabs.addTab(tab, "🏆 Podios por Categoría")
+
+        layout = QVBoxLayout(tab)
+
+        # Controles
+        controls_layout = QHBoxLayout()
+
+        controls_layout.addWidget(QLabel("Categoría de Carrera:"))
+        self.podiums_category_combo = QComboBox()
+        self.podiums_category_combo.addItem("Selecciona una categoría")
+        self.podiums_category_combo.currentTextChanged.connect(self.refresh_podiums)
+        controls_layout.addWidget(self.podiums_category_combo)
+
+        controls_layout.addWidget(QLabel("Top:"))
+        self.podium_top_n_combo = QComboBox()
+        self.podium_top_n_combo.addItems(["3", "5", "10"])
+        self.podium_top_n_combo.currentTextChanged.connect(self.refresh_podiums)
+        controls_layout.addWidget(self.podium_top_n_combo)
+
+        refresh_podiums_btn = QPushButton("🔄 Actualizar Podios")
+        refresh_podiums_btn.clicked.connect(self.refresh_podiums)
+        controls_layout.addWidget(refresh_podiums_btn)
+
+        export_podiums_btn = QPushButton("📄 Exportar a CSV")
+        export_podiums_btn.clicked.connect(self.export_podiums_to_csv)
+        export_podiums_btn.setStyleSheet("background-color: #10b981; color: white; font-weight: bold;")
+        controls_layout.addWidget(export_podiums_btn)
+
+        controls_layout.addStretch()
+
+        layout.addLayout(controls_layout)
+
+        # Área de podios (scroll area con contenido dinámico)
+        from PyQt6.QtWidgets import QScrollArea
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+
+        self.podiums_container = QWidget()
+        self.podiums_layout = QVBoxLayout(self.podiums_container)
+        self.podiums_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        scroll_area.setWidget(self.podiums_container)
+        layout.addWidget(scroll_area)
+
+        # Información inicial
+        info_label = QLabel("Selecciona una categoría de carrera para ver los podios por categoría de premiación.")
+        info_label.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
+        info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.podiums_layout.addWidget(info_label)
+
+    def refresh_podiums(self):
+        """Actualizar visualización de podios"""
+        if not self.race_manager:
+            return
+
+        # Limpiar layout actual
+        while self.podiums_layout.count():
+            item = self.podiums_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        # Obtener categoría seleccionada
+        selected_text = self.podiums_category_combo.currentText()
+        if selected_text == "Selecciona una categoría":
+            info_label = QLabel("Selecciona una categoría de carrera para ver los podios.")
+            info_label.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
+            info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.podiums_layout.addWidget(info_label)
+            return
+
+        race_category_id = selected_text.split(" - ")[0]
+
+        # Obtener top_n
+        top_n = int(self.podium_top_n_combo.currentText())
+
+        # Obtener podios
+        try:
+            podiums = self.race_manager.get_podium_by_award_category(race_category_id, top_n=top_n)
+
+            if not podiums:
+                no_data_label = QLabel("No hay resultados finalizados aún.")
+                no_data_label.setStyleSheet("color: #f59e0b; font-style: italic; padding: 20px;")
+                no_data_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.podiums_layout.addWidget(no_data_label)
+                return
+
+            # Crear grupos de podios por categoría
+            for award_cat_id, podium in podiums.items():
+                award_cat = self.race_manager.get_award_category(award_cat_id)
+                if not award_cat or len(podium) == 0:
+                    continue
+
+                # Crear grupo para esta categoría
+                group = QGroupBox(f"🏆 {award_cat.name}")
+                group.setStyleSheet("""
+                    QGroupBox {
+                        font-weight: bold;
+                        border: 2px solid #10b981;
+                        border-radius: 5px;
+                        margin-top: 10px;
+                        padding-top: 10px;
+                    }
+                    QGroupBox::title {
+                        color: #10b981;
+                        subcontrol-origin: margin;
+                        left: 10px;
+                        padding: 0 5px;
+                    }
+                """)
+
+                group_layout = QVBoxLayout(group)
+
+                # Crear tabla de podio para esta categoría
+                podium_table = QTableWidget()
+                podium_table.setColumnCount(5)
+                podium_table.setHorizontalHeaderLabels([
+                    "Pos", "Dorsal", "Nombre", "Tiempo", "Género/Edad"
+                ])
+
+                podium_table.setRowCount(len(podium))
+
+                for idx, (position, result) in enumerate(podium):
+                    # Posición con medalla
+                    pos_item = QTableWidgetItem()
+                    if position == 1:
+                        pos_item.setText("🥇 1°")
+                        pos_item.setBackground(QColor("#ffd700"))  # Oro
+                    elif position == 2:
+                        pos_item.setText("🥈 2°")
+                        pos_item.setBackground(QColor("#c0c0c0"))  # Plata
+                    elif position == 3:
+                        pos_item.setText("🥉 3°")
+                        pos_item.setBackground(QColor("#cd7f32"))  # Bronce
+                    else:
+                        pos_item.setText(f"{position}°")
+
+                    pos_item.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+                    podium_table.setItem(idx, 0, pos_item)
+
+                    # Dorsal
+                    podium_table.setItem(idx, 1, QTableWidgetItem(str(result.athlete.bib_number)))
+
+                    # Nombre
+                    name_item = QTableWidgetItem(result.athlete.name)
+                    name_item.setFont(QFont("Arial", 10, QFont.Weight.Bold if position <= 3 else QFont.Weight.Normal))
+                    podium_table.setItem(idx, 2, name_item)
+
+                    # Tiempo
+                    time_item = QTableWidgetItem(result.get_formatted_time())
+                    time_item.setFont(QFont("Arial", 10, QFont.Weight.Bold if position <= 3 else QFont.Weight.Normal))
+                    podium_table.setItem(idx, 3, time_item)
+
+                    # Género/Edad
+                    gender_map = {"M": "Masculino", "F": "Femenino", "O": "Otro"}
+                    gender_str = gender_map.get(result.athlete.gender, "N/D")
+                    age = result.athlete.get_age()
+                    age_str = f"{age} años" if age is not None else "N/D"
+                    podium_table.setItem(idx, 4, QTableWidgetItem(f"{gender_str}, {age_str}"))
+
+                # Configurar tabla
+                header = podium_table.horizontalHeader()
+                header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+                header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+                header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+                header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+                header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+
+                podium_table.setMaximumHeight(100 + (len(podium) * 30))
+                podium_table.setAlternatingRowColors(True)
+
+                group_layout.addWidget(podium_table)
+                self.podiums_layout.addWidget(group)
+
+        except Exception as e:
+            error_label = QLabel(f"Error generando podios: {str(e)}")
+            error_label.setStyleSheet("color: #ef4444; font-style: italic; padding: 20px;")
+            error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.podiums_layout.addWidget(error_label)
+            import logging
+            logging.error(f"Error en refresh_podiums: {e}", exc_info=True)
+
+    def refresh_podiums_category_combo(self):
+        """Actualizar combo de categorías para podios"""
+        if not self.race_manager:
+            return
+
+        current_text = self.podiums_category_combo.currentText()
+        self.podiums_category_combo.clear()
+        self.podiums_category_combo.addItem("Selecciona una categoría")
+
+        for category in self.race_manager.get_all_categories():
+            # Solo mostrar categorías finalizadas o en curso
+            from src.core.race_tracking.models import RaceStatus
+            if category.status in [RaceStatus.RUNNING, RaceStatus.FINISHED]:
+                self.podiums_category_combo.addItem(f"{category.category_id} - {category.name}")
+
+        # Restaurar selección si es posible
+        index = self.podiums_category_combo.findText(current_text)
+        if index >= 0:
+            self.podiums_category_combo.setCurrentIndex(index)
+
+    def export_podiums_to_csv(self):
+        """Exportar podios por categoría de premiación a CSV"""
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+        import csv
+
+        if not self.race_manager:
+            QMessageBox.warning(self, "Error", "No hay race_manager disponible")
+            return
+
+        # Verificar que hay una categoría seleccionada
+        selected_text = self.podiums_category_combo.currentText()
+        if selected_text == "Selecciona una categoría":
+            QMessageBox.warning(self, "Error", "Selecciona una categoría de carrera primero")
+            return
+
+        race_category_id = selected_text.split(" - ")[0]
+        race_category = self.race_manager.get_category(race_category_id)
+
+        # Diálogo para seleccionar archivo
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exportar Podios a CSV",
+            f"podios_{race_category_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            "CSV Files (*.csv)"
+        )
+
+        if not file_path:
+            return  # Usuario canceló
+
+        try:
+            # Obtener podios
+            top_n = int(self.podium_top_n_combo.currentText())
+            podiums = self.race_manager.get_podium_by_award_category(race_category_id, top_n=top_n)
+
+            if not podiums:
+                QMessageBox.warning(self, "Sin datos", "No hay resultados finalizados para exportar")
+                return
+
+            # Escribir CSV
+            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+
+                # Encabezado principal
+                writer.writerow([f"PODIOS POR CATEGORÍA DE PREMIACIÓN - {race_category.name}"])
+                writer.writerow([f"Fecha de exportación: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+                writer.writerow([])  # Línea vacía
+
+                # Para cada categoría de premiación
+                for award_cat_id, podium in sorted(podiums.items()):
+                    award_cat = self.race_manager.get_award_category(award_cat_id)
+                    if not award_cat or len(podium) == 0:
+                        continue
+
+                    # Encabezado de categoría
+                    writer.writerow([f"CATEGORÍA: {award_cat.name}"])
+                    writer.writerow([
+                        "Posición",
+                        "Dorsal",
+                        "Nombre",
+                        "Tiempo",
+                        "Género",
+                        "Edad",
+                        "Equipo"
+                    ])
+
+                    # Resultados de esta categoría
+                    for position, result in podium:
+                        gender_map = {"M": "Masculino", "F": "Femenino", "O": "Otro"}
+                        gender_str = gender_map.get(result.athlete.gender, "N/D")
+                        age = result.athlete.get_age()
+                        age_str = str(age) if age is not None else "N/D"
+
+                        writer.writerow([
+                            position,
+                            result.athlete.bib_number,
+                            result.athlete.name,
+                            result.get_formatted_time(),
+                            gender_str,
+                            age_str,
+                            result.athlete.team or ""
+                        ])
+
+                    writer.writerow([])  # Línea vacía entre categorías
+
+                # Estadísticas generales al final
+                writer.writerow([])
+                writer.writerow(["ESTADÍSTICAS GENERALES"])
+                writer.writerow(["Total de categorías de premiación:", len(podiums)])
+                total_podium_positions = sum(len(p) for p in podiums.values())
+                writer.writerow(["Total de posiciones en podios:", total_podium_positions])
+
+            QMessageBox.information(
+                self,
+                "Éxito",
+                f"Podios exportados exitosamente a:\n{file_path}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error exportando podios:\n{str(e)}"
+            )
+            import logging
+            logging.error(f"Error en export_podiums_to_csv: {e}", exc_info=True)
+
     def set_race_manager(self, race_manager):
         """Establecer el race manager"""
         self.race_manager = race_manager
@@ -185,11 +498,14 @@ class RaceMonitoringWidget(QWidget):
 
         for category in self.race_manager.get_all_categories():
             self.category_combo.addItem(f"{category.category_id} - {category.name}")
-            
+
         # Restaurar selección si es posible
         index = self.category_combo.findText(current_text)
         if index >= 0:
             self.category_combo.setCurrentIndex(index)
+
+        # También actualizar el combo de podios
+        self.refresh_podiums_category_combo()
         
     def on_category_changed(self):
         """Manejar cambio de categoría seleccionada"""

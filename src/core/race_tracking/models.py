@@ -513,9 +513,195 @@ class AthleteResult:
         return f"<AthleteResult {self.athlete.name}: {self.get_formatted_time()}>"
 
 
+@dataclass
+class AwardCategory:
+    """
+    Categoría de premiación basada en género y edad
+
+    Attributes:
+        award_category_id: ID único (ej: "F15-19", "M35-39")
+        name: Nombre descriptivo (ej: "Femenino 15-19 años")
+        gender: Género ('M', 'F', 'O' para Otro, None para Mixto)
+        min_age: Edad mínima (incluida)
+        max_age: Edad máxima (incluida, None para sin límite)
+        race_category_ids: Lista de IDs de RaceCategory a las que aplica (None = todas)
+        is_iaaf: Si es una categoría estándar IAAF (no modificable)
+        description: Descripción adicional
+
+    Example:
+        >>> # Categoría IAAF
+        >>> cat = AwardCategory(
+        ...     award_category_id="F15-19",
+        ...     name="Femenino Sub-20",
+        ...     gender="F",
+        ...     min_age=15,
+        ...     max_age=19,
+        ...     is_iaaf=True
+        ... )
+        >>> # Categoría personalizada para 21K
+        >>> cat = AwardCategory(
+        ...     award_category_id="M40-49-21K",
+        ...     name="Masculino Master 40-49 (21K)",
+        ...     gender="M",
+        ...     min_age=40,
+        ...     max_age=49,
+        ...     race_category_ids=["21k"],
+        ...     is_iaaf=False
+        ... )
+    """
+    award_category_id: str
+    name: str
+    gender: Optional[str] = None  # M, F, O (Otro), None (Mixto)
+    min_age: int = 0
+    max_age: Optional[int] = None  # None = sin límite superior
+    race_category_ids: Optional[List[str]] = None  # None = aplica a todas
+    is_iaaf: bool = False
+    description: Optional[str] = None
+
+    def __post_init__(self):
+        """Validar datos al crear"""
+        if not self.award_category_id:
+            raise ValueError("award_category_id no puede estar vacío")
+        if not self.name:
+            raise ValueError("name no puede estar vacío")
+        if self.min_age < 0:
+            raise ValueError("min_age debe ser >= 0")
+        if self.max_age is not None and self.max_age < self.min_age:
+            raise ValueError("max_age debe ser >= min_age")
+        if self.gender and self.gender.upper() not in ['M', 'F', 'O', None]:
+            # Normalizar género
+            self.gender = self.gender.upper()[0] if self.gender else None
+
+    def applies_to_athlete(self, athlete: 'Athlete') -> bool:
+        """
+        Verificar si esta categoría aplica a un atleta
+
+        Args:
+            athlete: Atleta a verificar
+
+        Returns:
+            bool: True si el atleta pertenece a esta categoría
+        """
+        # Verificar género
+        if self.gender:
+            athlete_gender = athlete.gender.upper()[0] if athlete.gender else None
+            if athlete_gender != self.gender:
+                return False
+
+        # Verificar edad
+        age = athlete.get_age()
+        if age is None:
+            return False  # Sin edad, no podemos categorizar
+
+        if age < self.min_age:
+            return False
+
+        if self.max_age is not None and age > self.max_age:
+            return False
+
+        # Verificar categoría de carrera (distancia)
+        if self.race_category_ids is not None:
+            if athlete.category_id not in self.race_category_ids:
+                return False
+
+        return True
+
+    def applies_to_race_category(self, race_category_id: str) -> bool:
+        """
+        Verificar si esta categoría aplica a una categoría de carrera (distancia)
+
+        Args:
+            race_category_id: ID de la categoría de carrera
+
+        Returns:
+            bool: True si aplica a esa distancia
+        """
+        if self.race_category_ids is None:
+            return True  # Aplica a todas
+        return race_category_id in self.race_category_ids
+
+    def get_age_range_str(self) -> str:
+        """
+        Obtener string con rango de edad
+
+        Returns:
+            str: Rango formateado (ej: "15-19", "55+", "0-14")
+        """
+        if self.max_age is None:
+            return f"{self.min_age}+"
+        return f"{self.min_age}-{self.max_age}"
+
+    def __str__(self) -> str:
+        """Representación legible"""
+        gender_str = {"M": "Masculino", "F": "Femenino", "O": "Otro"}.get(self.gender, "Mixto")
+        age_str = self.get_age_range_str()
+        return f"{gender_str} {age_str}"
+
+    def __repr__(self) -> str:
+        """Representación para debugging"""
+        return f"<AwardCategory '{self.name}' ({self.award_category_id})>"
+
+
 # ============================================================================
 # FUNCIONES AUXILIARES
 # ============================================================================
+
+def create_iaaf_award_categories() -> List[AwardCategory]:
+    """
+    Crear categorías de premiación estándar IAAF
+
+    Categorías por género y edad según International Association of Athletics Federations:
+    - Sub-15 (0-14)
+    - Sub-20 (15-19)
+    - Elite (20-34)
+    - Master A (35-39)
+    - Master B (40-44)
+    - Master C (45-49)
+    - Master D (50-54)
+    - Master E (55+)
+
+    Returns:
+        List[AwardCategory]: Lista de categorías IAAF para M y F
+    """
+    categories = []
+
+    # Definición de rangos IAAF
+    age_ranges = [
+        ("U15", "Sub-15", 0, 14),
+        ("15-19", "Sub-20", 15, 19),
+        ("20-34", "Elite", 20, 34),
+        ("35-39", "Master A", 35, 39),
+        ("40-44", "Master B", 40, 44),
+        ("45-49", "Master C", 45, 49),
+        ("50-54", "Master D", 50, 54),
+        ("55+", "Master E", 55, None),
+    ]
+
+    # Crear para Masculino y Femenino
+    for gender_code, gender_name in [("M", "Masculino"), ("F", "Femenino")]:
+        for age_code, age_name, min_age, max_age in age_ranges:
+            cat_id = f"{gender_code}{age_code}"
+            cat_name = f"{gender_name} {age_name}"
+
+            if max_age is None:
+                description = f"Categoría {gender_name} {min_age} años o más (IAAF)"
+            else:
+                description = f"Categoría {gender_name} {min_age}-{max_age} años (IAAF)"
+
+            category = AwardCategory(
+                award_category_id=cat_id,
+                name=cat_name,
+                gender=gender_code,
+                min_age=min_age,
+                max_age=max_age,
+                race_category_ids=None,  # Aplica a todas las distancias
+                is_iaaf=True,
+                description=description
+            )
+            categories.append(category)
+
+    return categories
+
 
 def create_test_category() -> RaceCategory:
     """

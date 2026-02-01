@@ -16,7 +16,11 @@ Versión: 1.2.0
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-from .models import Athlete, RaceCategory, DetectionEvent, AthleteResult, AthleteStatus, RaceStatus, EventType
+from .models import (
+    Athlete, RaceCategory, DetectionEvent, AthleteResult,
+    AthleteStatus, RaceStatus, EventType, AwardCategory,
+    create_iaaf_award_categories
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +43,19 @@ class RaceManager:
         >>> manager.process_detection(tag_id="7662", ...)
     """
     
-    def __init__(self):
-        """Inicializar Race Manager"""
+    def __init__(self, load_iaaf_categories: bool = True):
+        """
+        Inicializar Race Manager
+
+        Args:
+            load_iaaf_categories: Si True, carga categorías IAAF por defecto
+        """
         self.categories: Dict[str, RaceCategory] = {}
         self.results: Dict[str, Dict[str, AthleteResult]] = {}  # {category_id: {athlete_id: result}}
         self.detection_history: List[DetectionEvent] = []
+
+        # Categorías de premiación (por género/edad)
+        self.award_categories: Dict[str, AwardCategory] = {}
 
         # Configuración de períodos de latencia (anti-duplicados)
         self.min_read_interval = timedelta(seconds=3)  # Intervalo mínimo entre lecturas en misma antena
@@ -51,6 +63,12 @@ class RaceManager:
 
         # Trackeo de últimas lecturas: {(athlete_id, antenna_port): timestamp}
         self.last_detections: Dict[Tuple[str, int], datetime] = {}
+
+        # Cargar categorías IAAF por defecto
+        if load_iaaf_categories:
+            for award_cat in create_iaaf_award_categories():
+                self.award_categories[award_cat.award_category_id] = award_cat
+            logger.info(f"📋 {len(self.award_categories)} categorías IAAF cargadas")
 
         logger.info("🏁 RaceManager inicializado")
     
@@ -128,7 +146,92 @@ class RaceManager:
     def get_active_categories(self) -> List[RaceCategory]:
         """Obtener categorías en curso"""
         return [c for c in self.categories.values() if c.status == RaceStatus.RUNNING]
-    
+
+    # ========================================================================
+    # GESTIÓN DE CATEGORÍAS DE PREMIACIÓN
+    # ========================================================================
+
+    def add_award_category(self, award_category: AwardCategory) -> bool:
+        """
+        Agregar una categoría de premiación
+
+        Args:
+            award_category: Categoría a agregar
+
+        Returns:
+            bool: True si se agregó, False si ya existía
+
+        Raises:
+            ValueError: Si se intenta modificar una categoría IAAF
+        """
+        if award_category.award_category_id in self.award_categories:
+            existing = self.award_categories[award_category.award_category_id]
+            if existing.is_iaaf:
+                raise ValueError("No se puede modificar una categoría IAAF estándar")
+            logger.warning(f"⚠️  Categoría de premiación {award_category.award_category_id} ya existe, reemplazando")
+
+        self.award_categories[award_category.award_category_id] = award_category
+        logger.info(f"✅ Categoría de premiación agregada: {award_category.name}")
+        return True
+
+    def remove_award_category(self, award_category_id: str) -> bool:
+        """
+        Eliminar una categoría de premiación
+
+        Args:
+            award_category_id: ID de la categoría
+
+        Returns:
+            bool: True si se eliminó, False si no existía
+
+        Raises:
+            ValueError: Si se intenta eliminar una categoría IAAF
+        """
+        if award_category_id not in self.award_categories:
+            return False
+
+        award_cat = self.award_categories[award_category_id]
+        if award_cat.is_iaaf:
+            raise ValueError("No se puede eliminar una categoría IAAF estándar")
+
+        del self.award_categories[award_category_id]
+        logger.info(f"🗑️  Categoría de premiación eliminada: {award_cat.name}")
+        return True
+
+    def get_award_category(self, award_category_id: str) -> Optional[AwardCategory]:
+        """Obtener categoría de premiación por ID"""
+        return self.award_categories.get(award_category_id)
+
+    def get_all_award_categories(self) -> List[AwardCategory]:
+        """Obtener todas las categorías de premiación"""
+        return list(self.award_categories.values())
+
+    def get_award_categories_for_race(self, race_category_id: str) -> List[AwardCategory]:
+        """
+        Obtener categorías de premiación que aplican a una categoría de carrera
+
+        Args:
+            race_category_id: ID de la categoría de carrera (distancia)
+
+        Returns:
+            List[AwardCategory]: Categorías que aplican a esa distancia
+        """
+        return [
+            ac for ac in self.award_categories.values()
+            if ac.applies_to_race_category(race_category_id)
+        ]
+
+    def reset_award_categories_to_iaaf(self):
+        """Resetear categorías de premiación a IAAF por defecto"""
+        # Limpiar todas
+        self.award_categories.clear()
+
+        # Recargar IAAF
+        for award_cat in create_iaaf_award_categories():
+            self.award_categories[award_cat.award_category_id] = award_cat
+
+        logger.info(f"🔄 Categorías de premiación reseteadas a IAAF ({len(self.award_categories)} categorías)")
+
     # ========================================================================
     # CONTROL DE CARRERA
     # ========================================================================
@@ -527,16 +630,16 @@ class RaceManager:
     def get_statistics(self, category_id: str) -> Dict:
         """
         Obtener estadísticas de una categoría
-        
+
         Args:
             category_id: ID de la categoría
-        
+
         Returns:
             Dict con estadísticas
         """
         results = self.get_results(category_id)
         finished = [r for r in results if r.status == AthleteStatus.FINISHED]
-        
+
         stats = {
             'total_participants': len(results),
             'started': sum(1 for r in results if r.status != AthleteStatus.NOT_STARTED),
@@ -546,14 +649,101 @@ class RaceManager:
             'fastest_time': None,
             'slowest_time': None
         }
-        
+
         if finished:
             times = [r.get_total_seconds() for r in finished]
             stats['average_time'] = sum(times) / len(times)
             stats['fastest_time'] = min(times)
             stats['slowest_time'] = max(times)
-        
+
         return stats
+
+    def get_results_by_award_category(
+        self,
+        race_category_id: str,
+        only_finished: bool = True
+    ) -> Dict[str, List[AthleteResult]]:
+        """
+        Agrupar resultados por categoría de premiación (género/edad)
+
+        Args:
+            race_category_id: ID de la categoría de carrera (distancia)
+            only_finished: Si True, solo incluye atletas que finalizaron
+
+        Returns:
+            Dict con {award_category_id: [AthleteResult]} ordenados por tiempo
+
+        Example:
+            >>> results_by_award = manager.get_results_by_award_category("21k")
+            >>> for award_cat_id, results in results_by_award.items():
+            ...     print(f"{award_cat_id}: {len(results)} finalizadores")
+        """
+        # Obtener todos los resultados de la categoría de carrera
+        all_results = self.get_results(race_category_id)
+
+        # Filtrar solo finalizados si se requiere
+        if only_finished:
+            all_results = [r for r in all_results if r.status == AthleteStatus.FINISHED]
+
+        # Obtener categorías de premiación que aplican a esta carrera
+        applicable_award_cats = self.get_award_categories_for_race(race_category_id)
+
+        # Agrupar por categoría de premiación
+        results_by_award: Dict[str, List[AthleteResult]] = {}
+
+        for award_cat in applicable_award_cats:
+            # Filtrar resultados que pertenecen a esta award_category
+            matching_results = [
+                r for r in all_results
+                if award_cat.applies_to_athlete(r.athlete)
+            ]
+
+            # Ordenar por tiempo (más rápido primero)
+            matching_results.sort(key=lambda r: r.get_total_seconds() or float('inf'))
+
+            # Asignar posiciones dentro de la categoría de premiación
+            for position, result in enumerate(matching_results, start=1):
+                # Nota: no modificamos result.position (que es posición general)
+                # La posición en award_category se maneja aparte
+                pass
+
+            results_by_award[award_cat.award_category_id] = matching_results
+
+        return results_by_award
+
+    def get_podium_by_award_category(
+        self,
+        race_category_id: str,
+        top_n: int = 3
+    ) -> Dict[str, List[Tuple[int, AthleteResult]]]:
+        """
+        Obtener podios (top N) por categoría de premiación
+
+        Args:
+            race_category_id: ID de la categoría de carrera (distancia)
+            top_n: Número de posiciones a incluir (default 3 para podio)
+
+        Returns:
+            Dict con {award_category_id: [(position, AthleteResult)]}
+
+        Example:
+            >>> podiums = manager.get_podium_by_award_category("21k", top_n=3)
+            >>> for award_cat_id, podium in podiums.items():
+            ...     print(f"{award_cat_id}:")
+            ...     for pos, result in podium:
+            ...         print(f"  {pos}. {result.athlete.name} - {result.get_formatted_time()}")
+        """
+        results_by_award = self.get_results_by_award_category(race_category_id, only_finished=True)
+
+        podiums = {}
+        for award_cat_id, results in results_by_award.items():
+            # Tomar solo top_n
+            top_results = results[:top_n]
+            # Agregar posiciones (1, 2, 3, ...)
+            podium = [(i + 1, result) for i, result in enumerate(top_results)]
+            podiums[award_cat_id] = podium
+
+        return podiums
     
     # ========================================================================
     # UTILIDADES
