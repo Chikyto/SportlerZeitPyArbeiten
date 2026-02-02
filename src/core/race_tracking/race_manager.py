@@ -253,10 +253,18 @@ class RaceManager:
             NO se requiere que todos los participantes tengan chips asignados.
             La carrera puede iniciarse con chips pendientes, ya que en eventos reales
             puede haber corredores con problemas, ausentes, etc.
+
+            Si la categoría está FINISHED, se resetea automáticamente antes de iniciar.
         """
         category = self.get_category(category_id)
         if not category:
             raise ValueError(f"Categoría {category_id} no existe")
+
+        # Si está finalizada, resetear automáticamente para permitir reiniciar
+        if category.status == RaceStatus.FINISHED:
+            logger.info(f"🔄 Categoría {category.name} estaba finalizada, reseteando para reiniciar...")
+            self.reset_category(category_id)
+            category = self.get_category(category_id)  # Refrescar referencia
 
         if category.status not in [RaceStatus.PENDING, RaceStatus.READY]:
             raise ValueError(f"Categoría {category.name} no está lista para iniciar")
