@@ -43,6 +43,7 @@ class ChipAssignmentWidget(QWidget):
     chip_assigned = pyqtSignal(str, str)  # athlete_id, chip_id
     chip_scanned = pyqtSignal(str)  # chip_id
     assignment_completed = pyqtSignal()
+    categories_imported = pyqtSignal()  # Se emite después de importar categorías desde CSV
 
     def __init__(self, race_manager=None, scanner=None, signals=None):
         super().__init__()
@@ -116,7 +117,7 @@ class ChipAssignmentWidget(QWidget):
         filter_group = QGroupBox("Filtros")
         filter_layout = QHBoxLayout(filter_group)
 
-        filter_layout.addWidget(QLabel("Categoría:"))
+        filter_layout.addWidget(QLabel("Distancia:"))
         self.category_filter = QComboBox()
         self.category_filter.addItem("Todas")
         self.category_filter.currentTextChanged.connect(self.filter_athletes)
@@ -142,7 +143,7 @@ class ChipAssignmentWidget(QWidget):
         self.athletes_table = QTableWidget()
         self.athletes_table.setColumnCount(6)
         self.athletes_table.setHorizontalHeaderLabels([
-            "Dorsal", "Nombre", "Categoría", "Chip RFID", "Estado", "Info"
+            "Dorsal", "Nombre", "Distancia", "Chip RFID", "Estado", "Info"
         ])
 
         header = self.athletes_table.horizontalHeader()
@@ -575,7 +576,7 @@ class ChipAssignmentWidget(QWidget):
 <b>Atleta Seleccionado:</b><br>
 <b>Nombre:</b> {athlete.name}<br>
 <b>Dorsal:</b> #{athlete.bib_number}<br>
-<b>Categoría:</b> {athlete.category_id}<br>
+<b>Distancia:</b> {athlete.category_id}<br>
 <b>Chip Actual:</b> {athlete.tag_id or 'Sin asignar'}<br>
 <br>
 {athlete.notes or ''}
@@ -974,7 +975,7 @@ class ChipAssignmentWidget(QWidget):
                 f"✅ Corredor registrado exitosamente:\n\n"
                 f"• Nombre: {new_athlete.name}\n"
                 f"• Dorsal: #{bib_number}\n"
-                f"• Categoría: {athlete_data['category_id']}\n"
+                f"• Distancia: {athlete_data['category_id']}\n"
                 f"• Chip: {athlete_data['chip_id']}"
             )
 
@@ -1140,6 +1141,10 @@ class ChipAssignmentWidget(QWidget):
             self.refresh_athletes_table()
             self.refresh_category_filter()
 
+            # Emitir señal para que otros tabs se actualicen
+            self.categories_imported.emit()
+            logger.info("📢 Señal categories_imported emitida para sincronizar tabs")
+
             # Mostrar resumen (calcular total correctamente)
             total = sum(len(cat.participants) for cat in categories)
 
@@ -1147,13 +1152,13 @@ class ChipAssignmentWidget(QWidget):
                 self,
                 "Importación Exitosa",
                 f"✅ Importados desde CSV:\n\n"
-                f"• {len(categories)} categorías\n"
+                f"• {len(categories)} distancias\n"
                 f"• {total} atletas\n"
                 f"• Dorsales asignados automáticamente\n\n"
                 f"Ahora puedes asignar chips RFID a cada corredor."
             )
 
-            logger.info(f"✅ Importación CSV completa: {total} atletas en {len(categories)} categorías")
+            logger.info(f"✅ Importación CSV completa: {total} atletas en {len(categories)} distancias")
 
         except Exception as e:
             QMessageBox.critical(
@@ -1308,7 +1313,7 @@ class ChipAssignmentWidget(QWidget):
 
                 # Header
                 writer.writerow([
-                    'Dorsal', 'Nombre', 'Categoría', 'Chip RFID', 'Estado',
+                    'Dorsal', 'Nombre', 'Distancia', 'Chip RFID', 'Estado',
                     'DNI', 'Email', 'Teléfono', 'Notas'
                 ])
 
@@ -1398,7 +1403,7 @@ class ChipAssignmentWidget(QWidget):
         stats_text = f"""
 <b>Progreso General:</b> {assigned}/{total} ({progress:.1f}%)<br>
 <br>
-<b>Por Categoría:</b><br>
+<b>Por Distancia:</b><br>
 """
 
         for cat_name, stats in by_category.items():

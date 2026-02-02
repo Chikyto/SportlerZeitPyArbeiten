@@ -56,13 +56,13 @@ class EventConfigWidget(QWidget):
         layout.addWidget(event_info_group)
         
         # Gestión de categorías
-        categories_group = QGroupBox("Categorías de Carrera")
+        categories_group = QGroupBox("Distancias")
         categories_layout = QVBoxLayout(categories_group)
         
         # Botones de gestión
         buttons_layout = QHBoxLayout()
         
-        self.add_category_btn = QPushButton("Agregar Categoría")
+        self.add_category_btn = QPushButton("Agregar Distancia")
         self.add_category_btn.clicked.connect(self.add_new_category)
         buttons_layout.addWidget(self.add_category_btn)
         

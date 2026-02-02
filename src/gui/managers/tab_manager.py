@@ -292,6 +292,7 @@ class TabManager:
         Conexiones:
         - ChipAssignmentWidget.chip_assigned → EventConfigWidget.refresh_all()
         - ChipAssignmentWidget.assignment_completed → EventConfigWidget.refresh_all()
+        - ChipAssignmentWidget.categories_imported → EventConfigWidget.refresh_all()
         - EventConfigWidget.category_started → RaceMonitoringWidget.refresh()
         - EventConfigWidget.category_finished → RaceMonitoringWidget.refresh()
         - EventConfigWidget.categories_changed → RaceMonitoringWidget.refresh_category_combo()
@@ -313,6 +314,10 @@ class TabManager:
                 lambda athlete_id, chip_id: self._on_chip_assigned(event_config)
             )
             chip_assignment.assignment_completed.connect(
+                lambda: event_config.refresh_all()
+            )
+            # Cuando se importan categorías desde CSV, refrescar eventos
+            chip_assignment.categories_imported.connect(
                 lambda: event_config.refresh_all()
             )
             logger.info("✅ ChipAssignmentWidget → EventConfigWidget conectado")
