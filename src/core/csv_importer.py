@@ -13,7 +13,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 from pathlib import Path
 
-from src.core.race_tracking.models import Athlete, RaceCategory
+from src.core.race_tracking.models import Athlete, RaceDistance
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +36,16 @@ class CSVAthleteImporter:
 
     # Mapeo de distancias a categorías
     DISTANCE_MAPPING = {
-        '5K': {'category_id': '5k', 'name': '5 Kilómetros', 'distance_m': 5000, 'checkpoints': 0},
-        '7K': {'category_id': '7k', 'name': '7 Kilómetros', 'distance_m': 7000, 'checkpoints': 0},
-        '10K': {'category_id': '10k', 'name': '10 Kilómetros', 'distance_m': 10000, 'checkpoints': 1},
-        '14K': {'category_id': '14k', 'name': '14 Kilómetros', 'distance_m': 14000, 'checkpoints': 1},
-        '21K': {'category_id': '21k', 'name': 'Media Maratón 21K', 'distance_m': 21000, 'checkpoints': 2},
-        '24K': {'category_id': '24k', 'name': '24 Kilómetros', 'distance_m': 24000, 'checkpoints': 2},
-        '30K': {'category_id': '30k', 'name': 'Mountain 30K', 'distance_m': 30000, 'checkpoints': 2},
-        '42K': {'category_id': '42k', 'name': 'Maratón 42K', 'distance_m': 42000, 'checkpoints': 3},
-        '50K': {'category_id': '50k', 'name': 'Trail 50K', 'distance_m': 50000, 'checkpoints': 3},
-        '100K': {'category_id': '100k', 'name': 'Ultra 100K', 'distance_m': 100000, 'checkpoints': 5},
+        '5K': {'distance_id': '5k', 'name': '5 Kilómetros', 'distance_m': 5000, 'checkpoints': 0},
+        '7K': {'distance_id': '7k', 'name': '7 Kilómetros', 'distance_m': 7000, 'checkpoints': 0},
+        '10K': {'distance_id': '10k', 'name': '10 Kilómetros', 'distance_m': 10000, 'checkpoints': 1},
+        '14K': {'distance_id': '14k', 'name': '14 Kilómetros', 'distance_m': 14000, 'checkpoints': 1},
+        '21K': {'distance_id': '21k', 'name': 'Media Maratón 21K', 'distance_m': 21000, 'checkpoints': 2},
+        '24K': {'distance_id': '24k', 'name': '24 Kilómetros', 'distance_m': 24000, 'checkpoints': 2},
+        '30K': {'distance_id': '30k', 'name': 'Mountain 30K', 'distance_m': 30000, 'checkpoints': 2},
+        '42K': {'distance_id': '42k', 'name': 'Maratón 42K', 'distance_m': 42000, 'checkpoints': 3},
+        '50K': {'distance_id': '50k', 'name': 'Trail 50K', 'distance_m': 50000, 'checkpoints': 3},
+        '100K': {'distance_id': '100k', 'name': 'Ultra 100K', 'distance_m': 100000, 'checkpoints': 5},
     }
 
     # Columnas posibles para hora de largada en el CSV
@@ -93,13 +93,13 @@ class CSVAthleteImporter:
             filter_approved: Solo importar atletas con pago aprobado
 
         Returns:
-            Dict[category_id, List[Athlete]]: Atletas agrupados por categoría
+            Dict[distance_id, List[Athlete]]: Atletas agrupados por distancia
 
         Example:
             >>> importer = CSVAthleteImporter()
             >>> athletes = importer.import_from_csv('inscriptos.csv')
-            >>> for cat_id, athletes_list in athletes.items():
-            ...     print(f"{cat_id}: {len(athletes_list)} atletas")
+            >>> for dist_id, athletes_list in athletes.items():
+            ...     print(f"{dist_id}: {len(athletes_list)} atletas")
         """
         try:
             logger.info(f"📥 Importando desde {csv_path}...")
@@ -263,7 +263,7 @@ class CSVAthleteImporter:
                 return None
 
             category_info = self.DISTANCE_MAPPING[distancia]
-            category_id = category_info['category_id']
+            category_id = category_info['distance_id']
 
             # Intentar leer dorsal del CSV (columna "N° Pecho", "N°", etc.)
             bib_from_csv = (row.get('N° Pecho', '').strip() or
@@ -500,54 +500,54 @@ class CSVAthleteImporter:
             logger.debug(f"No se pudo limpiar teléfono: {telefono}")
             return None
 
-    def create_categories(self) -> List[RaceCategory]:
+    def create_distances(self) -> List[RaceDistance]:
         """
-        Crear objetos RaceCategory basados en los atletas importados
+        Crear objetos RaceDistance basados en los atletas importados
 
         Returns:
-            List[RaceCategory]: Lista de categorías con participantes
+            List[RaceDistance]: Lista de distancias con participantes
         """
-        categories = []
+        distances = []
 
-        for category_id, athletes in self.athletes_by_category.items():
+        for distance_id, athletes in self.athletes_by_category.items():
             if not athletes:
                 continue
 
-            # Obtener info de la categoría
+            # Obtener info de la distancia
             # Buscar en el mapeo de distancias
-            cat_info = None
+            dist_info = None
             for dist, info in self.DISTANCE_MAPPING.items():
-                if info['category_id'] == category_id:
-                    cat_info = info
+                if info['distance_id'] == distance_id:
+                    dist_info = info
                     break
 
-            if not cat_info:
-                logger.warning(f"⚠️  No se encontró info para categoría {category_id}")
+            if not dist_info:
+                logger.warning(f"⚠️  No se encontró info para distancia {distance_id}")
                 continue
 
             # Obtener hora de largada si fue capturada del CSV
-            start_time = self.category_start_times.get(category_id)
+            start_time = self.category_start_times.get(distance_id)
 
-            # Crear categoría
-            category = RaceCategory(
-                category_id=category_id,
-                name=cat_info['name'],
-                distance=cat_info['distance_m'],
-                expected_checkpoints=cat_info['checkpoints'],
+            # Crear distancia
+            distance = RaceDistance(
+                distance_id=distance_id,
+                name=dist_info['name'],
+                distance_meters=dist_info['distance_m'],
+                expected_checkpoints=dist_info['checkpoints'],
                 participants=athletes.copy(),  # Copiar lista de atletas
                 start_time=start_time,  # Puede ser None si no vino en CSV
                 notes=f"Importado desde CSV - {len(athletes)} participantes"
             )
 
-            categories.append(category)
+            distances.append(distance)
 
             if start_time:
-                logger.info(f"✅ Categoría creada: {category.name} ({len(athletes)} atletas) - Largada: {start_time.strftime('%H:%M')}")
+                logger.info(f"✅ Distancia creada: {distance.name} ({len(athletes)} atletas) - Largada: {start_time.strftime('%H:%M')}")
             else:
-                logger.info(f"✅ Categoría creada: {category.name} ({len(athletes)} atletas) - ⚠️ Sin hora de largada")
+                logger.info(f"✅ Distancia creada: {distance.name} ({len(athletes)} atletas) - ⚠️ Sin hora de largada")
                 logger.info(f"   💡 Configura la hora de largada antes de usar las antenas")
 
-        return categories
+        return distances
 
     def export_bib_list(self, output_path: str):
         """
