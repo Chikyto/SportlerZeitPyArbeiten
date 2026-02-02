@@ -170,10 +170,10 @@ class AwardCategoriesWidget(QWidget):
             self.categories_table.setItem(row, 4, QTableWidgetItem(max_age_str))
 
             # Distancias
-            if category.race_category_ids is None:
+            if category.distance_ids is None:
                 distances_str = "Todas"
             else:
-                distances_str = ", ".join(category.race_category_ids)
+                distances_str = ", ".join(category.distance_ids)
             self.categories_table.setItem(row, 5, QTableWidgetItem(distances_str))
 
             # Tipo
@@ -435,7 +435,7 @@ class AwardCategoryDialog(QDialog):
             self.max_age_spin.setValue(self.category.max_age)
 
         # Distancias
-        if self.category.race_category_ids is None:
+        if self.category.distance_ids is None:
             self.all_distances_check.setChecked(True)
         else:
             self.all_distances_check.setChecked(False)
@@ -444,7 +444,7 @@ class AwardCategoryDialog(QDialog):
             for i in range(self.distances_list.count()):
                 item = self.distances_list.item(i)
                 cat_id = item.text().split(" - ")[0]
-                if cat_id in self.category.race_category_ids:
+                if cat_id in self.category.distance_ids:
                     item.setSelected(True)
 
         # Descripción
@@ -471,13 +471,13 @@ class AwardCategoryDialog(QDialog):
 
         # Distancias
         if self.all_distances_check.isChecked():
-            race_category_ids = None
+            distance_ids = None
         else:
             selected_items = self.distances_list.selectedItems()
             if not selected_items:
                 QMessageBox.warning(self, "Error", "Selecciona al menos una distancia o marca 'Aplicar a todas'")
                 return
-            race_category_ids = [item.text().split(" - ")[0] for item in selected_items]
+            distance_ids = [item.text().split(" - ")[0] for item in selected_items]
 
         # Descripción
         description = self.description_input.text().strip() or None
@@ -490,7 +490,7 @@ class AwardCategoryDialog(QDialog):
                 gender=gender,
                 min_age=min_age,
                 max_age=max_age,
-                race_category_ids=race_category_ids,
+                distance_ids=distance_ids,
                 is_iaaf=False,  # Las personalizadas nunca son IAAF
                 description=description
             )
