@@ -138,7 +138,7 @@ class ChipAssignmentCSVHandler:
             with open(file_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow([
-                    'Dorsal', 'Nombre', 'Categoría', 'Chip RFID',
+                    'Dorsal', 'Nombre', 'Distancia', 'Chip RFID',
                     'Estado', 'Equipo', 'Notas'
                 ])
 

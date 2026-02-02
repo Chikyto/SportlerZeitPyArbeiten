@@ -463,7 +463,7 @@ class ChipAssignmentWidget(QWidget):
                 name_item.setData(Qt.ItemDataRole.UserRole, athlete.athlete_id)  # Guardar ID
                 self.athletes_table.setItem(row, 1, name_item)
 
-                # Categoría
+                # Distancia
                 self.athletes_table.setItem(row, 2, QTableWidgetItem(category.name))
 
                 # Chip RFID

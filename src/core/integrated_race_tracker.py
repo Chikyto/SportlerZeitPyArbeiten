@@ -1,6 +1,6 @@
 """
 Sistema integrado de cronometraje que combina:
-- Gestión de eventos multi-categoría
+- Gestión de eventos multi-distancia
 - Configuración de antenas
 - Scanner RFID con filtrado inteligente
 """
@@ -18,7 +18,7 @@ class ChipReading:
     antenna_id: int
     timestamp: datetime
     reading_type: str  # 'start', 'finish', 'checkpoint', 'start_finish'
-    race_time: float   # Segundos desde inicio de la categoría
+    race_time: float   # Segundos desde inicio de la distancia
     category_start_time: datetime
 
 @dataclass
@@ -51,17 +51,17 @@ class IntegratedRaceTracker:
     def process_chip_reading(self, chip_id: str, antenna_id: int, timestamp: datetime) -> Optional[ChipReading]:
         """
         Procesar lectura de chip con filtrado inteligente
-        Solo procesa chips de categorías activas
+        Solo procesa chips de distancias activas
         """
         # 1. Verificar si el chip está registrado
         category_id = self.event_manager.get_participant_category(chip_id)
         if not category_id:
-            print(f"Chip {chip_id} no está registrado en ninguna categoría")
+            print(f"Chip {chip_id} no está registrado en ninguna distancia")
             return None
-            
-        # 2. Verificar si la categoría está activa
+
+        # 2. Verificar si la distancia está activa
         if category_id not in self.event_manager.get_active_categories():
-            print(f"Chip {chip_id} pertenece a categoría {category_id} que no está activa")
+            print(f"Chip {chip_id} pertenece a distancia {category_id} que no está activa")
             return None
             
         # 3. Verificar configuración de antena
@@ -79,10 +79,10 @@ class IntegratedRaceTracker:
             print(f"Lectura de chip {chip_id} muy reciente, ignorando")
             return None
             
-        # 5. Obtener tiempo de inicio de la categoría
+        # 5. Obtener tiempo de inicio de la distancia
         category_start_time = self.event_manager.category_start_times.get(category_id)
         if not category_start_time:
-            print(f"Categoría {category_id} no tiene tiempo de inicio")
+            print(f"Distancia {category_id} no tiene tiempo de inicio")
             return None
             
         # 6. Calcular tiempo de carrera
@@ -199,7 +199,7 @@ class IntegratedRaceTracker:
         return self.participant_statuses.get(chip_id)
         
     def get_category_results(self, category_id: str) -> List[ParticipantStatus]:
-        """Obtener resultados de una categoría ordenados por tiempo"""
+        """Obtener resultados de una distancia ordenados por tiempo"""
         category_participants = [
             status for status in self.participant_statuses.values()
             if status.category_id == category_id
@@ -219,7 +219,7 @@ class IntegratedRaceTracker:
         return finished + in_progress + not_started
         
     def get_active_participants_count(self) -> Dict[str, int]:
-        """Obtener conteo de participantes activos por categoría"""
+        """Obtener conteo de participantes activos por distancia"""
         counts = {}
         for category_id in self.event_manager.get_active_categories():
             active_count = sum(1 for status in self.participant_statuses.values()

@@ -16,7 +16,7 @@ class RaceStatus(Enum):
 
 @dataclass
 class RaceCategory:
-    """Definición de una categoría de carrera"""
+    """Definición de una distancia de carrera"""
     id: str
     name: str
     distance: str
@@ -41,36 +41,36 @@ class EventManager:
         self.category_start_times: Dict[str, Optional[datetime]] = {}
         
     def add_category(self, category: RaceCategory):
-        """Agregar categoría al evento"""
+        """Agregar distancia al evento"""
         self.categories[category.id] = category
         self.race_states[category.id] = RaceStatus.PENDING
         self.category_start_times[category.id] = None
         
     def remove_category(self, category_id: str):
-        """Eliminar categoría del evento"""
+        """Eliminar distancia del evento"""
         if category_id in self.categories:
             del self.categories[category_id]
             del self.race_states[category_id]
             del self.category_start_times[category_id]
             
-            # Eliminar participantes de esta categoría
+            # Eliminar participantes de esta distancia
             to_remove = [chip_id for chip_id, cat_id in self.participants.items() 
                         if cat_id == category_id]
             for chip_id in to_remove:
                 del self.participants[chip_id]
     
     def register_participant(self, chip_id: str, category_id: str, participant_name: str = ""):
-        """Registrar participante en una categoría"""
+        """Registrar participante en una distancia"""
         if category_id not in self.categories:
-            raise ValueError(f"Categoría {category_id} no existe")
+            raise ValueError(f"Distancia {category_id} no existe")
         self.participants[chip_id] = category_id
     
     def get_participant_category(self, chip_id: str) -> Optional[str]:
-        """Obtener categoría de un chip"""
+        """Obtener distancia de un chip"""
         return self.participants.get(chip_id)
     
     def start_category(self, category_id: str) -> bool:
-        """Iniciar una categoría específica"""
+        """Iniciar una distancia específica"""
         if category_id not in self.categories:
             return False
         self.race_states[category_id] = RaceStatus.ACTIVE
@@ -78,19 +78,19 @@ class EventManager:
         return True
     
     def finish_category(self, category_id: str) -> bool:
-        """Finalizar una categoría específica"""
+        """Finalizar una distancia específica"""
         if category_id not in self.categories:
             return False
         self.race_states[category_id] = RaceStatus.FINISHED
         return True
     
     def get_active_categories(self) -> List[str]:
-        """Obtener categorías actualmente activas"""
+        """Obtener distancias actualmente activas"""
         return [cat_id for cat_id, status in self.race_states.items() 
                 if status == RaceStatus.ACTIVE]
     
     def get_category_info(self, category_id: str) -> Dict:
-        """Obtener información completa de una categoría"""
+        """Obtener información completa de una distancia"""
         if category_id not in self.categories:
             return {}
             
@@ -113,6 +113,6 @@ class EventManager:
         }
     
     def get_categories_by_time(self) -> List[str]:
-        """Obtener categorías ordenadas por hora de largada"""
+        """Obtener distancias ordenadas por hora de largada"""
         return sorted(self.categories.keys(), 
                      key=lambda cat_id: self.categories[cat_id].start_time)

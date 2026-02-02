@@ -5,7 +5,7 @@ Gestor Principal de Carreras (Race Manager)
 src/core/race_tracking/race_manager.py
 
 Responsabilidad única: Coordinar el tracking de carreras
-- Gestionar categorías activas
+- Gestionar distancias activas
 - Procesar eventos de detección
 - Mantener resultados actualizados
 - Generar clasificaciones
@@ -30,7 +30,7 @@ class RaceManager:
     Gestor principal de carreras
     
     Coordina todo el sistema de tracking:
-    - Gestión de categorías
+    - Gestión de distancias
     - Procesamiento de detecciones
     - Cálculo de resultados
     - Clasificaciones en tiempo real
@@ -90,11 +90,11 @@ class RaceManager:
             ValueError: Si la categoría no tiene participantes
         """
         if category.category_id in self.categories:
-            logger.warning(f"⚠️  Categoría {category.category_id} ya existe")
+            logger.warning(f"⚠️  Distancia {category.category_id} ya existe")
             return False
-        
+
         if len(category.participants) == 0:
-            raise ValueError("La categoría debe tener al menos un participante")
+            raise ValueError("La distancia debe tener al menos un participante")
         
         self.categories[category.category_id] = category
         
@@ -106,7 +106,7 @@ class RaceManager:
                 category_id=category.category_id
             )
         
-        logger.info(f"✅ Categoría agregada: {category.name} ({len(category)} atletas)")
+        logger.info(f"✅ Distancia agregada: {category.name} ({len(category)} atletas)")
         return True
     
     def remove_category(self, category_id: str) -> bool:
@@ -126,13 +126,13 @@ class RaceManager:
         
         # No permitir eliminar si está en curso
         if category.status == RaceStatus.RUNNING:
-            raise ValueError("No se puede eliminar una categoría en curso")
-        
+            raise ValueError("No se puede eliminar una distancia en curso")
+
         del self.categories[category_id]
         if category_id in self.results:
             del self.results[category_id]
-        
-        logger.info(f"🗑️  Categoría eliminada: {category.name}")
+
+        logger.info(f"🗑️  Distancia eliminada: {category.name}")
         return True
     
     def get_category(self, category_id: str) -> Optional[RaceCategory]:
@@ -258,16 +258,16 @@ class RaceManager:
         """
         category = self.get_category(category_id)
         if not category:
-            raise ValueError(f"Categoría {category_id} no existe")
+            raise ValueError(f"Distancia {category_id} no existe")
 
         # Si está finalizada, resetear automáticamente para permitir reiniciar
         if category.status == RaceStatus.FINISHED:
-            logger.info(f"🔄 Categoría {category.name} estaba finalizada, reseteando para reiniciar...")
+            logger.info(f"🔄 Distancia {category.name} estaba finalizada, reseteando para reiniciar...")
             self.reset_category(category_id)
             category = self.get_category(category_id)  # Refrescar referencia
 
         if category.status not in [RaceStatus.PENDING, RaceStatus.READY]:
-            raise ValueError(f"Categoría {category.name} no está lista para iniciar")
+            raise ValueError(f"Distancia {category.name} no está lista para iniciar")
 
         # Informar estado de chips (solo informativo, no bloqueante)
         total_participants = len(category.participants)
@@ -277,7 +277,7 @@ class RaceManager:
         category.status = RaceStatus.RUNNING
         category.start_time = datetime.now()
 
-        logger.info(f"🚀 Categoría iniciada: {category.name}")
+        logger.info(f"🚀 Distancia iniciada: {category.name}")
         logger.info(f"   📊 Participantes: {total_participants} | Chips: {chips_assigned} asignados, {chips_pending} pendientes")
 
         return True
@@ -292,7 +292,7 @@ class RaceManager:
             return False
         
         category.status = RaceStatus.PAUSED
-        logger.info(f"⏸️  Categoría pausada: {category.name}")
+        logger.info(f"⏸️  Distancia pausada: {category.name}")
         return True
     
     def resume_category(self, category_id: str) -> bool:
@@ -305,7 +305,7 @@ class RaceManager:
             return False
         
         category.status = RaceStatus.RUNNING
-        logger.info(f"▶️  Categoría reanudada: {category.name}")
+        logger.info(f"▶️  Distancia reanudada: {category.name}")
         return True
     
     def finish_category(self, category_id: str) -> bool:
@@ -330,8 +330,8 @@ class RaceManager:
         
         # Calcular clasificación final
         self._update_classification(category_id)
-        
-        logger.info(f"🏁 Categoría finalizada: {category.name}")
+
+        logger.info(f"🏁 Distancia finalizada: {category.name}")
         return True
     
     # ========================================================================
@@ -375,12 +375,12 @@ class RaceManager:
             return None
         
         if not category:
-            logger.warning(f"⚠️  Atleta {athlete.name} sin categoría activa")
+            logger.warning(f"⚠️  Atleta {athlete.name} sin distancia activa")
             return None
-        
+
         # Solo procesar si la categoría está corriendo
         if category.status != RaceStatus.RUNNING:
-            logger.debug(f"Categoría {category.name} no está en curso, ignorando detección")
+            logger.debug(f"Distancia {category.name} no está en curso, ignorando detección")
             return None
 
         # 2. Validar períodos de latencia (anti-duplicados)
@@ -791,7 +791,7 @@ class RaceManager:
         category.start_time = None
         category.end_time = None
 
-        logger.info(f"🔄 Categoría reseteada: {category.name}")
+        logger.info(f"🔄 Distancia reseteada: {category.name}")
         return True
     
     def __repr__(self) -> str:

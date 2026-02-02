@@ -366,7 +366,7 @@ class TabManager:
     def _on_category_changed(self, race_monitoring_widget, category_id: str):
         """Callback cuando cambia el estado de una categoría"""
         try:
-            logger.info(f"🔄 Categoría {category_id} cambió, refrescando RaceMonitoringWidget...")
+            logger.info(f"🔄 Distancia {category_id} cambió, refrescando RaceMonitoringWidget...")
             if hasattr(race_monitoring_widget, 'refresh'):
                 race_monitoring_widget.refresh()
         except Exception as e:
@@ -384,7 +384,7 @@ class TabManager:
     def _on_race_categories_changed(self, award_categories_widget):
         """Callback cuando cambian las categorías de carrera (distancias)"""
         try:
-            logger.info("🔄 Categorías de carrera cambiaron, refrescando AwardCategoriesWidget...")
+            logger.info("🔄 Distancias cambiaron, refrescando AwardCategoriesWidget...")
             if hasattr(award_categories_widget, 'refresh_table'):
                 award_categories_widget.refresh_table()
         except Exception as e:

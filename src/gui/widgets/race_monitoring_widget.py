@@ -30,7 +30,7 @@ class RaceMonitoringWidget(QWidget):
         controls_layout = QHBoxLayout(controls_group)
         
         # Selector de categoría
-        controls_layout.addWidget(QLabel("Categoría:"))
+        controls_layout.addWidget(QLabel("Distancia:"))
         self.category_combo = QComboBox()
         self.category_combo.addItem("Todas las categorías")
         self.category_combo.currentTextChanged.connect(self.on_category_changed)
@@ -75,7 +75,7 @@ class RaceMonitoringWidget(QWidget):
     def setup_categories_overview_tab(self):
         """Tab con resumen de todas las categorías"""
         tab = QWidget()
-        self.monitoring_tabs.addTab(tab, "Resumen de Categorías")
+        self.monitoring_tabs.addTab(tab, "Resumen de Distancias")
         
         layout = QVBoxLayout(tab)
         
@@ -83,7 +83,7 @@ class RaceMonitoringWidget(QWidget):
         self.categories_overview_table = QTableWidget()
         self.categories_overview_table.setColumnCount(8)
         self.categories_overview_table.setHorizontalHeaderLabels([
-            "Categoría", "Estado", "Hora Inicio", "Participantes", 
+            "Distancia", "Estado", "Hora Inicio", "Participantes",
             "No Iniciados", "En Carrera", "Finalizados", "Último Checkpoint"
         ])
         
@@ -127,7 +127,7 @@ class RaceMonitoringWidget(QWidget):
         self.participants_table = QTableWidget()
         self.participants_table.setColumnCount(8)
         self.participants_table.setHorizontalHeaderLabels([
-            "Chip", "Categoría", "Estado", "Tiempo Inicio", 
+            "Chip", "Distancia", "Estado", "Tiempo Inicio",
             "Tiempo Actual", "Checkpoints", "Última Lectura", "Antena"
         ])
         
@@ -172,14 +172,14 @@ class RaceMonitoringWidget(QWidget):
     def setup_podiums_tab(self):
         """Tab con podios por categoría de premiación"""
         tab = QWidget()
-        self.monitoring_tabs.addTab(tab, "🏆 Podios por Categoría")
+        self.monitoring_tabs.addTab(tab, "🏆 Podios por Distancia")
 
         layout = QVBoxLayout(tab)
 
         # Controles
         controls_layout = QHBoxLayout()
 
-        controls_layout.addWidget(QLabel("Categoría de Carrera:"))
+        controls_layout.addWidget(QLabel("Distancia:"))
         self.podiums_category_combo = QComboBox()
         self.podiums_category_combo.addItem("Selecciona una categoría")
         self.podiums_category_combo.currentTextChanged.connect(self.refresh_podiums)

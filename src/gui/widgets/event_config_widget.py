@@ -108,12 +108,12 @@ class EventConfigWidget(QWidget):
         # Botones de control
         control_buttons_layout = QHBoxLayout()
         
-        self.start_selected_btn = QPushButton("Iniciar Categoría Seleccionada")
+        self.start_selected_btn = QPushButton("Iniciar Distancia Seleccionada")
         self.start_selected_btn.clicked.connect(self.start_selected_category)
         self.start_selected_btn.setStyleSheet("background-color: green; color: white; font-weight: bold;")
         control_buttons_layout.addWidget(self.start_selected_btn)
         
-        self.finish_selected_btn = QPushButton("Finalizar Categoría Seleccionada")
+        self.finish_selected_btn = QPushButton("Finalizar Distancia Seleccionada")
         self.finish_selected_btn.clicked.connect(self.finish_selected_category)
         self.finish_selected_btn.setStyleSheet("background-color: red; color: white; font-weight: bold;")
         control_buttons_layout.addWidget(self.finish_selected_btn)
@@ -122,14 +122,14 @@ class EventConfigWidget(QWidget):
         control_layout.addLayout(control_buttons_layout)
         
         # Estado de categorías activas
-        self.active_categories_label = QLabel("Categorías activas: Ninguna")
+        self.active_categories_label = QLabel("Distancias activas: Ninguna")
         self.active_categories_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         control_layout.addWidget(self.active_categories_label)
         
         layout.addWidget(control_group)
 
         # Panel de participantes de la categoría seleccionada
-        participants_detail_group = QGroupBox("Participantes de la Categoría Seleccionada")
+        participants_detail_group = QGroupBox("Participantes de la Distancia Seleccionada")
         participants_detail_layout = QVBoxLayout(participants_detail_group)
 
         # Tabla de participantes
@@ -153,7 +153,7 @@ class EventConfigWidget(QWidget):
         participants_detail_layout.addWidget(self.participants_table)
 
         # Label de estadísticas
-        self.participants_stats_label = QLabel("Selecciona una categoría para ver sus participantes")
+        self.participants_stats_label = QLabel("Selecciona una distancia para ver sus participantes")
         self.participants_stats_label.setStyleSheet("font-style: italic; color: #666;")
         participants_detail_layout.addWidget(self.participants_stats_label)
 
@@ -167,7 +167,7 @@ class EventConfigWidget(QWidget):
         self.chip_id_input = QLineEdit()
         participants_layout.addWidget(self.chip_id_input)
         
-        participants_layout.addWidget(QLabel("Categoría:"))
+        participants_layout.addWidget(QLabel("Distancia:"))
         self.participant_category_combo = QComboBox()
         participants_layout.addWidget(self.participant_category_combo)
         
@@ -224,7 +224,7 @@ class EventConfigWidget(QWidget):
         """Editar categoría seleccionada"""
         current_row = self.categories_table.currentRow()
         if current_row < 0:
-            QMessageBox.warning(self, "Error", "Selecciona una categoría para editar")
+            QMessageBox.warning(self, "Error", "Selecciona una distancia para editar")
             return
 
         category_id = self.categories_table.item(current_row, 0).text()
@@ -232,7 +232,7 @@ class EventConfigWidget(QWidget):
 
         if category:
             # TODO: Implementar diálogo de edición para el nuevo modelo
-            QMessageBox.information(self, "Info", "Edición de categorías próximamente")
+            QMessageBox.information(self, "Info", "Edición de distancias próximamente")
             # dialog = CategoryDialog(self, category)
             # if dialog.exec():
             #     updated_category = dialog.get_category()
@@ -244,13 +244,13 @@ class EventConfigWidget(QWidget):
         """Eliminar categoría seleccionada"""
         current_row = self.categories_table.currentRow()
         if current_row < 0:
-            QMessageBox.warning(self, "Error", "Selecciona una categoría para eliminar")
+            QMessageBox.warning(self, "Error", "Selecciona una distancia para eliminar")
             return
             
         category_id = self.categories_table.item(current_row, 0).text()
         
-        reply = QMessageBox.question(self, "Confirmar", 
-                                   f"¿Eliminar categoría {category_id}?",
+        reply = QMessageBox.question(self, "Confirmar",
+                                   f"¿Eliminar distancia {category_id}?",
                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         
         if reply == QMessageBox.StandardButton.Yes:
@@ -273,7 +273,7 @@ class EventConfigWidget(QWidget):
         """Iniciar categoría seleccionada"""
         current_row = self.categories_table.currentRow()
         if current_row < 0:
-            QMessageBox.warning(self, "Error", "Selecciona una categoría para iniciar")
+            QMessageBox.warning(self, "Error", "Selecciona una distancia para iniciar")
             return
             
         category_id = self.categories_table.item(current_row, 0).text()
@@ -287,7 +287,7 @@ class EventConfigWidget(QWidget):
         """Finalizar categoría seleccionada"""
         current_row = self.categories_table.currentRow()
         if current_row < 0:
-            QMessageBox.warning(self, "Error", "Selecciona una categoría para finalizar")
+            QMessageBox.warning(self, "Error", "Selecciona una distancia para finalizar")
             return
             
         category_id = self.categories_table.item(current_row, 0).text()
@@ -304,14 +304,14 @@ class EventConfigWidget(QWidget):
         participant_name = self.participant_name_input.text().strip()
 
         if not chip_id or not category_id:
-            QMessageBox.warning(self, "Error", "Completa Chip ID y Categoría")
+            QMessageBox.warning(self, "Error", "Completa Chip ID y Distancia")
             return
 
         try:
             # Obtener categoría
             category = self.race_manager.get_category(category_id)
             if not category:
-                raise ValueError(f"Categoría {category_id} no existe")
+                raise ValueError(f"Distancia {category_id} no existe")
 
             # Generar dorsal automático (siguiente disponible)
             existing_bibs = [p.bib_number for p in category.participants]
@@ -403,10 +403,10 @@ class EventConfigWidget(QWidget):
         active = self.race_manager.get_active_categories()
         if active:
             names = [cat.name for cat in active]
-            self.active_categories_label.setText(f"Categorías activas: {', '.join(names)}")
+            self.active_categories_label.setText(f"Distancias activas: {', '.join(names)}")
             self.active_categories_label.setStyleSheet("font-weight: bold; font-size: 14px; color: green;")
         else:
-            self.active_categories_label.setText("Categorías activas: Ninguna")
+            self.active_categories_label.setText("Distancias activas: Ninguna")
             self.active_categories_label.setStyleSheet("font-weight: bold; font-size: 14px; color: gray;")
 
     def on_category_selected(self):
@@ -414,7 +414,7 @@ class EventConfigWidget(QWidget):
         current_row = self.categories_table.currentRow()
         if current_row < 0:
             self.participants_table.setRowCount(0)
-            self.participants_stats_label.setText("Selecciona una categoría para ver sus participantes")
+            self.participants_stats_label.setText("Selecciona una distancia para ver sus participantes")
             return
 
         # Obtener ID de categoría
@@ -515,7 +515,7 @@ class CategoryDialog(QWidget):
             
     def setup_ui(self):
         """Configurar interfaz del dialog"""
-        self.setWindowTitle("Configurar Categoría")
+        self.setWindowTitle("Configurar Distancia")
         self.setGeometry(300, 300, 400, 300)
         
         layout = QVBoxLayout(self)

@@ -37,7 +37,7 @@ class CategoryConfigDialog(QDialog):
 
     def setup_ui(self):
         """Setup dialog UI"""
-        title = "Editar Categoría" if self.category else "Nueva Categoría"
+        title = "Editar Distancia" if self.category else "Nueva Distancia"
         self.setWindowTitle(title)
         self.setModal(True)
         self.setMinimumWidth(500)
@@ -55,14 +55,14 @@ class CategoryConfigDialog(QDialog):
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Ej: 5 Kilómetros, 10K, Media Maratón")
-        basic_layout.addRow("Nombre de Categoría *:", self.name_input)
+        basic_layout.addRow("Nombre de Distancia *:", self.name_input)
 
         self.category_id_input = QLineEdit()
         self.category_id_input.setPlaceholderText("Ej: 5k, 10k, half-marathon")
         if self.category:
             self.category_id_input.setReadOnly(True)
             self.category_id_input.setStyleSheet("background: #f3f4f6;")
-        basic_layout.addRow("ID de Categoría *:", self.category_id_input)
+        basic_layout.addRow("ID de Distancia *:", self.category_id_input)
 
         layout.addWidget(basic_group)
 
@@ -97,7 +97,7 @@ class CategoryConfigDialog(QDialog):
         notes_layout = QVBoxLayout(notes_group)
 
         self.notes_input = QTextEdit()
-        self.notes_input.setPlaceholderText("Notas adicionales sobre la categoría...")
+        self.notes_input.setPlaceholderText("Notas adicionales sobre la distancia...")
         self.notes_input.setMaximumHeight(80)
         notes_layout.addWidget(self.notes_input)
 
@@ -206,11 +206,11 @@ class CategoryConfigDialog(QDialog):
         data = self.get_category_data()
 
         if not data['name']:
-            QMessageBox.warning(self, "Error", "El nombre de la categoría es obligatorio")
+            QMessageBox.warning(self, "Error", "El nombre de la distancia es obligatorio")
             return False
 
         if not data['category_id']:
-            QMessageBox.warning(self, "Error", "El ID de categoría es obligatorio")
+            QMessageBox.warning(self, "Error", "El ID de distancia es obligatorio")
             return False
 
         if data['distance'] <= 0:
