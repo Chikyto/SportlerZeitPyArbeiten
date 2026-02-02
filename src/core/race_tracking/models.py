@@ -6,11 +6,12 @@ src/core/race_tracking/models.py
 
 Define las estructuras de datos para el sistema de cronometraje:
 - Athlete: Participante con chip RFID
-- RaceCategory: Categoría de carrera
+- RaceDistance: Distancia de carrera (5K, 10K, 21K, etc.)
 - DetectionEvent: Evento de detección de chip
 - AthleteResult: Resultado de un atleta
+- AwardCategory: Categoría de premiación por género y edad
 
-Versión: 1.2.0
+Versión: 2.0.0 - Refactorización semántica: category → distance
 """
 
 from dataclasses import dataclass, field
@@ -35,7 +36,7 @@ class AthleteStatus(Enum):
 
 
 class RaceStatus(Enum):
-    """Estados posibles de una categoría/carrera"""
+    """Estados posibles de una distancia de carrera"""
     PENDING = "pending"             # Pendiente de configuración
     READY = "ready"                 # Lista para iniciar
     RUNNING = "running"             # En curso
@@ -64,7 +65,7 @@ class Athlete:
         tag_id: ID del chip RFID (ej: "7662") - puede estar vacío si aún no se asignó
         bib_number: Número de dorsal (ej: 101)
         name: Nombre completo del atleta
-        category_id: ID de la categoría a la que pertenece
+        distance_id: ID de la distancia a la que está inscrito (ej: "5k", "10k", "21k")
         gender: Género (M/F/Otro) - opcional
         birth_date: Fecha de nacimiento - opcional
         team: Equipo o club (opcional)
@@ -76,7 +77,7 @@ class Athlete:
         ...     tag_id="7662",
         ...     bib_number=101,
         ...     name="Juan Pérez",
-        ...     category_id="100m-varones",
+        ...     distance_id="5k",
         ...     gender="M",
         ...     birth_date=datetime(1990, 5, 15)
         ... )
@@ -84,7 +85,7 @@ class Athlete:
     tag_id: str = ""  # Vacío por defecto, se asigna luego
     bib_number: int = 0
     name: str = ""
-    category_id: str = ""
+    distance_id: str = ""
     gender: Optional[str] = None  # M, F, Otro
     birth_date: Optional[datetime] = None
     team: Optional[str] = None
@@ -98,8 +99,8 @@ class Athlete:
             raise ValueError("bib_number debe ser mayor o igual a 0")
         if not self.name or not self.name.strip():
             raise ValueError("name no puede estar vacío")
-        if not self.category_id or not self.category_id.strip():
-            raise ValueError("category_id no puede estar vacío")
+        if not self.distance_id or not self.distance_id.strip():
+            raise ValueError("distance_id no puede estar vacío")
 
     def has_chip_assigned(self) -> bool:
         """Verifica si el atleta tiene chip asignado"""
@@ -181,32 +182,35 @@ class Athlete:
 
 
 @dataclass
-class RaceCategory:
+class RaceDistance:
     """
-    Categoría de carrera
-    
+    Distancia de carrera (5K, 10K, 21K, Maratón, etc.)
+
+    Representa una distancia específica dentro de un evento deportivo.
+    No confundir con AwardCategory (categorías de premiación por género/edad).
+
     Attributes:
-        category_id: ID único de la categoría
-        name: Nombre descriptivo (ej: "100m Varones")
-        distance: Distancia en metros
+        distance_id: ID único de la distancia (ej: "5k", "10k", "21k", "42k")
+        name: Nombre descriptivo (ej: "5K", "Media Maratón", "Ultra 100K")
+        distance_meters: Distancia en metros
         expected_checkpoints: Número de checkpoints esperados (sin contar largada/meta)
-        participants: Lista de atletas inscritos
+        participants: Lista de atletas inscritos en esta distancia
         status: Estado actual de la carrera
         start_time: Momento de largada oficial (opcional)
         end_time: Momento de finalización (opcional)
         notes: Notas adicionales
-    
+
     Example:
-        >>> category = RaceCategory(
-        ...     category_id="100m-varones",
-        ...     name="100 Metros Varones",
-        ...     distance=100.0,
-        ...     expected_checkpoints=0
+        >>> distance = RaceDistance(
+        ...     distance_id="21k",
+        ...     name="Media Maratón",
+        ...     distance_meters=21097.0,
+        ...     expected_checkpoints=2
         ... )
     """
-    category_id: str
+    distance_id: str
     name: str
-    distance: float
+    distance_meters: float
     expected_checkpoints: int = 0
     participants: List[Athlete] = field(default_factory=list)
     status: RaceStatus = RaceStatus.PENDING
@@ -216,49 +220,49 @@ class RaceCategory:
     
     def __post_init__(self):
         """Validar datos al crear"""
-        if not self.category_id:
-            raise ValueError("category_id no puede estar vacío")
+        if not self.distance_id:
+            raise ValueError("distance_id no puede estar vacío")
         if not self.name or not self.name.strip():
             raise ValueError("name no puede estar vacío")
-        if self.distance <= 0:
-            raise ValueError("distance debe ser mayor a 0")
+        if self.distance_meters <= 0:
+            raise ValueError("distance_meters debe ser mayor a 0")
         if self.expected_checkpoints < 0:
             raise ValueError("expected_checkpoints no puede ser negativo")
     
     def add_participant(self, athlete: Athlete):
         """
-        Agregar participante a la categoría
-        
+        Agregar participante a esta distancia
+
         Args:
             athlete: Atleta a agregar
-        
+
         Raises:
             ValueError: Si el atleta ya está inscrito o si el tag_id ya existe
         """
         # Verificar que no esté duplicado por athlete_id
         if any(p.athlete_id == athlete.athlete_id for p in self.participants):
-            raise ValueError(f"Atleta {athlete.name} ya está inscrito en esta categoría")
-        
+            raise ValueError(f"Atleta {athlete.name} ya está inscrito en esta distancia")
+
         # Verificar que no haya tag_id duplicado
         if any(p.tag_id == athlete.tag_id for p in self.participants):
             raise ValueError(f"Tag {athlete.tag_id} ya está asignado a otro atleta")
-        
+
         # Verificar que no haya dorsal duplicado
         if any(p.bib_number == athlete.bib_number for p in self.participants):
             raise ValueError(f"Dorsal {athlete.bib_number} ya está asignado a otro atleta")
-        
-        # Actualizar category_id del atleta
-        athlete.category_id = self.category_id
-        
+
+        # Actualizar distance_id del atleta
+        athlete.distance_id = self.distance_id
+
         self.participants.append(athlete)
     
     def remove_participant(self, athlete_id: str) -> bool:
         """
-        Eliminar participante de la categoría
-        
+        Eliminar participante de esta distancia
+
         Args:
             athlete_id: ID del atleta a eliminar
-        
+
         Returns:
             bool: True si se eliminó, False si no se encontró
         """
@@ -306,14 +310,14 @@ class RaceCategory:
     
     def __repr__(self) -> str:
         """Representación para debugging"""
-        return f"<RaceCategory '{self.name}': {len(self.participants)} athletes, {self.status.value}>"
+        return f"<RaceDistance '{self.name}': {len(self.participants)} athletes, {self.status.value}>"
 
 
 @dataclass
 class DetectionEvent:
     """
     Evento de detección de chip RFID
-    
+
     Attributes:
         event_id: ID único del evento
         tag_id: ID del chip detectado
@@ -322,8 +326,8 @@ class DetectionEvent:
         event_type: Tipo de evento (start/checkpoint/finish)
         checkpoint_number: Número de checkpoint (si aplica)
         athlete: Referencia al atleta (se asigna después)
-        category_id: ID de la categoría (se asigna después)
-    
+        distance_id: ID de la distancia (se asigna después)
+
     Example:
         >>> event = DetectionEvent(
         ...     tag_id="7662",
@@ -338,7 +342,7 @@ class DetectionEvent:
     event_type: EventType
     checkpoint_number: Optional[int] = None
     athlete: Optional[Athlete] = None
-    category_id: Optional[str] = None
+    distance_id: Optional[str] = None
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     
     def __post_init__(self):
@@ -378,10 +382,10 @@ class DetectionEvent:
 class AthleteResult:
     """
     Resultado de un atleta en una carrera
-    
+
     Attributes:
         athlete: Atleta
-        category_id: ID de la categoría
+        distance_id: ID de la distancia en la que compite
         status: Estado actual del atleta
         start_time: Momento de largada
         finish_time: Momento de llegada
@@ -389,15 +393,15 @@ class AthleteResult:
         splits: Tiempos parciales por checkpoint {checkpoint_num: timedelta}
         checkpoint_times: Timestamps de cada checkpoint {checkpoint_num: datetime}
         position: Posición en la clasificación
-        
+
     Example:
         >>> result = AthleteResult(
         ...     athlete=athlete,
-        ...     category_id="100m-varones"
+        ...     distance_id="21k"
         ... )
     """
     athlete: Athlete
-    category_id: str
+    distance_id: str
     status: AthleteStatus = AthleteStatus.NOT_STARTED
     start_time: Optional[datetime] = None
     finish_time: Optional[datetime] = None
@@ -518,18 +522,21 @@ class AwardCategory:
     """
     Categoría de premiación basada en género y edad
 
+    Representa una categoría de premiación (ej: "Masculino 35-39", "Femenino Sub-20").
+    No confundir con RaceDistance (que representa distancias como 5K, 10K, etc.).
+
     Attributes:
         award_category_id: ID único (ej: "F15-19", "M35-39")
         name: Nombre descriptivo (ej: "Femenino 15-19 años")
         gender: Género ('M', 'F', 'O' para Otro, None para Mixto)
         min_age: Edad mínima (incluida)
         max_age: Edad máxima (incluida, None para sin límite)
-        race_category_ids: Lista de IDs de RaceCategory a las que aplica (None = todas)
+        distance_ids: Lista de IDs de distancias a las que aplica (None = todas)
         is_iaaf: Si es una categoría estándar IAAF (no modificable)
         description: Descripción adicional
 
     Example:
-        >>> # Categoría IAAF
+        >>> # Categoría IAAF (aplica a todas las distancias)
         >>> cat = AwardCategory(
         ...     award_category_id="F15-19",
         ...     name="Femenino Sub-20",
@@ -538,14 +545,14 @@ class AwardCategory:
         ...     max_age=19,
         ...     is_iaaf=True
         ... )
-        >>> # Categoría personalizada para 21K
+        >>> # Categoría personalizada solo para 21K
         >>> cat = AwardCategory(
         ...     award_category_id="M40-49-21K",
         ...     name="Masculino Master 40-49 (21K)",
         ...     gender="M",
         ...     min_age=40,
         ...     max_age=49,
-        ...     race_category_ids=["21k"],
+        ...     distance_ids=["21k"],
         ...     is_iaaf=False
         ... )
     """
@@ -554,7 +561,7 @@ class AwardCategory:
     gender: Optional[str] = None  # M, F, O (Otro), None (Mixto)
     min_age: int = 0
     max_age: Optional[int] = None  # None = sin límite superior
-    race_category_ids: Optional[List[str]] = None  # None = aplica a todas
+    distance_ids: Optional[List[str]] = None  # None = aplica a todas las distancias
     is_iaaf: bool = False
     description: Optional[str] = None
 
@@ -574,13 +581,13 @@ class AwardCategory:
 
     def applies_to_athlete(self, athlete: 'Athlete') -> bool:
         """
-        Verificar si esta categoría aplica a un atleta
+        Verificar si esta categoría de premiación aplica a un atleta
 
         Args:
             athlete: Atleta a verificar
 
         Returns:
-            bool: True si el atleta pertenece a esta categoría
+            bool: True si el atleta pertenece a esta categoría de premiación
         """
         # Verificar género
         if self.gender:
@@ -599,26 +606,26 @@ class AwardCategory:
         if self.max_age is not None and age > self.max_age:
             return False
 
-        # Verificar categoría de carrera (distancia)
-        if self.race_category_ids is not None:
-            if athlete.category_id not in self.race_category_ids:
+        # Verificar distancia (si esta categoría aplica solo a ciertas distancias)
+        if self.distance_ids is not None:
+            if athlete.distance_id not in self.distance_ids:
                 return False
 
         return True
 
-    def applies_to_race_category(self, race_category_id: str) -> bool:
+    def applies_to_distance(self, distance_id: str) -> bool:
         """
-        Verificar si esta categoría aplica a una categoría de carrera (distancia)
+        Verificar si esta categoría de premiación aplica a una distancia
 
         Args:
-            race_category_id: ID de la categoría de carrera
+            distance_id: ID de la distancia (ej: "5k", "10k", "21k")
 
         Returns:
             bool: True si aplica a esa distancia
         """
-        if self.race_category_ids is None:
-            return True  # Aplica a todas
-        return race_category_id in self.race_category_ids
+        if self.distance_ids is None:
+            return True  # Aplica a todas las distancias
+        return distance_id in self.distance_ids
 
     def get_age_range_str(self) -> str:
         """
@@ -694,7 +701,7 @@ def create_iaaf_award_categories() -> List[AwardCategory]:
                 gender=gender_code,
                 min_age=min_age,
                 max_age=max_age,
-                race_category_ids=None,  # Aplica a todas las distancias
+                distance_ids=None,  # Aplica a todas las distancias
                 is_iaaf=True,
                 description=description
             )
@@ -703,52 +710,52 @@ def create_iaaf_award_categories() -> List[AwardCategory]:
     return categories
 
 
-def create_test_category() -> RaceCategory:
+def create_test_distance() -> RaceDistance:
     """
-    Crear categoría de prueba para testing
-    
+    Crear distancia de prueba para testing
+
     Returns:
-        RaceCategory con datos de ejemplo
+        RaceDistance con datos de ejemplo
     """
-    category = RaceCategory(
-        category_id="100m-varones-test",
-        name="100 Metros Varones (Test)",
-        distance=100.0,
+    distance = RaceDistance(
+        distance_id="100m-test",
+        name="100 Metros (Test)",
+        distance_meters=100.0,
         expected_checkpoints=0
     )
-    
+
     # Agregar atletas de prueba
     test_athletes = [
-        Athlete("7662", 101, "Juan Pérez", category.category_id),
-        Athlete("8587", 102, "Pedro López", category.category_id, team="Club A"),
-        Athlete("1923", 103, "Carlos Ruiz", category.category_id, team="Club B"),
+        Athlete("7662", 101, "Juan Pérez", distance.distance_id),
+        Athlete("8587", 102, "Pedro López", distance.distance_id, team="Club A"),
+        Athlete("1923", 103, "Carlos Ruiz", distance.distance_id, team="Club B"),
     ]
-    
+
     for athlete in test_athletes:
-        category.add_participant(athlete)
-    
-    return category
+        distance.add_participant(athlete)
+
+    return distance
 
 
 if __name__ == "__main__":
     """Tests básicos de los modelos"""
-    
+
     print("=" * 60)
     print("TESTS DE MODELOS")
     print("=" * 60)
-    
-    # Test 1: Crear categoría
-    print("\n1. Crear categoría...")
-    category = create_test_category()
-    print(f"   ✅ {category}")
-    print(f"   Participantes: {len(category)}")
-    
+
+    # Test 1: Crear distancia
+    print("\n1. Crear distancia...")
+    distance = create_test_distance()
+    print(f"   ✅ {distance}")
+    print(f"   Participantes: {len(distance)}")
+
     # Test 2: Buscar por tag
     print("\n2. Buscar atleta por tag...")
-    athlete = category.get_participant_by_tag("7662")
+    athlete = distance.get_participant_by_tag("7662")
     if athlete:
         print(f"   ✅ Encontrado: {athlete}")
-    
+
     # Test 3: Crear evento de detección
     print("\n3. Crear evento de detección...")
     event = DetectionEvent(
@@ -758,21 +765,21 @@ if __name__ == "__main__":
         event_type=EventType.START
     )
     print(f"   ✅ {event}")
-    
+
     # Test 4: Crear resultado y registrar tiempos
     print("\n4. Simular carrera...")
-    result = AthleteResult(athlete=athlete, category_id=category.category_id)
-    
+    result = AthleteResult(athlete=athlete, distance_id=distance.distance_id)
+
     now = datetime.now()
     result.record_start(now)
     print(f"   ✅ Largada registrada: {result.start_time}")
-    
+
     # Simular llegada 10 segundos después
     finish_time = now + timedelta(seconds=10.5)
     result.record_finish(finish_time)
     print(f"   ✅ Meta registrada: {result.get_formatted_time()}")
     print(f"   Estado: {result.status.value}")
-    
+
     print("\n" + "=" * 60)
     print("✅ TODOS LOS TESTS PASARON")
     print("=" * 60)

@@ -10,14 +10,14 @@ Responsabilidad única: Coordinar el tracking de carreras
 - Mantener resultados actualizados
 - Generar clasificaciones
 
-Versión: 1.2.0
+Versión: 2.0.0 - Refactorización semántica: category → distance
 """
 
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from .models import (
-    Athlete, RaceCategory, DetectionEvent, AthleteResult,
+    Athlete, RaceDistance, DetectionEvent, AthleteResult,
     AthleteStatus, RaceStatus, EventType, AwardCategory,
     create_iaaf_award_categories
 )
@@ -28,30 +28,31 @@ logger = logging.getLogger(__name__)
 class RaceManager:
     """
     Gestor principal de carreras
-    
+
     Coordina todo el sistema de tracking:
-    - Gestión de distancias
-    - Procesamiento de detecciones
+    - Gestión de distancias (5K, 10K, 21K, etc.)
+    - Procesamiento de detecciones RFID
     - Cálculo de resultados
     - Clasificaciones en tiempo real
-    
+    - Categorías de premiación (género/edad)
+
     Example:
         >>> manager = RaceManager()
-        >>> category = RaceCategory(...)
-        >>> manager.add_category(category)
-        >>> manager.start_category(category.category_id)
+        >>> distance = RaceDistance(...)
+        >>> manager.add_distance(distance)
+        >>> manager.start_distance(distance.distance_id)
         >>> manager.process_detection(tag_id="7662", ...)
     """
-    
+
     def __init__(self, load_iaaf_categories: bool = True):
         """
         Inicializar Race Manager
 
         Args:
-            load_iaaf_categories: Si True, carga categorías IAAF por defecto
+            load_iaaf_categories: Si True, carga categorías de premiación IAAF por defecto
         """
-        self.categories: Dict[str, RaceCategory] = {}
-        self.results: Dict[str, Dict[str, AthleteResult]] = {}  # {category_id: {athlete_id: result}}
+        self.distances: Dict[str, RaceDistance] = {}
+        self.results: Dict[str, Dict[str, AthleteResult]] = {}  # {distance_id: {athlete_id: result}}
         self.detection_history: List[DetectionEvent] = []
 
         # Categorías de premiación (por género/edad)
@@ -64,88 +65,88 @@ class RaceManager:
         # Trackeo de últimas lecturas: {(athlete_id, antenna_port): timestamp}
         self.last_detections: Dict[Tuple[str, int], datetime] = {}
 
-        # Cargar categorías IAAF por defecto
+        # Cargar categorías de premiación IAAF por defecto
         if load_iaaf_categories:
             for award_cat in create_iaaf_award_categories():
                 self.award_categories[award_cat.award_category_id] = award_cat
-            logger.info(f"📋 {len(self.award_categories)} categorías IAAF cargadas")
+            logger.info(f"📋 {len(self.award_categories)} categorías de premiación IAAF cargadas")
 
         logger.info("🏁 RaceManager inicializado")
     
     # ========================================================================
-    # GESTIÓN DE CATEGORÍAS
+    # GESTIÓN DE DISTANCIAS
     # ========================================================================
-    
-    def add_category(self, category: RaceCategory) -> bool:
+
+    def add_distance(self, distance: RaceDistance) -> bool:
         """
-        Agregar una categoría al sistema
-        
+        Agregar una distancia al sistema
+
         Args:
-            category: Categoría a agregar
-        
+            distance: Distancia a agregar
+
         Returns:
             bool: True si se agregó, False si ya existía
-        
+
         Raises:
-            ValueError: Si la categoría no tiene participantes
+            ValueError: Si la distancia no tiene participantes
         """
-        if category.category_id in self.categories:
-            logger.warning(f"⚠️  Distancia {category.category_id} ya existe")
+        if distance.distance_id in self.distances:
+            logger.warning(f"⚠️  Distancia {distance.distance_id} ya existe")
             return False
 
-        if len(category.participants) == 0:
+        if len(distance.participants) == 0:
             raise ValueError("La distancia debe tener al menos un participante")
-        
-        self.categories[category.category_id] = category
-        
+
+        self.distances[distance.distance_id] = distance
+
         # Inicializar resultados para cada atleta
-        self.results[category.category_id] = {}
-        for athlete in category.participants:
-            self.results[category.category_id][athlete.athlete_id] = AthleteResult(
+        self.results[distance.distance_id] = {}
+        for athlete in distance.participants:
+            self.results[distance.distance_id][athlete.athlete_id] = AthleteResult(
                 athlete=athlete,
-                category_id=category.category_id
+                distance_id=distance.distance_id
             )
-        
-        logger.info(f"✅ Distancia agregada: {category.name} ({len(category)} atletas)")
+
+        logger.info(f"✅ Distancia agregada: {distance.name} ({len(distance)} atletas)")
         return True
     
-    def remove_category(self, category_id: str) -> bool:
+    def remove_distance(self, distance_id: str) -> bool:
         """
-        Eliminar una categoría
-        
+        Eliminar una distancia
+
         Args:
-            category_id: ID de la categoría
-        
+            distance_id: ID de la distancia
+
         Returns:
             bool: True si se eliminó, False si no existía
         """
-        if category_id not in self.categories:
+        if distance_id not in self.distances:
             return False
-        
-        category = self.categories[category_id]
-        
+
+        distance = self.distances[distance_id]
+
         # No permitir eliminar si está en curso
-        if category.status == RaceStatus.RUNNING:
+        if distance.status == RaceStatus.RUNNING:
             raise ValueError("No se puede eliminar una distancia en curso")
 
-        del self.categories[category_id]
-        if category_id in self.results:
-            del self.results[category_id]
+        del self.distances[distance_id]
+        if distance_id in self.results:
+            del self.results[distance_id]
 
-        logger.info(f"🗑️  Distancia eliminada: {category.name}")
+        logger.info(f"🗑️  Distancia eliminada: {distance.name}")
         return True
-    
-    def get_category(self, category_id: str) -> Optional[RaceCategory]:
-        """Obtener categoría por ID"""
-        return self.categories.get(category_id)
-    
-    def get_all_categories(self) -> List[RaceCategory]:
-        """Obtener todas las categorías"""
-        return list(self.categories.values())
-    
-    def get_active_categories(self) -> List[RaceCategory]:
-        """Obtener categorías en curso"""
-        return [c for c in self.categories.values() if c.status == RaceStatus.RUNNING]
+
+    def get_distance(self, distance_id: str) -> Optional[RaceDistance]:
+        """Obtener distancia por ID"""
+        return self.distances.get(distance_id)
+
+    def get_all_distances(self) -> List[RaceDistance]:
+        """Obtener todas las distancias"""
+        return list(self.distances.values())
+
+    def get_active_distances(self) -> List[RaceDistance]:
+        """Obtener distancias en curso"""
+        return [d for d in self.distances.values() if d.status == RaceStatus.RUNNING]
 
     # ========================================================================
     # GESTIÓN DE CATEGORÍAS DE PREMIACIÓN
@@ -206,19 +207,19 @@ class RaceManager:
         """Obtener todas las categorías de premiación"""
         return list(self.award_categories.values())
 
-    def get_award_categories_for_race(self, race_category_id: str) -> List[AwardCategory]:
+    def get_award_categories_for_distance(self, distance_id: str) -> List[AwardCategory]:
         """
-        Obtener categorías de premiación que aplican a una categoría de carrera
+        Obtener categorías de premiación que aplican a una distancia
 
         Args:
-            race_category_id: ID de la categoría de carrera (distancia)
+            distance_id: ID de la distancia (ej: "5k", "10k", "21k")
 
         Returns:
-            List[AwardCategory]: Categorías que aplican a esa distancia
+            List[AwardCategory]: Categorías de premiación que aplican a esa distancia
         """
         return [
             ac for ac in self.award_categories.values()
-            if ac.applies_to_race_category(race_category_id)
+            if ac.applies_to_distance(distance_id)
         ]
 
     def reset_award_categories_to_iaaf(self):
@@ -235,103 +236,103 @@ class RaceManager:
     # ========================================================================
     # CONTROL DE CARRERA
     # ========================================================================
-    
-    def start_category(self, category_id: str) -> bool:
+
+    def start_distance(self, distance_id: str) -> bool:
         """
-        Iniciar una categoría
+        Iniciar una distancia
 
         Args:
-            category_id: ID de la categoría a iniciar
+            distance_id: ID de la distancia a iniciar
 
         Returns:
             bool: True si se inició correctamente
 
         Raises:
-            ValueError: Si la categoría no existe o no está lista
+            ValueError: Si la distancia no existe o no está lista
 
         Nota:
             NO se requiere que todos los participantes tengan chips asignados.
             La carrera puede iniciarse con chips pendientes, ya que en eventos reales
             puede haber corredores con problemas, ausentes, etc.
 
-            Si la categoría está FINISHED, se resetea automáticamente antes de iniciar.
+            Si la distancia está FINISHED, se resetea automáticamente antes de iniciar.
         """
-        category = self.get_category(category_id)
-        if not category:
-            raise ValueError(f"Distancia {category_id} no existe")
+        distance = self.get_distance(distance_id)
+        if not distance:
+            raise ValueError(f"Distancia {distance_id} no existe")
 
         # Si está finalizada, resetear automáticamente para permitir reiniciar
-        if category.status == RaceStatus.FINISHED:
-            logger.info(f"🔄 Distancia {category.name} estaba finalizada, reseteando para reiniciar...")
-            self.reset_category(category_id)
-            category = self.get_category(category_id)  # Refrescar referencia
+        if distance.status == RaceStatus.FINISHED:
+            logger.info(f"🔄 Distancia {distance.name} estaba finalizada, reseteando para reiniciar...")
+            self.reset_distance(distance_id)
+            distance = self.get_distance(distance_id)  # Refrescar referencia
 
-        if category.status not in [RaceStatus.PENDING, RaceStatus.READY]:
-            raise ValueError(f"Distancia {category.name} no está lista para iniciar")
+        if distance.status not in [RaceStatus.PENDING, RaceStatus.READY]:
+            raise ValueError(f"Distancia {distance.name} no está lista para iniciar")
 
         # Informar estado de chips (solo informativo, no bloqueante)
-        total_participants = len(category.participants)
-        chips_assigned = sum(1 for p in category.participants if p.has_chip_assigned())
+        total_participants = len(distance.participants)
+        chips_assigned = sum(1 for p in distance.participants if p.has_chip_assigned())
         chips_pending = total_participants - chips_assigned
 
-        category.status = RaceStatus.RUNNING
-        category.start_time = datetime.now()
+        distance.status = RaceStatus.RUNNING
+        distance.start_time = datetime.now()
 
-        logger.info(f"🚀 Distancia iniciada: {category.name}")
+        logger.info(f"🚀 Distancia iniciada: {distance.name}")
         logger.info(f"   📊 Participantes: {total_participants} | Chips: {chips_assigned} asignados, {chips_pending} pendientes")
 
         return True
     
-    def pause_category(self, category_id: str) -> bool:
-        """Pausar una categoría en curso"""
-        category = self.get_category(category_id)
-        if not category:
+    def pause_distance(self, distance_id: str) -> bool:
+        """Pausar una distancia en curso"""
+        distance = self.get_distance(distance_id)
+        if not distance:
             return False
-        
-        if category.status != RaceStatus.RUNNING:
+
+        if distance.status != RaceStatus.RUNNING:
             return False
-        
-        category.status = RaceStatus.PAUSED
-        logger.info(f"⏸️  Distancia pausada: {category.name}")
+
+        distance.status = RaceStatus.PAUSED
+        logger.info(f"⏸️  Distancia pausada: {distance.name}")
         return True
-    
-    def resume_category(self, category_id: str) -> bool:
-        """Reanudar una categoría pausada"""
-        category = self.get_category(category_id)
-        if not category:
+
+    def resume_distance(self, distance_id: str) -> bool:
+        """Reanudar una distancia pausada"""
+        distance = self.get_distance(distance_id)
+        if not distance:
             return False
-        
-        if category.status != RaceStatus.PAUSED:
+
+        if distance.status != RaceStatus.PAUSED:
             return False
-        
-        category.status = RaceStatus.RUNNING
-        logger.info(f"▶️  Distancia reanudada: {category.name}")
+
+        distance.status = RaceStatus.RUNNING
+        logger.info(f"▶️  Distancia reanudada: {distance.name}")
         return True
-    
-    def finish_category(self, category_id: str) -> bool:
+
+    def finish_distance(self, distance_id: str) -> bool:
         """
-        Finalizar una categoría
-        
+        Finalizar una distancia
+
         Args:
-            category_id: ID de la categoría
-        
+            distance_id: ID de la distancia
+
         Returns:
             bool: True si se finalizó correctamente
         """
-        category = self.get_category(category_id)
-        if not category:
+        distance = self.get_distance(distance_id)
+        if not distance:
             return False
-        
-        if category.status != RaceStatus.RUNNING:
-            return False
-        
-        category.status = RaceStatus.FINISHED
-        category.end_time = datetime.now()
-        
-        # Calcular clasificación final
-        self._update_classification(category_id)
 
-        logger.info(f"🏁 Distancia finalizada: {category.name}")
+        if distance.status != RaceStatus.RUNNING:
+            return False
+
+        distance.status = RaceStatus.FINISHED
+        distance.end_time = datetime.now()
+
+        # Calcular clasificación final
+        self._update_classification(distance_id)
+
+        logger.info(f"🏁 Distancia finalizada: {distance.name}")
         return True
     
     # ========================================================================
@@ -366,21 +367,21 @@ class RaceManager:
             ... )
         """
         logger.debug(f"📡 Procesando detección: Tag {tag_id} en puerto {antenna_port}")
-        
-        # 1. Identificar al atleta y su categoría
-        athlete, category = self._find_athlete_by_tag(tag_id)
-        
+
+        # 1. Identificar al atleta y su distancia
+        athlete, distance = self._find_athlete_by_tag(tag_id)
+
         if not athlete:
             logger.warning(f"⚠️  Tag {tag_id} no asociado a ningún atleta")
             return None
-        
-        if not category:
+
+        if not distance:
             logger.warning(f"⚠️  Atleta {athlete.name} sin distancia activa")
             return None
 
-        # Solo procesar si la categoría está corriendo
-        if category.status != RaceStatus.RUNNING:
-            logger.debug(f"Distancia {category.name} no está en curso, ignorando detección")
+        # Solo procesar si la distancia está corriendo
+        if distance.status != RaceStatus.RUNNING:
+            logger.debug(f"Distancia {distance.name} no está en curso, ignorando detección")
             return None
 
         # 2. Validar períodos de latencia (anti-duplicados)
@@ -388,7 +389,7 @@ class RaceManager:
             return None
 
         # 3. Determinar tipo de evento según roles
-        event_type, checkpoint_num = self._determine_event_type(roles, athlete, category)
+        event_type, checkpoint_num = self._determine_event_type(roles, athlete, distance)
 
         if not event_type:
             logger.warning(f"⚠️  No se pudo determinar tipo de evento para roles: {roles}")
@@ -402,11 +403,11 @@ class RaceManager:
             event_type=event_type,
             checkpoint_number=checkpoint_num,
             athlete=athlete,
-            category_id=category.category_id
+            distance_id=distance.distance_id
         )
 
         # 5. Registrar en resultado del atleta
-        result = self.results[category.category_id][athlete.athlete_id]
+        result = self.results[distance.distance_id][athlete.athlete_id]
         success = self._record_event_in_result(result, event)
 
         if success:
@@ -418,11 +419,11 @@ class RaceManager:
             self.detection_history.append(event)
 
             # 8. Actualizar clasificación
-            self._update_classification(category.category_id)
+            self._update_classification(distance.distance_id)
 
             logger.info(f"✅ {event}")
             return event
-        
+
         return None
 
     def _validate_detection_timing(
@@ -464,7 +465,7 @@ class RaceManager:
 
         # Validación 2: Período de gracia para START (evitar re-largadas)
         if 'start' in roles:
-            result = self.results.get(athlete.category_id, {}).get(athlete.athlete_id)
+            result = self.results.get(athlete.distance_id, {}).get(athlete.athlete_id)
             if result and result.start_time:
                 time_since_start = timestamp - result.start_time
                 if time_since_start < self.start_grace_period:
@@ -477,65 +478,65 @@ class RaceManager:
 
         return True
 
-    def _find_athlete_by_tag(self, tag_id: str) -> Tuple[Optional[Athlete], Optional[RaceCategory]]:
+    def _find_athlete_by_tag(self, tag_id: str) -> Tuple[Optional[Athlete], Optional[RaceDistance]]:
         """
-        Buscar atleta por tag_id en categorías activas
-        
+        Buscar atleta por tag_id en distancias activas
+
         Args:
             tag_id: ID del chip
-        
+
         Returns:
-            Tuple (Athlete, RaceCategory) o (None, None) si no se encuentra
+            Tuple (Athlete, RaceDistance) o (None, None) si no se encuentra
         """
-        # Buscar primero en categorías corriendo
-        for category in self.get_active_categories():
-            athlete = category.get_participant_by_tag(tag_id)
+        # Buscar primero en distancias corriendo
+        for distance in self.get_active_distances():
+            athlete = distance.get_participant_by_tag(tag_id)
             if athlete:
-                return athlete, category
-        
+                return athlete, distance
+
         # Si no está en activas, buscar en todas
-        for category in self.categories.values():
-            athlete = category.get_participant_by_tag(tag_id)
+        for distance in self.distances.values():
+            athlete = distance.get_participant_by_tag(tag_id)
             if athlete:
-                return athlete, category
-        
+                return athlete, distance
+
         return None, None
     
     def _determine_event_type(
         self,
         roles: List[str],
         athlete: Athlete,
-        category: RaceCategory
+        distance: RaceDistance
     ) -> Tuple[Optional[EventType], Optional[int]]:
         """
         Determinar tipo de evento según roles y estado del atleta
-        
+
         Args:
             roles: Roles de la antena
             athlete: Atleta que pasó
-            category: Categoría
-        
+            distance: Distancia en la que compite
+
         Returns:
             Tuple (EventType, checkpoint_number) o (None, None)
         """
-        result = self.results[category.category_id][athlete.athlete_id]
-        
+        result = self.results[distance.distance_id][athlete.athlete_id]
+
         # Si no ha largado y la antena tiene rol 'start'
         if 'start' in roles and result.status == AthleteStatus.NOT_STARTED:
             return EventType.START, None
-        
+
         # Si está corriendo
         if result.status == AthleteStatus.RUNNING:
             # Si tiene rol 'finish'
             if 'finish' in roles:
                 return EventType.FINISH, None
-            
+
             # Si tiene rol 'checkpoint'
             if 'checkpoint' in roles:
                 # Determinar número de checkpoint
                 next_checkpoint = len(result.checkpoint_times) + 1
                 return EventType.CHECKPOINT, next_checkpoint
-        
+
         return None, None
     
     def _record_event_in_result(self, result: AthleteResult, event: DetectionEvent) -> bool:
@@ -574,22 +575,22 @@ class RaceManager:
     # ========================================================================
     # CLASIFICACIONES Y RESULTADOS
     # ========================================================================
-    
-    def get_results(self, category_id: str) -> List[AthleteResult]:
+
+    def get_results(self, distance_id: str) -> List[AthleteResult]:
         """
-        Obtener resultados de una categoría
-        
+        Obtener resultados de una distancia
+
         Args:
-            category_id: ID de la categoría
-        
+            distance_id: ID de la distancia
+
         Returns:
             Lista de AthleteResult ordenados por posición
         """
-        if category_id not in self.results:
+        if distance_id not in self.results:
             return []
-        
-        results = list(self.results[category_id].values())
-        
+
+        results = list(self.results[distance_id].values())
+
         # Ordenar: primero finalizados por tiempo, luego corriendo, luego no iniciados
         def sort_key(r: AthleteResult):
             if r.status == AthleteStatus.FINISHED:
@@ -598,19 +599,19 @@ class RaceManager:
                 return (1, 0)
             else:
                 return (2, 0)
-        
+
         results.sort(key=sort_key)
         return results
-    
-    def _update_classification(self, category_id: str):
+
+    def _update_classification(self, distance_id: str):
         """
         Actualizar posiciones en la clasificación
-        
+
         Args:
-            category_id: ID de la categoría
+            distance_id: ID de la distancia
         """
-        results = self.get_results(category_id)
-        
+        results = self.get_results(distance_id)
+
         position = 1
         for result in results:
             if result.status == AthleteStatus.FINISHED:
@@ -618,34 +619,34 @@ class RaceManager:
                 position += 1
             else:
                 result.position = None
-    
-    def get_athlete_result(self, category_id: str, athlete_id: str) -> Optional[AthleteResult]:
+
+    def get_athlete_result(self, distance_id: str, athlete_id: str) -> Optional[AthleteResult]:
         """
         Obtener resultado de un atleta específico
-        
+
         Args:
-            category_id: ID de la categoría
+            distance_id: ID de la distancia
             athlete_id: ID del atleta
-        
+
         Returns:
             AthleteResult o None
         """
-        if category_id not in self.results:
+        if distance_id not in self.results:
             return None
-        
-        return self.results[category_id].get(athlete_id)
-    
-    def get_statistics(self, category_id: str) -> Dict:
+
+        return self.results[distance_id].get(athlete_id)
+
+    def get_statistics(self, distance_id: str) -> Dict:
         """
-        Obtener estadísticas de una categoría
+        Obtener estadísticas de una distancia
 
         Args:
-            category_id: ID de la categoría
+            distance_id: ID de la distancia
 
         Returns:
             Dict con estadísticas
         """
-        results = self.get_results(category_id)
+        results = self.get_results(distance_id)
         finished = [r for r in results if r.status == AthleteStatus.FINISHED]
 
         stats = {
@@ -668,14 +669,14 @@ class RaceManager:
 
     def get_results_by_award_category(
         self,
-        race_category_id: str,
+        distance_id: str,
         only_finished: bool = True
     ) -> Dict[str, List[AthleteResult]]:
         """
         Agrupar resultados por categoría de premiación (género/edad)
 
         Args:
-            race_category_id: ID de la categoría de carrera (distancia)
+            distance_id: ID de la distancia (ej: "5k", "10k", "21k")
             only_finished: Si True, solo incluye atletas que finalizaron
 
         Returns:
@@ -686,15 +687,15 @@ class RaceManager:
             >>> for award_cat_id, results in results_by_award.items():
             ...     print(f"{award_cat_id}: {len(results)} finalizadores")
         """
-        # Obtener todos los resultados de la categoría de carrera
-        all_results = self.get_results(race_category_id)
+        # Obtener todos los resultados de la distancia
+        all_results = self.get_results(distance_id)
 
         # Filtrar solo finalizados si se requiere
         if only_finished:
             all_results = [r for r in all_results if r.status == AthleteStatus.FINISHED]
 
-        # Obtener categorías de premiación que aplican a esta carrera
-        applicable_award_cats = self.get_award_categories_for_race(race_category_id)
+        # Obtener categorías de premiación que aplican a esta distancia
+        applicable_award_cats = self.get_award_categories_for_distance(distance_id)
 
         # Agrupar por categoría de premiación
         results_by_award: Dict[str, List[AthleteResult]] = {}
@@ -721,14 +722,14 @@ class RaceManager:
 
     def get_podium_by_award_category(
         self,
-        race_category_id: str,
+        distance_id: str,
         top_n: int = 3
     ) -> Dict[str, List[Tuple[int, AthleteResult]]]:
         """
         Obtener podios (top N) por categoría de premiación
 
         Args:
-            race_category_id: ID de la categoría de carrera (distancia)
+            distance_id: ID de la distancia (ej: "5k", "10k", "21k")
             top_n: Número de posiciones a incluir (default 3 para podio)
 
         Returns:
@@ -741,7 +742,7 @@ class RaceManager:
             ...     for pos, result in podium:
             ...         print(f"  {pos}. {result.athlete.name} - {result.get_formatted_time()}")
         """
-        results_by_award = self.get_results_by_award_category(race_category_id, only_finished=True)
+        results_by_award = self.get_results_by_award_category(distance_id, only_finished=True)
 
         podiums = {}
         for award_cat_id, results in results_by_award.items():
@@ -756,47 +757,96 @@ class RaceManager:
     # ========================================================================
     # UTILIDADES
     # ========================================================================
-    
-    def reset_category(self, category_id: str) -> bool:
+
+    def reset_distance(self, distance_id: str) -> bool:
         """
-        Resetear resultados de una categoría
-        
+        Resetear resultados de una distancia
+
         Args:
-            category_id: ID de la categoría
-        
+            distance_id: ID de la distancia
+
         Returns:
             bool: True si se reseteó
         """
-        category = self.get_category(category_id)
-        if not category:
+        distance = self.get_distance(distance_id)
+        if not distance:
             return False
-        
+
         # Reinicializar resultados
-        self.results[category_id] = {}
-        for athlete in category.participants:
-            self.results[category_id][athlete.athlete_id] = AthleteResult(
+        self.results[distance_id] = {}
+        for athlete in distance.participants:
+            self.results[distance_id][athlete.athlete_id] = AthleteResult(
                 athlete=athlete,
-                category_id=category_id
+                distance_id=distance_id
             )
 
-        # Limpiar tracking de detecciones de esta categoría
-        athlete_ids = {a.athlete_id for a in category.participants}
+        # Limpiar tracking de detecciones de esta distancia
+        athlete_ids = {a.athlete_id for a in distance.participants}
         self.last_detections = {
             key: value for key, value in self.last_detections.items()
             if key[0] not in athlete_ids
         }
 
         # Resetear estado
-        category.status = RaceStatus.PENDING
-        category.start_time = None
-        category.end_time = None
+        distance.status = RaceStatus.PENDING
+        distance.start_time = None
+        distance.end_time = None
 
-        logger.info(f"🔄 Distancia reseteada: {category.name}")
+        logger.info(f"🔄 Distancia reseteada: {distance.name}")
         return True
-    
+
     def __repr__(self) -> str:
         """Representación para debugging"""
-        return f"<RaceManager: {len(self.categories)} categorías, {len(self.detection_history)} eventos>"
+        return f"<RaceManager: {len(self.distances)} distancias, {len(self.detection_history)} eventos>"
+
+    # ========================================================================
+    # MÉTODOS DE COMPATIBILIDAD (DEPRECATED - Usar add_distance, get_distance, etc.)
+    # ========================================================================
+
+    @property
+    def categories(self):
+        """DEPRECATED: Usar self.distances"""
+        return self.distances
+
+    def add_category(self, category):
+        """DEPRECATED: Usar add_distance()"""
+        return self.add_distance(category)
+
+    def remove_category(self, category_id):
+        """DEPRECATED: Usar remove_distance()"""
+        return self.remove_distance(category_id)
+
+    def get_category(self, category_id):
+        """DEPRECATED: Usar get_distance()"""
+        return self.get_distance(category_id)
+
+    def get_all_categories(self):
+        """DEPRECATED: Usar get_all_distances()"""
+        return self.get_all_distances()
+
+    def get_active_categories(self):
+        """DEPRECATED: Usar get_active_distances()"""
+        return self.get_active_distances()
+
+    def start_category(self, category_id):
+        """DEPRECATED: Usar start_distance()"""
+        return self.start_distance(category_id)
+
+    def pause_category(self, category_id):
+        """DEPRECATED: Usar pause_distance()"""
+        return self.pause_distance(category_id)
+
+    def resume_category(self, category_id):
+        """DEPRECATED: Usar resume_distance()"""
+        return self.resume_distance(category_id)
+
+    def finish_category(self, category_id):
+        """DEPRECATED: Usar finish_distance()"""
+        return self.finish_distance(category_id)
+
+    def reset_category(self, category_id):
+        """DEPRECATED: Usar reset_distance()"""
+        return self.reset_distance(category_id)
 
 
 # ============================================================================
@@ -806,30 +856,30 @@ class RaceManager:
 if __name__ == "__main__":
     """Tests del Race Manager"""
     from datetime import timedelta
-    
+
     print("=" * 60)
     print("TESTS DE RACE MANAGER")
     print("=" * 60)
-    
+
     # Setup
     manager = RaceManager()
-    
-    # Test 1: Crear y agregar categoría
-    print("\n1. Crear categoría con atletas...")
-    from models import create_test_category
-    category = create_test_category()
-    manager.add_category(category)
-    print(f"   ✅ Categoría agregada: {category}")
-    
-    # Test 2: Iniciar categoría
-    print("\n2. Iniciar categoría...")
-    manager.start_category(category.category_id)
-    print(f"   ✅ Estado: {category.status.value}")
-    
+
+    # Test 1: Crear y agregar distancia
+    print("\n1. Crear distancia con atletas...")
+    from models import create_test_distance
+    distance = create_test_distance()
+    manager.add_distance(distance)
+    print(f"   ✅ Distancia agregada: {distance}")
+
+    # Test 2: Iniciar distancia
+    print("\n2. Iniciar distancia...")
+    manager.start_distance(distance.distance_id)
+    print(f"   ✅ Estado: {distance.status.value}")
+
     # Test 3: Simular detecciones
     print("\n3. Simular detecciones...")
     now = datetime.now()
-    
+
     # Largada de atleta 1
     event1 = manager.process_detection(
         tag_id="7662",
@@ -838,7 +888,7 @@ if __name__ == "__main__":
         roles=['start']
     )
     print(f"   ✅ {event1}")
-    
+
     # Largada de atleta 2
     event2 = manager.process_detection(
         tag_id="8587",
@@ -847,7 +897,7 @@ if __name__ == "__main__":
         roles=['start']
     )
     print(f"   ✅ {event2}")
-    
+
     # Meta de atleta 1
     event3 = manager.process_detection(
         tag_id="7662",
@@ -856,7 +906,7 @@ if __name__ == "__main__":
         roles=['finish']
     )
     print(f"   ✅ {event3}")
-    
+
     # Meta de atleta 2
     event4 = manager.process_detection(
         tag_id="8587",
@@ -865,24 +915,24 @@ if __name__ == "__main__":
         roles=['finish']
     )
     print(f"   ✅ {event4}")
-    
+
     # Test 4: Obtener clasificación
     print("\n4. Clasificación actual...")
-    results = manager.get_results(category.category_id)
+    results = manager.get_results(distance.distance_id)
     for result in results:
         pos = f"#{result.position}" if result.position else "  -"
         print(f"   {pos} {result}")
-    
+
     # Test 5: Estadísticas
     print("\n5. Estadísticas...")
-    stats = manager.get_statistics(category.category_id)
+    stats = manager.get_statistics(distance.distance_id)
     print(f"   Total: {stats['total_participants']}")
     print(f"   Iniciados: {stats['started']}")
     print(f"   Finalizados: {stats['finished']}")
     if stats['fastest_time']:
         print(f"   Más rápido: {stats['fastest_time']:.3f}s")
         print(f"   Promedio: {stats['average_time']:.3f}s")
-    
+
     print("\n" + "=" * 60)
     print("✅ TODOS LOS TESTS PASARON")
     print("=" * 60)

@@ -14,7 +14,7 @@ src_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(src_path))
 
 try:
-    from src.core.race_tracking.models import Athlete, RaceCategory, RaceStatus
+    from src.core.race_tracking.models import Athlete, RaceDistance, RaceStatus
     from src.core.race_tracking.race_manager import RaceManager
 except ImportError as e:
     # Fallback si no se puede importar
@@ -183,39 +183,39 @@ class EventConfigWidget(QWidget):
         
     def load_sample_event(self):
         """Cargar evento de ejemplo"""
-        # Crear categorías de ejemplo usando el modelo de race_tracking
-        categories = [
+        # Crear distancias de ejemplo usando el modelo de race_tracking
+        distances_data = [
             ("100k", "Ultra 100K", 100000.0, 5, "Ultramaratón de 100 kilómetros"),
             ("50k", "Trail 50K", 50000.0, 3, "Trail running de 50 kilómetros"),
             ("30k", "Mountain 30K", 30000.0, 2, "Carrera de montaña 30K"),
             ("21k", "Half Marathon", 21000.0, 1, "Media maratón")
         ]
 
-        for cat_id, name, distance_m, checkpoints, desc in categories:
-            category = RaceCategory(
-                category_id=cat_id,
+        for dist_id, name, distance_m, checkpoints, desc in distances_data:
+            distance = RaceDistance(
+                distance_id=dist_id,
                 name=name,
-                distance=distance_m,
+                distance_meters=distance_m,
                 expected_checkpoints=checkpoints,
                 participants=[],
                 status=RaceStatus.PENDING,
                 notes=desc
             )
             try:
-                self.race_manager.add_category(category)
+                self.race_manager.add_distance(distance)
             except ValueError as e:
-                logger.warning(f"No se pudo agregar categoría {cat_id}: {e}")
+                logger.warning(f"No se pudo agregar distancia {dist_id}: {e}")
 
         self.refresh_categories_table()
         self.refresh_category_combo()
         self.categories_changed.emit()
         
     def add_new_category(self):
-        """Agregar nueva categoría"""
+        """Agregar nueva distancia"""
         dialog = CategoryDialog(self)
         if dialog.exec():
-            category = dialog.get_category()
-            self.race_manager.add_category(category)
+            distance = dialog.get_distance()  # El dialog ahora retorna RaceDistance
+            self.race_manager.add_distance(distance)
             self.refresh_categories_table()
             self.refresh_category_combo()
             self.categories_changed.emit()
@@ -300,21 +300,21 @@ class EventConfigWidget(QWidget):
     def register_participant(self):
         """Registrar participante rápidamente"""
         chip_id = self.chip_id_input.text().strip()
-        category_id = self.participant_category_combo.currentText().split(" - ")[0] if self.participant_category_combo.currentText() else ""
+        distance_id = self.participant_category_combo.currentText().split(" - ")[0] if self.participant_category_combo.currentText() else ""
         participant_name = self.participant_name_input.text().strip()
 
-        if not chip_id or not category_id:
+        if not chip_id or not distance_id:
             QMessageBox.warning(self, "Error", "Completa Chip ID y Distancia")
             return
 
         try:
-            # Obtener categoría
-            category = self.race_manager.get_category(category_id)
-            if not category:
-                raise ValueError(f"Distancia {category_id} no existe")
+            # Obtener distancia
+            distance = self.race_manager.get_distance(distance_id)
+            if not distance:
+                raise ValueError(f"Distancia {distance_id} no existe")
 
             # Generar dorsal automático (siguiente disponible)
-            existing_bibs = [p.bib_number for p in category.participants]
+            existing_bibs = [p.bib_number for p in distance.participants]
             next_bib = max(existing_bibs) + 1 if existing_bibs else 1
 
             # Crear atleta
@@ -322,17 +322,17 @@ class EventConfigWidget(QWidget):
                 tag_id=chip_id,
                 bib_number=next_bib,
                 name=participant_name if participant_name else f"Corredor-{chip_id}",
-                category_id=category_id
+                distance_id=distance_id
             )
 
-            # Agregar a categoría
-            category.add_participant(athlete)
+            # Agregar a distancia
+            distance.add_participant(athlete)
 
             self.chip_id_input.clear()
             self.participant_name_input.clear()
             self.refresh_categories_table()  # Actualizar conteo de participantes
             QMessageBox.information(self, "Éxito",
-                                  f"Participante {athlete.name} (#{next_bib}) registrado en {category_id}")
+                                  f"Participante {athlete.name} (#{next_bib}) registrado en {distance_id}")
             logger.info(f"✅ Atleta registrado: {athlete.name} (Chip: {chip_id}, Dorsal: {next_bib})")
 
         except ValueError as e:
@@ -340,42 +340,42 @@ class EventConfigWidget(QWidget):
             logger.error(f"❌ Error registrando participante: {e}")
             
     def refresh_categories_table(self):
-        """Actualizar tabla de categorías"""
+        """Actualizar tabla de distancias"""
         self.categories_table.setRowCount(0)
 
-        for category in self.race_manager.get_all_categories():
+        for distance in self.race_manager.get_all_distances():
             row = self.categories_table.rowCount()
             self.categories_table.insertRow(row)
 
             # Formatear distancia (de metros a km)
-            distance_km = f"{category.distance/1000:.1f} km"
+            distance_km = f"{distance.distance_meters/1000:.1f} km"
 
             # Hora de largada (si existe)
-            start_time_str = category.start_time.strftime('%H:%M') if category.start_time else "-"
+            start_time_str = distance.start_time.strftime('%H:%M') if distance.start_time else "-"
 
             # Duración estimada basada en distancia (aproximado: 1 hora cada 10km)
-            est_duration = int(category.distance / 10000) + 1
+            est_duration = int(distance.distance_meters / 10000) + 1
 
-            self.categories_table.setItem(row, 0, QTableWidgetItem(category.category_id))
-            self.categories_table.setItem(row, 1, QTableWidgetItem(category.name))
+            self.categories_table.setItem(row, 0, QTableWidgetItem(distance.distance_id))
+            self.categories_table.setItem(row, 1, QTableWidgetItem(distance.name))
             self.categories_table.setItem(row, 2, QTableWidgetItem(distance_km))
             self.categories_table.setItem(row, 3, QTableWidgetItem(start_time_str))
             self.categories_table.setItem(row, 4, QTableWidgetItem(f"{est_duration}h"))
 
             # Colorear estado
-            status_item = QTableWidgetItem(category.status.value.title())
-            if category.status == RaceStatus.RUNNING:
+            status_item = QTableWidgetItem(distance.status.value.title())
+            if distance.status == RaceStatus.RUNNING:
                 status_item.setBackground(Qt.GlobalColor.green)
-            elif category.status == RaceStatus.FINISHED:
+            elif distance.status == RaceStatus.FINISHED:
                 status_item.setBackground(Qt.GlobalColor.gray)
             self.categories_table.setItem(row, 5, status_item)
 
             # Número de participantes
-            participant_count = len(category.participants)
+            participant_count = len(distance.participants)
             self.categories_table.setItem(row, 6, QTableWidgetItem(str(participant_count)))
 
             # Chips asignados / Total
-            chips_assigned = sum(1 for p in category.participants if p.tag_id)
+            chips_assigned = sum(1 for p in distance.participants if p.tag_id)
             chip_status_text = f"{chips_assigned}/{participant_count}"
             chip_status_item = QTableWidgetItem(chip_status_text)
 
@@ -392,17 +392,17 @@ class EventConfigWidget(QWidget):
             self.categories_table.setItem(row, 7, chip_status_item)
             
     def refresh_category_combo(self):
-        """Actualizar combo de categorías"""
+        """Actualizar combo de distancias"""
         self.participant_category_combo.clear()
 
-        for category in self.race_manager.get_all_categories():
-            self.participant_category_combo.addItem(f"{category.category_id} - {category.name}")
-            
+        for distance in self.race_manager.get_all_distances():
+            self.participant_category_combo.addItem(f"{distance.distance_id} - {distance.name}")
+
     def update_active_categories_label(self):
-        """Actualizar label de categorías activas"""
-        active = self.race_manager.get_active_categories()
+        """Actualizar label de distancias activas"""
+        active = self.race_manager.get_active_distances()
         if active:
-            names = [cat.name for cat in active]
+            names = [dist.name for dist in active]
             self.active_categories_label.setText(f"Distancias activas: {', '.join(names)}")
             self.active_categories_label.setStyleSheet("font-weight: bold; font-size: 14px; color: green;")
         else:
@@ -410,31 +410,31 @@ class EventConfigWidget(QWidget):
             self.active_categories_label.setStyleSheet("font-weight: bold; font-size: 14px; color: gray;")
 
     def on_category_selected(self):
-        """Manejar selección de categoría en la tabla"""
+        """Manejar selección de distancia en la tabla"""
         current_row = self.categories_table.currentRow()
         if current_row < 0:
             self.participants_table.setRowCount(0)
             self.participants_stats_label.setText("Selecciona una distancia para ver sus participantes")
             return
 
-        # Obtener ID de categoría
-        category_id = self.categories_table.item(current_row, 0).text()
-        category = self.race_manager.get_category(category_id)
+        # Obtener ID de distancia
+        distance_id = self.categories_table.item(current_row, 0).text()
+        distance = self.race_manager.get_distance(distance_id)
 
-        if not category:
+        if not distance:
             return
 
         # Actualizar tabla de participantes
-        self.refresh_participants_table(category)
+        self.refresh_participants_table(distance)
 
-    def refresh_participants_table(self, category):
-        """Actualizar tabla de participantes de una categoría"""
+    def refresh_participants_table(self, distance):
+        """Actualizar tabla de participantes de una distancia"""
         self.participants_table.setRowCount(0)
 
-        if not category:
+        if not distance:
             return
 
-        participants = category.participants
+        participants = distance.participants
         chips_assigned = sum(1 for p in participants if p.tag_id)
 
         for participant in participants:
@@ -490,28 +490,28 @@ class EventConfigWidget(QWidget):
         self.refresh_category_combo()
         self.update_active_categories_label()
 
-        # Refrescar tabla de participantes si hay categoría seleccionada
+        # Refrescar tabla de participantes si hay distancia seleccionada
         current_row = self.categories_table.currentRow()
         if current_row >= 0:
-            category_id = self.categories_table.item(current_row, 0).text()
-            category = self.race_manager.get_category(category_id)
-            if category:
-                self.refresh_participants_table(category)
+            distance_id = self.categories_table.item(current_row, 0).text()
+            distance = self.race_manager.get_distance(distance_id)
+            if distance:
+                self.refresh_participants_table(distance)
 
         logger.info("✅ EventConfigWidget refrescado desde otra solapa")
 
-# Dialog para agregar/editar categorías
+# Dialog para agregar/editar distancias
 class CategoryDialog(QWidget):
-    """Dialog para crear/editar categorías"""
-    
-    def __init__(self, parent=None, category=None):
+    """Dialog para crear/editar distancias"""
+
+    def __init__(self, parent=None, distance=None):
         super().__init__()
-        self.category = category
-        self.result_category = None
+        self.distance = distance
+        self.result_distance = None
         self.setup_ui()
-        
-        if category:
-            self.load_category_data()
+
+        if distance:
+            self.load_distance_data()
             
     def setup_ui(self):
         """Configurar interfaz del dialog"""
@@ -567,52 +567,61 @@ class CategoryDialog(QWidget):
         
         layout.addLayout(buttons_layout)
         
-    def load_category_data(self):
-        """Cargar datos de categoría existente"""
-        if self.category:
-            self.id_input.setText(self.category.id)
-            self.name_input.setText(self.category.name)
-            self.distance_input.setText(self.category.distance)
-            self.start_time_input.setTime(QTime(self.category.start_time.hour, self.category.start_time.minute))
-            self.duration_input.setValue(self.category.max_duration_hours)
-            self.description_input.setPlainText(self.category.description)
-            
+    def load_distance_data(self):
+        """Cargar datos de distancia existente"""
+        if self.distance:
+            self.id_input.setText(self.distance.distance_id)
+            self.name_input.setText(self.distance.name)
+            self.distance_input.setText(str(self.distance.distance_meters))
+            if self.distance.start_time:
+                self.start_time_input.setTime(QTime(self.distance.start_time.hour, self.distance.start_time.minute))
+            self.description_input.setPlainText(self.distance.notes or "")
+
     def save_category(self):
-        """Guardar categoría"""
-        category_id = self.id_input.text().strip()
+        """Guardar distancia"""
+        distance_id = self.id_input.text().strip()
         name = self.name_input.text().strip()
-        distance = self.distance_input.text().strip()
+        distance_str = self.distance_input.text().strip()
         start_time_qt = self.start_time_input.time()
         duration = self.duration_input.value()
         description = self.description_input.toPlainText().strip()
-        
-        if not all([category_id, name, distance]):
+
+        if not all([distance_id, name, distance_str]):
             QMessageBox.warning(self, "Error", "Completa todos los campos requeridos")
             return
-            
-        # Convertir QTime a time
-        start_time_py = time(start_time_qt.hour(), start_time_qt.minute())
-        
-        # Crear categoría
+
+        # Convertir distancia a metros
         try:
-            self.result_category = RaceCategory(
-                id=category_id,
+            distance_meters = float(distance_str)
+        except ValueError:
+            QMessageBox.warning(self, "Error", "Distancia debe ser un número")
+            return
+
+        # Convertir QTime a datetime
+        start_time_py = datetime.now().replace(hour=start_time_qt.hour(), minute=start_time_qt.minute())
+
+        # Crear distancia
+        try:
+            self.result_distance = RaceDistance(
+                distance_id=distance_id,
                 name=name,
-                distance=distance,
+                distance_meters=distance_meters,
+                expected_checkpoints=0,  # Por defecto
+                participants=[],
+                status=RaceStatus.PENDING,
                 start_time=start_time_py,
-                max_duration_hours=duration,
-                description=description
+                notes=description
             )
             self.close()
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Error creando categoría: {e}")
-            
-    def get_category(self):
-        """Obtener categoría creada"""
-        return self.result_category
-        
+            QMessageBox.warning(self, "Error", f"Error creando distancia: {e}")
+
+    def get_distance(self):
+        """Obtener distancia creada"""
+        return self.result_distance
+
     def exec(self):
         """Mostrar dialog y esperar resultado"""
         self.show()
         # Simular dialog modal
-        return self.result_category is not None
+        return self.result_distance is not None
