@@ -1116,26 +1116,26 @@ class ChipAssignmentWidget(QWidget):
                     "3. Que las columnas 'Nombre', 'Apellido' y 'Distancia' tengan datos"
                 )
 
-            # Crear categorías
-            categories = importer.create_categories()
+            # Crear distancias
+            distances = importer.create_distances()
 
-            if not categories:
-                raise ValueError("No se pudieron crear categorías. Verifica la columna 'Distancia' en el CSV.")
+            if not distances:
+                raise ValueError("No se pudieron crear distancias. Verifica la columna 'Distancia' en el CSV.")
 
             # Agregar a race_manager
-            for category in categories:
+            for distance in distances:
                 # Verificar si ya existe
-                existing = self.race_manager.get_category(category.category_id)
+                existing = self.race_manager.get_distance(distance.distance_id)
                 if existing:
-                    # Agregar participantes a categoría existente
-                    for athlete in category.participants:
+                    # Agregar participantes a distancia existente
+                    for athlete in distance.participants:
                         try:
                             existing.add_participant(athlete)
                         except ValueError as e:
                             logger.warning(f"No se pudo agregar {athlete.name}: {e}")
                 else:
-                    # Agregar categoría nueva
-                    self.race_manager.add_category(category)
+                    # Agregar distancia nueva
+                    self.race_manager.add_distance(distance)
 
             # Actualizar tabla
             self.refresh_athletes_table()
@@ -1146,19 +1146,19 @@ class ChipAssignmentWidget(QWidget):
             logger.info("📢 Señal categories_imported emitida para sincronizar tabs")
 
             # Mostrar resumen (calcular total correctamente)
-            total = sum(len(cat.participants) for cat in categories)
+            total = sum(len(dist.participants) for dist in distances)
 
             QMessageBox.information(
                 self,
                 "Importación Exitosa",
                 f"✅ Importados desde CSV:\n\n"
-                f"• {len(categories)} distancias\n"
+                f"• {len(distances)} distancias\n"
                 f"• {total} atletas\n"
                 f"• Dorsales asignados automáticamente\n\n"
                 f"Ahora puedes asignar chips RFID a cada corredor."
             )
 
-            logger.info(f"✅ Importación CSV completa: {total} atletas en {len(categories)} distancias")
+            logger.info(f"✅ Importación CSV completa: {total} atletas en {len(distances)} distancias")
 
         except Exception as e:
             QMessageBox.critical(

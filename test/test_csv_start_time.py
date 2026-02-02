@@ -82,32 +82,32 @@ Pedro,López,pedro@test.com,11223344,20/03/1988,M,10K,1001,28/01/2026 09:30:00""
         return False
 
     print()
-    print("3. Creando categorías con hora de largada...")
-    categories = importer.create_categories()
+    print("3. Creando distancias con hora de largada...")
+    distances = importer.create_distances()
 
-    if len(categories) != 2:
-        print(f"   ❌ Error: esperaba 2 categorías, obtuvo {len(categories)}")
+    if len(distances) != 2:
+        print(f"   ❌ Error: esperaba 2 distancias, obtuvo {len(distances)}")
         return False
 
-    cat_5k = next((c for c in categories if c.category_id == '5k'), None)
-    cat_10k = next((c for c in categories if c.category_id == '10k'), None)
+    dist_5k = next((d for d in distances if d.distance_id == '5k'), None)
+    dist_10k = next((d for d in distances if d.distance_id == '10k'), None)
 
-    if not cat_5k:
-        print("   ❌ Error: no se encontró categoría 5K")
+    if not dist_5k:
+        print("   ❌ Error: no se encontró distancia 5K")
         return False
 
-    if not cat_10k:
-        print("   ❌ Error: no se encontró categoría 10K")
+    if not dist_10k:
+        print("   ❌ Error: no se encontró distancia 10K")
         return False
 
-    if cat_5k.start_time:
-        print(f"   ✅ 5K tiene start_time: {cat_5k.start_time.strftime('%H:%M')}")
+    if dist_5k.start_time:
+        print(f"   ✅ 5K tiene start_time: {dist_5k.start_time.strftime('%H:%M')}")
     else:
         print("   ❌ Error: 5K no tiene start_time")
         return False
 
-    if cat_10k.start_time:
-        print(f"   ✅ 10K tiene start_time: {cat_10k.start_time.strftime('%H:%M')}")
+    if dist_10k.start_time:
+        print(f"   ✅ 10K tiene start_time: {dist_10k.start_time.strftime('%H:%M')}")
     else:
         print("   ❌ Error: 10K no tiene start_time")
         return False
@@ -158,19 +158,19 @@ Ana,Martínez,ana@test.com,66778899,25/12/1995,F,5K,4"""
             return False
     print()
 
-    print("3. Creando categorías sin hora de largada...")
-    categories = importer.create_categories()
+    print("3. Creando distancias sin hora de largada...")
+    distances = importer.create_distances()
 
-    cat_5k = next((c for c in categories if c.category_id == '5k'), None)
+    dist_5k = next((d for d in distances if d.distance_id == '5k'), None)
 
-    if not cat_5k:
-        print("   ❌ Error: no se encontró categoría 5K")
+    if not dist_5k:
+        print("   ❌ Error: no se encontró distancia 5K")
         return False
 
-    if cat_5k.start_time is None:
+    if dist_5k.start_time is None:
         print(f"   ✅ 5K sin start_time (debe configurarse manualmente)")
     else:
-        print(f"   ❌ Error: esperaba None, obtuvo {cat_5k.start_time}")
+        print(f"   ❌ Error: esperaba None, obtuvo {dist_5k.start_time}")
         return False
 
     print()
@@ -247,7 +247,7 @@ if __name__ == "__main__":
         print("- Extrae hora cuando está presente")
         print("- Maneja múltiples formatos de fecha")
         print("- Devuelve None cuando no hay hora")
-        print("- Pasa hora a RaceCategory correctamente")
+        print("- Pasa hora a RaceDistance correctamente")
     else:
         print("❌ ALGUNOS TESTS FALLARON")
     print("=" * 60)

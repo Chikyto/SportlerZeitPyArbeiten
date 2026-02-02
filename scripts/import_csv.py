@@ -92,9 +92,9 @@ def import_and_process(csv_path: str):
             print_error("No se importó ningún atleta. Verifica el archivo.")
             return False
 
-        # 3. Crear categorías
-        print("\n📋 Creando categorías...")
-        categories = importer.create_categories()
+        # 3. Crear distancias
+        print("\n📋 Creando distancias...")
+        distances = importer.create_distances()
 
         # 4. Mostrar resumen
         print(f"\n{Fore.CYAN}{'='*70}")
@@ -103,34 +103,34 @@ def import_and_process(csv_path: str):
 
         total_athletes = 0
 
-        for category in categories:
-            total_athletes += len(category.participants)
-            print(f"{Fore.WHITE}📁 {category.name}")
-            print(f"   • Atletas: {len(category.participants)}")
-            print(f"   • Distancia: {category.distance/1000:.1f} km")
-            print(f"   • Checkpoints: {category.expected_checkpoints}")
+        for distance in distances:
+            total_athletes += len(distance.participants)
+            print(f"{Fore.WHITE}📁 {distance.name}")
+            print(f"   • Atletas: {len(distance.participants)}")
+            print(f"   • Distancia: {distance.distance_meters/1000:.1f} km")
+            print(f"   • Checkpoints: {distance.expected_checkpoints}")
 
             # Mostrar rango de dorsales
-            if category.participants:
-                min_bib = min(a.bib_number for a in category.participants)
-                max_bib = max(a.bib_number for a in category.participants)
+            if distance.participants:
+                min_bib = min(a.bib_number for a in distance.participants)
+                max_bib = max(a.bib_number for a in distance.participants)
                 print(f"   • Dorsales: {min_bib} - {max_bib}")
 
             print()
 
         print(f"{Fore.GREEN}{'='*70}")
-        print(f"{Fore.GREEN}✅ Total: {total_athletes} atletas en {len(categories)} categorías")
+        print(f"{Fore.GREEN}✅ Total: {total_athletes} atletas en {len(distances)} distancias")
         print(f"{Fore.GREEN}{'='*70}\n")
 
         # 5. Mostrar algunos atletas de ejemplo
         print(f"{Fore.CYAN}👥 EJEMPLOS DE ATLETAS:\n")
 
-        for category in categories[:2]:  # Primeras 2 categorías
-            print(f"{Fore.WHITE}{category.name}:")
-            for athlete in category.participants[:5]:  # Primeros 5
+        for distance in distances[:2]:  # Primeras 2 distancias
+            print(f"{Fore.WHITE}{distance.name}:")
+            for athlete in distance.participants[:5]:  # Primeros 5
                 print(f"   • #{athlete.bib_number:04d} - {athlete.name}")
-            if len(category.participants) > 5:
-                print(f"   ... y {len(category.participants) - 5} más")
+            if len(distance.participants) > 5:
+                print(f"   ... y {len(distance.participants) - 5} más")
             print()
 
         # 6. Exportar lista de dorsales
@@ -148,20 +148,20 @@ def import_and_process(csv_path: str):
         # Crear RaceManager y cargar datos
         race_manager = RaceManager()
 
-        for category in categories:
-            race_manager.add_category(category)
+        for distance in distances:
+            race_manager.add_distance(distance)
 
         # Guardar estado (opcional - para persistencia)
         state = {
-            'categories': [
+            'distances': [
                 {
-                    'category_id': cat.category_id,
-                    'name': cat.name,
-                    'distance': cat.distance,
-                    'checkpoints': cat.expected_checkpoints,
-                    'athlete_count': len(cat.participants)
+                    'distance_id': dist.distance_id,
+                    'name': dist.name,
+                    'distance_meters': dist.distance_meters,
+                    'checkpoints': dist.expected_checkpoints,
+                    'athlete_count': len(dist.participants)
                 }
-                for cat in categories
+                for dist in distances
             ],
             'total_athletes': total_athletes,
             'import_date': str(Path(csv_path).stat().st_mtime)
