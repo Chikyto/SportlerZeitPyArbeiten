@@ -142,7 +142,7 @@ class CSVAthleteImporter:
 
                         if athlete:
                             # Agrupar por categoría
-                            cat_id = athlete.category_id
+                            cat_id = athlete.distance_id
                             if cat_id not in self.athletes_by_category:
                                 self.athletes_by_category[cat_id] = []
 
@@ -263,7 +263,7 @@ class CSVAthleteImporter:
                 return None
 
             category_info = self.DISTANCE_MAPPING[distancia]
-            category_id = category_info['distance_id']
+            distance_id = category_info['distance_id']
 
             # Intentar leer dorsal del CSV (columna "N° Pecho", "N°", etc.)
             bib_from_csv = (row.get('N° Pecho', '').strip() or
@@ -278,7 +278,7 @@ class CSVAthleteImporter:
                 logger.debug(f"✓ Fila {row_number}: Usando dorsal del CSV: {bib_number}")
             else:
                 # Generar dorsal automáticamente
-                bib_number = self._generate_bib_number(category_id)
+                bib_number = self._generate_bib_number(distance_id)
                 logger.debug(f"⚙️  Fila {row_number}: Generando dorsal automático: {bib_number}")
 
             # Parsear fecha de nacimiento a datetime
@@ -291,7 +291,7 @@ class CSVAthleteImporter:
             full_name = f"{nombre} {apellido}"
 
             # Crear ID único
-            athlete_id = f"{category_id}_{bib_number}"
+            athlete_id = f"{distance_id}_{bib_number}"
 
             # Construir notas con información adicional (SIN género ni edad, ya están en campos dedicados)
             notes_parts = []
@@ -325,14 +325,14 @@ class CSVAthleteImporter:
                 tag_id='',  # Se asignará después con el chip físico
                 bib_number=bib_number,
                 name=full_name,
-                category_id=category_id,
+                distance_id=distance_id,
                 gender=gender_normalized,
                 birth_date=birth_date,
                 team='',  # Agregar si lo tienes en tu CSV
                 notes=notes
             )
 
-            logger.debug(f"✓ Atleta creado: {full_name} (#{bib_number}) - {category_id}")
+            logger.debug(f"✓ Atleta creado: {full_name} (#{bib_number}) - {distance_id}")
 
             return athlete
 
@@ -588,7 +588,7 @@ class CSVAthleteImporter:
                     writer.writerow([
                         athlete.bib_number,
                         athlete.name,
-                        athlete.category_id.upper(),
+                        athlete.distance_id.upper(),
                         email,
                         tel
                     ])
@@ -635,10 +635,10 @@ if __name__ == "__main__":
         if len(athletes_list) > 3:
             print(f"   ... y {len(athletes_list) - 3} más")
 
-    # Crear categorías
-    categories = importer.create_categories()
+    # Crear distancias
+    distances = importer.create_distances()
 
-    print(f"\n✅ {len(categories)} categorías creadas")
+    print(f"\n✅ {len(distances)} distancias creadas")
 
     # Exportar lista de dorsales
     importer.export_bib_list('lista_dorsales.csv')
