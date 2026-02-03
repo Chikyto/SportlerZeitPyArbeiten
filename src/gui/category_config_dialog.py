@@ -179,7 +179,7 @@ class CategoryConfigDialog(QDialog):
             return
 
         self.name_input.setText(self.category.name)
-        self.category_id_input.setText(self.category.category_id)
+        self.category_id_input.setText(self.category.distance_id)
         self.distance_input.setValue(self.category.distance)
         self.checkpoints_input.setValue(self.category.expected_checkpoints)
 
@@ -194,7 +194,7 @@ class CategoryConfigDialog(QDialog):
         """Get category data from form"""
         return {
             'name': self.name_input.text().strip(),
-            'category_id': self.category_id_input.text().strip(),
+            'distance_id': self.category_id_input.text().strip(),
             'distance': self.distance_input.value(),
             'expected_checkpoints': self.checkpoints_input.value(),
             'start_time': self.start_time_input.dateTime().toPyDateTime(),
@@ -209,7 +209,7 @@ class CategoryConfigDialog(QDialog):
             QMessageBox.warning(self, "Error", "El nombre de la distancia es obligatorio")
             return False
 
-        if not data['category_id']:
+        if not data['distance_id']:
             QMessageBox.warning(self, "Error", "El ID de distancia es obligatorio")
             return False
 

@@ -436,7 +436,7 @@ class ChipAssignmentWidget(QWidget):
         self.category_filter.addItem("Todas")
 
         for category in self.race_manager.get_all_categories():
-            self.category_filter.addItem(category.name, category.category_id)
+            self.category_filter.addItem(category.name, category.distance_id)
 
     def refresh_athletes_table(self):
         """Actualizar tabla de atletas"""
@@ -521,7 +521,7 @@ class ChipAssignmentWidget(QWidget):
                 if self.race_manager:
                     for cat in self.race_manager.get_all_categories():
                         if cat.name == cat_name:
-                            cat_match = cat.category_id
+                            cat_match = cat.distance_id
                             break
 
                 if cat_match != category_filter:
@@ -576,7 +576,7 @@ class ChipAssignmentWidget(QWidget):
 <b>Atleta Seleccionado:</b><br>
 <b>Nombre:</b> {athlete.name}<br>
 <b>Dorsal:</b> #{athlete.bib_number}<br>
-<b>Distancia:</b> {athlete.category_id}<br>
+<b>Distancia:</b> {athlete.distance_id}<br>
 <b>Chip Actual:</b> {athlete.tag_id or 'Sin asignar'}<br>
 <br>
 {athlete.notes or ''}

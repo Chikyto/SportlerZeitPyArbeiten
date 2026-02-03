@@ -115,7 +115,7 @@ class RaceAPIClient:
                 'antenna_port': detection_event.antenna_port,
                 'event_type': detection_event.event_type.value,
                 'checkpoint_number': detection_event.checkpoint_number,
-                'category_id': detection_event.category_id,
+                'category_id': detection_event.distance_id,
                 'athlete_name': detection_event.athlete.name if detection_event.athlete else None,
                 'bib_number': detection_event.athlete.bib_number if detection_event.athlete else None
             }
@@ -153,7 +153,7 @@ class RaceAPIClient:
                 'tag_id': athlete_result.athlete.tag_id,
                 'bib_number': athlete_result.athlete.bib_number,
                 'name': athlete_result.athlete.name,
-                'category_id': athlete_result.category_id,
+                'category_id': athlete_result.distance_id,
                 'status': athlete_result.status.value,
                 'start_time': athlete_result.start_time.isoformat() if athlete_result.start_time else None,
                 'finish_time': athlete_result.finish_time.isoformat() if athlete_result.finish_time else None,
@@ -259,7 +259,7 @@ class RaceAPIClient:
                 'event_id': self.event_id,
                 'categories': [
                     {
-                        'category_id': cat.category_id,
+                        'category_id': cat.distance_id,
                         'name': cat.name,
                         'distance': cat.distance,
                         'expected_checkpoints': cat.expected_checkpoints,

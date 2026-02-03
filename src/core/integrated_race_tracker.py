@@ -14,7 +14,7 @@ from dataclasses import dataclass
 class ChipReading:
     """Lectura de chip con información de contexto"""
     chip_id: str
-    category_id: str
+    distance_id: str
     antenna_id: int
     timestamp: datetime
     reading_type: str  # 'start', 'finish', 'checkpoint', 'start_finish'
@@ -25,7 +25,7 @@ class ChipReading:
 class ParticipantStatus:
     """Estado de un participante"""
     chip_id: str
-    category_id: str
+    distance_id: str
     status: str  # 'not_started', 'in_progress', 'finished'
     start_time: Optional[datetime] = None
     finish_time: Optional[datetime] = None
@@ -152,7 +152,7 @@ class IntegratedRaceTracker:
         if chip_id not in self.participant_statuses:
             self.participant_statuses[chip_id] = ParticipantStatus(
                 chip_id=chip_id,
-                category_id=reading.category_id,
+                distance_id=reading.distance_id,
                 status='not_started'
             )
             
@@ -202,7 +202,7 @@ class IntegratedRaceTracker:
         """Obtener resultados de una distancia ordenados por tiempo"""
         category_participants = [
             status for status in self.participant_statuses.values()
-            if status.category_id == category_id
+            if status.distance_id == category_id
         ]
         
         # Separar por estado
@@ -223,7 +223,7 @@ class IntegratedRaceTracker:
         counts = {}
         for category_id in self.event_manager.get_active_categories():
             active_count = sum(1 for status in self.participant_statuses.values()
-                             if status.category_id == category_id and status.status == 'in_progress')
+                             if status.distance_id == category_id and status.status == 'in_progress')
             counts[category_id] = active_count
         return counts
         

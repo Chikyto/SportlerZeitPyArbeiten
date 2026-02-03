@@ -379,7 +379,7 @@ class AwardCategoryDialog(QDialog):
         # Poblar con categorías de carrera disponibles
         if self.race_manager:
             for cat in self.race_manager.get_all_categories():
-                self.distances_list.addItem(f"{cat.category_id} - {cat.name}")
+                self.distances_list.addItem(f"{cat.distance_id} - {cat.name}")
 
         distances_layout.addWidget(self.distances_list)
         form_layout.addLayout(distances_layout, 5, 1)

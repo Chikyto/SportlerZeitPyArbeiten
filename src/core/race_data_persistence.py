@@ -74,7 +74,7 @@ class RaceDataPersistence:
             # Serialize categories and athletes
             for category in race_manager.get_all_categories():
                 category_data = {
-                    'category_id': category.category_id,
+                    'category_id': category.distance_id,
                     'name': category.name,
                     'distance': category.distance,
                     'expected_checkpoints': category.expected_checkpoints,

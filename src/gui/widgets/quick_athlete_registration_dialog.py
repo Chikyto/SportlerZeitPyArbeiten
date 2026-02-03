@@ -171,8 +171,8 @@ class QuickAthleteRegistrationDialog(QDialog):
         # Agregar categorías existentes
         for category in categories:
             # Mostrar nombre amigable (ej: "5 Kilómetros (5k)")
-            display_name = f"{category.name} ({category.category_id})"
-            self.distance_combo.addItem(display_name, category.category_id)
+            display_name = f"{category.name} ({category.distance_id})"
+            self.distance_combo.addItem(display_name, category.distance_id)
 
     def on_dorsal_mode_changed(self):
         """Cambiar entre modo automático y manual para dorsal"""

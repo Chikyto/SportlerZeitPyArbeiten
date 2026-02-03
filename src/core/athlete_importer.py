@@ -145,7 +145,7 @@ class AthleteImporter:
                 )
 
                 # Agrupar por categoría
-                category_id = athlete.category_id
+                category_id = athlete.distance_id
                 if category_id not in athletes_by_category:
                     athletes_by_category[category_id] = []
 

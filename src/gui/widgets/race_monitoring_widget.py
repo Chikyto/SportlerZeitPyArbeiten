@@ -366,7 +366,7 @@ class RaceMonitoringWidget(QWidget):
             # Solo mostrar categorías finalizadas o en curso
             from src.core.race_tracking.models import RaceStatus
             if category.status in [RaceStatus.RUNNING, RaceStatus.FINISHED]:
-                self.podiums_category_combo.addItem(f"{category.category_id} - {category.name}")
+                self.podiums_category_combo.addItem(f"{category.distance_id} - {category.name}")
 
         # Restaurar selección si es posible
         index = self.podiums_category_combo.findText(current_text)
@@ -497,7 +497,7 @@ class RaceMonitoringWidget(QWidget):
         self.category_combo.addItem("Todas las categorías")
 
         for category in self.race_manager.get_all_categories():
-            self.category_combo.addItem(f"{category.category_id} - {category.name}")
+            self.category_combo.addItem(f"{category.distance_id} - {category.name}")
 
         # Restaurar selección si es posible
         index = self.category_combo.findText(current_text)
@@ -545,7 +545,7 @@ class RaceMonitoringWidget(QWidget):
 
         for category in self.race_manager.get_all_categories():
             # Obtener resultados de esta categoría
-            results = self.race_manager.get_results(category.category_id)
+            results = self.race_manager.get_results(category.distance_id)
 
             # Contar por estado
             from src.core.race_tracking.models import AthleteStatus
@@ -575,7 +575,7 @@ class RaceMonitoringWidget(QWidget):
             self.categories_overview_table.insertRow(row)
 
             self.categories_overview_table.setItem(row, 0,
-                                                  QTableWidgetItem(f"{category.category_id} - {category.name}"))
+                                                  QTableWidgetItem(f"{category.distance_id} - {category.name}"))
 
             # Estado con color
             from src.core.race_tracking.models import RaceStatus
@@ -619,7 +619,7 @@ class RaceMonitoringWidget(QWidget):
         else:
             # Todas las categorías
             for category in self.race_manager.get_all_categories():
-                all_participants.extend(self.race_manager.get_results(category.category_id))
+                all_participants.extend(self.race_manager.get_results(category.distance_id))
         
         # Filtrar por estado
         if status_filter != "todos":
@@ -644,7 +644,7 @@ class RaceMonitoringWidget(QWidget):
 
             # Chip ID, Categoría
             self.participants_table.setItem(row, 0, QTableWidgetItem(result.athlete.tag_id))
-            self.participants_table.setItem(row, 1, QTableWidgetItem(result.category_id))
+            self.participants_table.setItem(row, 1, QTableWidgetItem(result.distance_id))
 
             # Estado con color
             status_item = QTableWidgetItem(result.status.value.replace('_', ' ').title())
@@ -719,7 +719,7 @@ PARTICIPANTES POR CATEGORÍA:
 """
 
         for category in all_categories:
-            results = self.race_manager.get_results(category.category_id)
+            results = self.race_manager.get_results(category.distance_id)
             num_participants = len(results)
             num_running = len([r for r in results if r.status == AthleteStatus.RUNNING])
             num_finished = len([r for r in results if r.status == AthleteStatus.FINISHED])
