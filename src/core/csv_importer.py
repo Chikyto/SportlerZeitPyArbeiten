@@ -74,7 +74,7 @@ class CSVAthleteImporter:
         """Inicializar importador"""
         self.athletes_by_category: Dict[str, List[Athlete]] = {}
         self.bib_counters: Dict[str, int] = {}  # Contador de dorsales por categoría
-        self.category_start_times: Dict[str, Optional[datetime]] = {}  # Hora largada por categoría
+        self.distance_start_times: Dict[str, Optional[datetime]] = {}  # Hora largada por categoría
 
     def import_from_csv(
         self,
@@ -149,9 +149,9 @@ class CSVAthleteImporter:
                             self.athletes_by_category[cat_id].append(athlete)
 
                             # Capturar hora de largada si viene en el CSV
-                            if cat_id not in self.category_start_times:
+                            if cat_id not in self.distance_start_times:
                                 start_time = self._extract_start_time(row)
-                                self.category_start_times[cat_id] = start_time
+                                self.distance_start_times[cat_id] = start_time
                                 if start_time:
                                     logger.debug(f"✓ Hora largada para {cat_id}: {start_time}")
 
@@ -526,7 +526,7 @@ class CSVAthleteImporter:
                 continue
 
             # Obtener hora de largada si fue capturada del CSV
-            start_time = self.category_start_times.get(distance_id)
+            start_time = self.distance_start_times.get(distance_id)
 
             # Crear distancia
             distance = RaceDistance(

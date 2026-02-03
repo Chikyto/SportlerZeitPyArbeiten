@@ -54,14 +54,14 @@ class IntegratedRaceTracker:
         Solo procesa chips de distancias activas
         """
         # 1. Verificar si el chip está registrado
-        category_id = self.event_manager.get_participant_category(chip_id)
-        if not category_id:
+        distance_id = self.event_manager.get_participant_category(chip_id)
+        if not distance_id:
             print(f"Chip {chip_id} no está registrado en ninguna distancia")
             return None
 
         # 2. Verificar si la distancia está activa
-        if category_id not in self.event_manager.get_active_categories():
-            print(f"Chip {chip_id} pertenece a distancia {category_id} que no está activa")
+        if distance_id not in self.event_manager.get_active_categories():
+            print(f"Chip {chip_id} pertenece a distancia {distance_id} que no está activa")
             return None
             
         # 3. Verificar configuración de antena
@@ -80,9 +80,9 @@ class IntegratedRaceTracker:
             return None
             
         # 5. Obtener tiempo de inicio de la distancia
-        category_start_time = self.event_manager.category_start_times.get(category_id)
+        category_start_time = self.event_manager.distance_start_times.get(distance_id)
         if not category_start_time:
-            print(f"Distancia {category_id} no tiene tiempo de inicio")
+            print(f"Distancia {distance_id} no tiene tiempo de inicio")
             return None
             
         # 6. Calcular tiempo de carrera
@@ -94,7 +94,7 @@ class IntegratedRaceTracker:
         # 8. Crear lectura
         reading = ChipReading(
             chip_id=chip_id,
-            category_id=category_id,
+            distance_id=distance_id,
             antenna_id=antenna_id,
             timestamp=timestamp,
             reading_type=reading_type,
@@ -198,11 +198,11 @@ class IntegratedRaceTracker:
         """Obtener estado de un participante"""
         return self.participant_statuses.get(chip_id)
         
-    def get_category_results(self, category_id: str) -> List[ParticipantStatus]:
+    def get_category_results(self, distance_id: str) -> List[ParticipantStatus]:
         """Obtener resultados de una distancia ordenados por tiempo"""
         category_participants = [
             status for status in self.participant_statuses.values()
-            if status.distance_id == category_id
+            if status.distance_id == distance_id
         ]
         
         # Separar por estado
@@ -221,10 +221,10 @@ class IntegratedRaceTracker:
     def get_active_participants_count(self) -> Dict[str, int]:
         """Obtener conteo de participantes activos por distancia"""
         counts = {}
-        for category_id in self.event_manager.get_active_categories():
+        for distance_id in self.event_manager.get_active_categories():
             active_count = sum(1 for status in self.participant_statuses.values()
-                             if status.distance_id == category_id and status.status == 'in_progress')
-            counts[category_id] = active_count
+                             if status.distance_id == distance_id and status.status == 'in_progress')
+            counts[distance_id] = active_count
         return counts
         
     def get_system_status(self) -> Dict:

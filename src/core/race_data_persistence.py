@@ -74,9 +74,9 @@ class RaceDataPersistence:
             # Serialize categories and athletes
             for category in race_manager.get_all_categories():
                 category_data = {
-                    'category_id': category.distance_id,
+                    'distance_id': category.distance_id,
                     'name': category.name,
-                    'distance': category.distance,
+                    'distance_meters': category.distance_meters,
                     'expected_checkpoints': category.expected_checkpoints,
                     'notes': category.notes,
                     'start_time': category.start_time.isoformat() if category.start_time else None,
@@ -147,17 +147,17 @@ class RaceDataPersistence:
                 return False
 
             # Import categories and athletes
-            from .race_tracking.models import RaceCategory, Athlete
+            from .race_tracking.models import RaceDistance, Athlete
 
             total_athletes = 0
             chips_assigned = 0
 
             for cat_data in data['categories']:
-                # Create category
-                category = RaceCategory(
-                    category_id=cat_data['category_id'],
+                # Create category (soporta ambos: distance_id y category_id por compatibilidad)
+                category = RaceDistance(
+                    distance_id=cat_data.get('distance_id', cat_data.get('category_id', '')),
                     name=cat_data['name'],
-                    distance=cat_data.get('distance', 0.0),
+                    distance_meters=cat_data.get('distance_meters', cat_data.get('distance', 0.0)),
                     expected_checkpoints=cat_data.get('expected_checkpoints', 0),
                     notes=cat_data.get('notes')
                 )
@@ -168,7 +168,7 @@ class RaceDataPersistence:
                         athlete_id=athlete_data['athlete_id'],
                         bib_number=athlete_data['bib_number'],
                         name=athlete_data['name'],
-                        category_id=cat_data['category_id'],
+                        distance_id=cat_data.get('distance_id', cat_data.get('category_id', '')),
                         tag_id=athlete_data.get('tag_id', ''),
                         team=athlete_data.get('team'),
                         notes=athlete_data.get('notes')

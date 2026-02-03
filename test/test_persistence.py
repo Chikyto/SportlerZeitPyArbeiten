@@ -12,7 +12,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from src.core.race_tracking.race_manager import RaceManager
-from src.core.race_tracking.models import RaceCategory, Athlete
+from src.core.race_tracking.models import RaceDistance, Athlete
 from src.core.race_data_persistence import RaceDataPersistence
 
 
@@ -27,11 +27,11 @@ def test_save_load():
     print("1. Creando datos de prueba...")
     race_manager = RaceManager()
 
-    # Crear categoría
-    cat = RaceCategory(
-        category_id="5k",
+    # Crear distancia
+    cat = RaceDistance(
+        distance_id="5k",
         name="5 Kilómetros",
-        distance=5000.0
+        distance_meters=5000.0
     )
 
     # Agregar atletas
@@ -39,7 +39,7 @@ def test_save_load():
         athlete_id="1",
         bib_number=1,
         name="Juan Pérez",
-        category_id="5k",
+        distance_id="5k",
         tag_id="8587"  # Chip asignado
     )
 
@@ -47,15 +47,15 @@ def test_save_load():
         athlete_id="2",
         bib_number=2,
         name="María González",
-        category_id="5k",
+        distance_id="5k",
         tag_id=""  # Sin chip
     )
 
     cat.add_participant(athlete1)
     cat.add_participant(athlete2)
-    race_manager.add_category(cat)
+    race_manager.add_distance(cat)
 
-    print(f"   ✅ Creados: 1 categoría, 2 atletas")
+    print(f"   ✅ Creados: 1 distancia, 2 atletas")
     print(f"   ✅ Atleta 1: {athlete1.name} - Chip: {athlete1.tag_id}")
     print(f"   ✅ Atleta 2: {athlete2.name} - Chip: {athlete2.tag_id or 'Sin asignar'}")
     print()
@@ -87,7 +87,7 @@ def test_save_load():
     categories = race_manager2.get_all_categories()
 
     if len(categories) != 1:
-        print(f"   ❌ Error: esperaba 1 categoría, encontró {len(categories)}")
+        print(f"   ❌ Error: esperaba 1 distancia, encontró {len(categories)}")
         return False
 
     cat = categories[0]
@@ -98,7 +98,7 @@ def test_save_load():
     athlete1_loaded = cat.participants[0]
     athlete2_loaded = cat.participants[1]
 
-    print(f"   ✅ Categoría: {cat.name}")
+    print(f"   ✅ Distancia: {cat.name}")
     print(f"   ✅ Atleta 1: {athlete1_loaded.name} - Chip: {athlete1_loaded.tag_id}")
     print(f"   ✅ Atleta 2: {athlete2_loaded.name} - Chip: {athlete2_loaded.tag_id or 'Sin asignar'}")
     print()
