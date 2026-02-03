@@ -35,7 +35,9 @@ class EventConfigWidget(QWidget):
         super().__init__()
         self.race_manager = race_manager if race_manager else RaceManager()
         self.setup_ui()
-        self.load_sample_event()
+        # Refrescar tabla para mostrar distancias existentes (cargadas desde CSV o JSON)
+        self.refresh_categories_table()
+        self.refresh_category_combo()
         
     def setup_ui(self):
         """Configurar interfaz del widget"""
