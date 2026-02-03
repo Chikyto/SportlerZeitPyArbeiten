@@ -34,6 +34,16 @@ class EventConfigWidget(QWidget):
     def __init__(self, race_manager=None):
         super().__init__()
         self.race_manager = race_manager if race_manager else RaceManager()
+
+        # DEBUG: Verificar race_manager recibido
+        if race_manager:
+            distances = race_manager.get_all_distances()
+            logger.info(f"🔍 EventConfigWidget.__init__() - RaceManager recibido con {len(distances)} distancias")
+            for dist in distances:
+                logger.info(f"   • {dist.distance_id}: {dist.name} ({len(dist.participants)} participantes)")
+        else:
+            logger.warning("⚠️  EventConfigWidget creado sin race_manager (nuevo vacío)")
+
         self.setup_ui()
         # Refrescar tabla para mostrar distancias existentes (cargadas desde CSV o JSON)
         self.refresh_categories_table()
@@ -345,7 +355,19 @@ class EventConfigWidget(QWidget):
         """Actualizar tabla de distancias"""
         self.categories_table.setRowCount(0)
 
-        for distance in self.race_manager.get_all_distances():
+        # DEBUG: Verificar race_manager y distancias
+        if not self.race_manager:
+            logger.error("❌ race_manager es None en refresh_categories_table()")
+            return
+
+        distances = self.race_manager.get_all_distances()
+        logger.info(f"🔍 EventConfigWidget.refresh_categories_table() - Distancias obtenidas: {len(distances)}")
+
+        if not distances:
+            logger.warning("⚠️  No hay distancias para mostrar en EventConfigWidget")
+            return
+
+        for distance in distances:
             row = self.categories_table.rowCount()
             self.categories_table.insertRow(row)
 
@@ -397,7 +419,14 @@ class EventConfigWidget(QWidget):
         """Actualizar combo de distancias"""
         self.participant_category_combo.clear()
 
-        for distance in self.race_manager.get_all_distances():
+        if not self.race_manager:
+            logger.error("❌ race_manager es None en refresh_category_combo()")
+            return
+
+        distances = self.race_manager.get_all_distances()
+        logger.info(f"🔍 EventConfigWidget.refresh_category_combo() - Distancias: {len(distances)}")
+
+        for distance in distances:
             self.participant_category_combo.addItem(f"{distance.distance_id} - {distance.name}")
 
     def update_active_categories_label(self):
@@ -488,6 +517,15 @@ class EventConfigWidget(QWidget):
 
     def refresh_all(self):
         """Refrescar todas las tablas (llamado desde otras solapas cuando cambian datos)"""
+        logger.info("🔄 EventConfigWidget.refresh_all() llamado")
+
+        if not self.race_manager:
+            logger.error("❌ race_manager es None en refresh_all()")
+            return
+
+        distances = self.race_manager.get_all_distances()
+        logger.info(f"🔍 EventConfigWidget.refresh_all() - RaceManager tiene {len(distances)} distancias")
+
         self.refresh_categories_table()
         self.refresh_category_combo()
         self.update_active_categories_label()
