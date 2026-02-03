@@ -134,7 +134,12 @@ class EventConfigWidget(QWidget):
         self.finish_selected_btn.clicked.connect(self.finish_selected_category)
         self.finish_selected_btn.setStyleSheet("background-color: red; color: white; font-weight: bold;")
         control_buttons_layout.addWidget(self.finish_selected_btn)
-        
+
+        self.start_all_btn = QPushButton("Iniciar Todas las Distancias")
+        self.start_all_btn.clicked.connect(self.start_all_categories)
+        self.start_all_btn.setStyleSheet("background-color: #1e40af; color: white; font-weight: bold;")
+        control_buttons_layout.addWidget(self.start_all_btn)
+
         control_buttons_layout.addStretch()
         control_layout.addLayout(control_buttons_layout)
         
@@ -417,14 +422,72 @@ class EventConfigWidget(QWidget):
         if current_row < 0:
             QMessageBox.warning(self, "Error", "Selecciona una distancia para finalizar")
             return
-            
+
         category_id = self.categories_table.item(current_row, 0).text()
-        
+
         if self.race_manager.finish_category(category_id):
             self.refresh_categories_table()
             self.update_active_categories_label()
             self.category_finished.emit(category_id)
-            
+
+    def start_all_categories(self):
+        """Iniciar todas las distancias que no estén corriendo o finalizadas"""
+        distances = self.race_manager.get_all_distances()
+
+        if not distances:
+            QMessageBox.information(self, "Sin distancias", "No hay distancias configuradas para iniciar")
+            return
+
+        # Filtrar distancias que pueden ser iniciadas (no RUNNING ni FINISHED)
+        startable_distances = [
+            dist for dist in distances
+            if dist.status not in [RaceStatus.RUNNING, RaceStatus.FINISHED]
+        ]
+
+        if not startable_distances:
+            QMessageBox.information(
+                self,
+                "Ninguna distancia disponible",
+                "Todas las distancias ya están corriendo o finalizadas"
+            )
+            return
+
+        # Confirmar acción
+        reply = QMessageBox.question(
+            self,
+            "Confirmar inicio masivo",
+            f"¿Iniciar {len(startable_distances)} distancia(s)?\n\n" +
+            "\n".join([f"• {d.name} ({d.distance_id})" for d in startable_distances]),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Iniciar todas las distancias
+        started_count = 0
+        failed_count = 0
+
+        for distance in startable_distances:
+            if self.race_manager.start_category(distance.distance_id):
+                started_count += 1
+                self.category_started.emit(distance.distance_id)
+                logger.info(f"✅ Distancia iniciada: {distance.name} ({distance.distance_id})")
+            else:
+                failed_count += 1
+                logger.error(f"❌ Error iniciando distancia: {distance.name} ({distance.distance_id})")
+
+        # Actualizar UI
+        self.refresh_categories_table()
+        self.update_active_categories_label()
+
+        # Mostrar resultado
+        result_msg = f"✅ Se iniciaron {started_count} distancia(s) exitosamente"
+        if failed_count > 0:
+            result_msg += f"\n❌ {failed_count} distancia(s) fallaron al iniciar"
+
+        QMessageBox.information(self, "Inicio masivo completado", result_msg)
+
     def register_participant(self):
         """Registrar participante rápidamente"""
         chip_id = self.chip_id_input.text().strip()
