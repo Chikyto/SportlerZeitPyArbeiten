@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                             QLabel, QGroupBox, QLineEdit, QTableWidget,
                             QTableWidgetItem, QHeaderView, QTimeEdit, QSpinBox,
-                            QTextEdit, QComboBox, QMessageBox, QGridLayout)
+                            QTextEdit, QComboBox, QMessageBox, QGridLayout, QDialog)
 from PyQt6.QtCore import pyqtSignal, QTime, Qt
 from PyQt6.QtGui import QFont, QColor
 from datetime import datetime, time
@@ -89,7 +89,12 @@ class EventConfigWidget(QWidget):
         self.load_preset_btn = QPushButton("Cargar Preset")
         self.load_preset_btn.clicked.connect(self.load_preset_categories)
         buttons_layout.addWidget(self.load_preset_btn)
-        
+
+        self.load_from_chips_btn = QPushButton("Cargar desde Asignación de Chips")
+        self.load_from_chips_btn.clicked.connect(self.load_distances_from_chip_assignments)
+        self.load_from_chips_btn.setStyleSheet("background-color: #3b82f6; color: white;")
+        buttons_layout.addWidget(self.load_from_chips_btn)
+
         buttons_layout.addStretch()
         categories_layout.addLayout(buttons_layout)
         
@@ -277,9 +282,120 @@ class EventConfigWidget(QWidget):
         category_ids = list(self.race_manager.categories.keys())
         for cat_id in category_ids:
             self.race_manager.remove_category(cat_id)
-            
+
         # Cargar preset
         self.load_sample_event()
+
+    def load_distances_from_chip_assignments(self):
+        """Cargar distancias automáticamente desde asignaciones de chips existentes"""
+        # Obtener todas las distancias actuales
+        existing_distances = self.race_manager.get_all_distances()
+
+        # Agrupar atletas por distance_id
+        distance_athletes = {}
+        for distance in existing_distances:
+            for athlete in distance.participants:
+                if athlete.distance_id not in distance_athletes:
+                    distance_athletes[athlete.distance_id] = []
+                distance_athletes[athlete.distance_id].append(athlete)
+
+        if not distance_athletes:
+            QMessageBox.information(
+                self,
+                "Sin asignaciones",
+                "No hay atletas con asignaciones de chips. Importa atletas primero desde la pestaña 'Asignación de Chips'."
+            )
+            return
+
+        # Crear distancias que no existen
+        created_count = 0
+        updated_count = 0
+
+        for distance_id, athletes in distance_athletes.items():
+            # Verificar si la distancia ya existe
+            existing = self.race_manager.get_distance(distance_id)
+
+            if not existing:
+                # Inferir nombre y distancia desde el ID
+                # Ejemplos: "100k" -> "Ultra 100K", "50k" -> "Trail 50K"
+                name = self._infer_distance_name(distance_id)
+                distance_meters = self._infer_distance_meters(distance_id)
+
+                # Crear nueva distancia
+                new_distance = RaceDistance(
+                    distance_id=distance_id,
+                    name=name,
+                    distance_meters=distance_meters,
+                    expected_checkpoints=0,
+                    participants=athletes,  # Asignar atletas
+                    status=RaceStatus.PENDING,
+                    notes=f"Generada automáticamente desde asignaciones de chips ({len(athletes)} participantes)"
+                )
+
+                try:
+                    self.race_manager.add_distance(new_distance)
+                    created_count += 1
+                    logger.info(f"✅ Distancia creada: {distance_id} ({name}) con {len(athletes)} participantes")
+                except ValueError as e:
+                    logger.error(f"❌ Error creando distancia {distance_id}: {e}")
+            else:
+                # La distancia ya existe, solo actualizar conteo
+                updated_count += 1
+
+        # Refrescar UI
+        self.refresh_categories_table()
+        self.refresh_category_combo()
+        self.categories_changed.emit()
+
+        # Mostrar resultado
+        if created_count > 0:
+            QMessageBox.information(
+                self,
+                "Distancias cargadas",
+                f"✅ Se crearon {created_count} distancia(s) desde las asignaciones de chips.\n"
+                f"📊 {updated_count} distancia(s) ya existían.\n\n"
+                f"Total: {len(distance_athletes)} distancia(s) detectadas."
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Sin cambios",
+                f"Todas las distancias ({len(distance_athletes)}) ya estaban cargadas."
+            )
+
+    def _infer_distance_name(self, distance_id: str) -> str:
+        """Inferir nombre descriptivo desde el ID de distancia"""
+        # Mapeo común de IDs a nombres
+        name_map = {
+            "100k": "Ultra 100K",
+            "50k": "Trail 50K",
+            "30k": "Mountain 30K",
+            "21k": "Half Marathon",
+            "10k": "10 Kilometers",
+            "5k": "5 Kilometers",
+            "42k": "Marathon",
+            "ultra": "Ultra Trail"
+        }
+
+        # Buscar coincidencia exacta
+        if distance_id.lower() in name_map:
+            return name_map[distance_id.lower()]
+
+        # Si no hay coincidencia, usar el ID con formato título
+        return distance_id.replace("_", " ").replace("-", " ").title()
+
+    def _infer_distance_meters(self, distance_id: str) -> float:
+        """Inferir distancia en metros desde el ID"""
+        # Intentar extraer número del ID
+        import re
+        match = re.search(r'(\d+)\s*k', distance_id.lower())
+        if match:
+            km = float(match.group(1))
+            return km * 1000.0
+
+        # Si no se puede inferir, usar valor por defecto
+        logger.warning(f"⚠️  No se pudo inferir distancia para '{distance_id}', usando 10000m por defecto")
+        return 10000.0  # 10km por defecto
         
     def start_selected_category(self):
         """Iniciar categoría seleccionada"""
@@ -541,11 +657,11 @@ class EventConfigWidget(QWidget):
         logger.info("✅ EventConfigWidget refrescado desde otra solapa")
 
 # Dialog para agregar/editar distancias
-class CategoryDialog(QWidget):
+class CategoryDialog(QDialog):
     """Dialog para crear/editar distancias"""
 
     def __init__(self, parent=None, distance=None):
-        super().__init__()
+        super().__init__(parent)
         self.distance = distance
         self.result_distance = None
         self.setup_ui()
@@ -602,7 +718,7 @@ class CategoryDialog(QWidget):
         buttons_layout.addWidget(self.save_btn)
         
         self.cancel_btn = QPushButton("Cancelar")
-        self.cancel_btn.clicked.connect(self.close)
+        self.cancel_btn.clicked.connect(self.reject)
         buttons_layout.addWidget(self.cancel_btn)
         
         layout.addLayout(buttons_layout)
@@ -652,16 +768,10 @@ class CategoryDialog(QWidget):
                 start_time=start_time_py,
                 notes=description
             )
-            self.close()
+            self.accept()  # Cerrar con éxito
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Error creando distancia: {e}")
 
     def get_distance(self):
         """Obtener distancia creada"""
         return self.result_distance
-
-    def exec(self):
-        """Mostrar dialog y esperar resultado"""
-        self.show()
-        # Simular dialog modal
-        return self.result_distance is not None
