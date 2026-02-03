@@ -86,16 +86,10 @@ class RaceManager:
 
         Returns:
             bool: True si se agregó, False si ya existía
-
-        Raises:
-            ValueError: Si la distancia no tiene participantes
         """
         if distance.distance_id in self.distances:
             logger.warning(f"⚠️  Distancia {distance.distance_id} ya existe")
             return False
-
-        if len(distance.participants) == 0:
-            raise ValueError("La distancia debe tener al menos un participante")
 
         self.distances[distance.distance_id] = distance
 
