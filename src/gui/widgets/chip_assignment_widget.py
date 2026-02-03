@@ -48,6 +48,7 @@ class ChipAssignmentWidget(QWidget):
     def __init__(self, race_manager=None, scanner=None, signals=None):
         super().__init__()
         self.race_manager = race_manager
+        self.scanner = scanner  # CRÍTICO: Inicializar para evitar AttributeError
         self.signals = signals
         self.scan_mode = False
         self.selected_athlete = None
@@ -592,73 +593,105 @@ class ChipAssignmentWidget(QWidget):
 
     def toggle_scan_mode(self):
         """Activar/desactivar modo de escaneo"""
-        # Verificar que haya atleta seleccionado PRIMERO
-        if not self.selected_athlete:
-            QMessageBox.warning(
+        try:
+            # Verificar que haya atleta seleccionado PRIMERO
+            if not self.selected_athlete:
+                QMessageBox.warning(
+                    self,
+                    "Selecciona un Atleta",
+                    "⚠️ Primero selecciona un atleta de la tabla.\n\n"
+                    "Luego haz click en 'Escanear Chip' para activar el modo de asignación."
+                )
+                return
+
+            # Verificar que haya scanner disponible según el modo
+            if self.scanner_mode == "network":
+                if not self.scanner:
+                    QMessageBox.warning(
+                        self,
+                        "Scanner No Disponible",
+                        "❌ No hay scanner de red conectado.\n\n"
+                        "Opciones:\n"
+                        "• Cambia a modo USB\n"
+                        "• Usa asignación manual\n"
+                        "• Verifica la conexión de las antenas"
+                    )
+                    return
+            elif self.scanner_mode == "usb":
+                if not hasattr(self, 'usb_scanner') or not self.usb_scanner or not self.usb_scanner.connected:
+                    QMessageBox.warning(
+                        self,
+                        "Lector USB No Disponible",
+                        "❌ El lector USB no está conectado.\n\n"
+                        "Opciones:\n"
+                        "• Cambia a modo de red\n"
+                        "• Usa asignación manual\n"
+                        "• Verifica la conexión del lector USB"
+                    )
+                    return
+
+            self.scan_mode = not self.scan_mode
+
+            if self.scan_mode:
+                self.scan_button.setText("🛑 Detener Escaneo")
+                self.scan_button.setStyleSheet("""
+                    QPushButton {
+                        background: #ef4444;
+                        color: white;
+                        padding: 15px;
+                        font-size: 16px;
+                        font-weight: bold;
+                        border-radius: 5px;
+                    }
+                    QPushButton:hover { background: #dc2626; }
+                """)
+                athlete_name = self.selected_athlete.name if self.selected_athlete else "???"
+                self.scan_status_label.setText(f"🔴 ESCANEANDO para {athlete_name}... Acerca el chip al lector")
+                self.scan_status_label.setStyleSheet("color: #ef4444; font-weight: bold;")
+
+                # Iniciar escaneo (implementar según tu scanner)
+                self.start_scanning()
+
+            else:
+                self.scan_button.setText("📡 Escanear Chip")
+                self.scan_button.setStyleSheet("""
+                    QPushButton {
+                        background: #3b82f6;
+                        color: white;
+                        padding: 15px;
+                        font-size: 16px;
+                        font-weight: bold;
+                        border-radius: 5px;
+                    }
+                    QPushButton:hover { background: #2563eb; }
+                """)
+                self.scan_status_label.setText("")
+
+                # Detener escaneo
+                self.stop_scanning()
+
+        except AttributeError as e:
+            logger.error(f"❌ Error de atributo en toggle_scan_mode: {e}")
+            QMessageBox.critical(
                 self,
-                "Selecciona un Atleta",
-                "⚠️ Primero selecciona un atleta de la tabla.\n\n"
-                "Luego haz click en 'Escanear Chip' para activar el modo de asignación."
+                "Error de Configuración",
+                f"❌ Error interno al activar el escaneo.\n\n"
+                f"El sistema de escaneo no está correctamente configurado.\n\n"
+                f"Detalles técnicos: {str(e)}\n\n"
+                f"Intenta:\n"
+                f"• Reiniciar la aplicación\n"
+                f"• Verificar las conexiones\n"
+                f"• Usar asignación manual"
             )
-            return
-
-        # Verificar que haya scanner disponible según el modo
-        if self.scanner_mode == "network":
-            if not self.scanner:
-                QMessageBox.warning(
-                    self,
-                    "Scanner No Disponible",
-                    "No hay scanner de red conectado. Cambia a modo USB o usa asignación manual."
-                )
-                return
-        elif self.scanner_mode == "usb":
-            if not self.usb_scanner or not self.usb_scanner.connected:
-                QMessageBox.warning(
-                    self,
-                    "Lector USB No Disponible",
-                    "El lector USB no está conectado. Cambia a modo de red o usa asignación manual."
-                )
-                return
-
-        self.scan_mode = not self.scan_mode
-
-        if self.scan_mode:
-            self.scan_button.setText("🛑 Detener Escaneo")
-            self.scan_button.setStyleSheet("""
-                QPushButton {
-                    background: #ef4444;
-                    color: white;
-                    padding: 15px;
-                    font-size: 16px;
-                    font-weight: bold;
-                    border-radius: 5px;
-                }
-                QPushButton:hover { background: #dc2626; }
-            """)
-            athlete_name = self.selected_athlete.name if self.selected_athlete else "???"
-            self.scan_status_label.setText(f"🔴 ESCANEANDO para {athlete_name}... Acerca el chip al lector")
-            self.scan_status_label.setStyleSheet("color: #ef4444; font-weight: bold;")
-
-            # Iniciar escaneo (implementar según tu scanner)
-            self.start_scanning()
-
-        else:
-            self.scan_button.setText("📡 Escanear Chip")
-            self.scan_button.setStyleSheet("""
-                QPushButton {
-                    background: #3b82f6;
-                    color: white;
-                    padding: 15px;
-                    font-size: 16px;
-                    font-weight: bold;
-                    border-radius: 5px;
-                }
-                QPushButton:hover { background: #2563eb; }
-            """)
-            self.scan_status_label.setText("")
-
-            # Detener escaneo
-            self.stop_scanning()
+        except Exception as e:
+            logger.error(f"❌ Error inesperado en toggle_scan_mode: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Error Inesperado",
+                f"❌ Ocurrió un error al activar el escaneo.\n\n"
+                f"Error: {str(e)}\n\n"
+                f"Por favor, verifica los logs para más detalles."
+            )
 
     def start_scanning(self):
         """Iniciar modo de escaneo"""
