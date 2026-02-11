@@ -235,10 +235,12 @@ class MainWindow(QMainWindow):
             antenna_port = tag_data.get('antenna')  # o 'antenna_port'
             if not antenna_port:
                 antenna_port = tag_data.get('antenna_port')
+            if not antenna_port:
                 antenna_port = tag_data.get('port')  # Nuevo: también intentar 'port'
-            timestamp = tag_data.get('timestamp')
+            # Priorizar timestamp_obj (datetime) sobre timestamp (string)
+            timestamp = tag_data.get('timestamp_obj')
             if not timestamp:
-                timestamp = tag_data.get('timestamp_obj')  # Intentar timestamp_obj
+                timestamp = tag_data.get('timestamp')  # Fallback a timestamp string
             roles = tag_data.get('roles', [])
 
             logger.info(f"📊 Datos extraídos:")
