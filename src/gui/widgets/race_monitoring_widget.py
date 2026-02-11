@@ -670,9 +670,16 @@ class RaceMonitoringWidget(QWidget):
                 time_str = "N/A"
             self.participants_table.setItem(row, 4, QTableWidgetItem(time_str))
 
-            # Checkpoints
-            checkpoints_passed = len(result.checkpoint_times)
-            self.participants_table.setItem(row, 5, QTableWidgetItem(str(checkpoints_passed)))
+            # Checkpoints - Mostrar cuáles checkpoints específicos pasó
+            if result.checkpoint_times:
+                # Obtener lista de checkpoints en orden
+                checkpoint_numbers = sorted(result.checkpoint_times.keys())
+                checkpoints_text = ", ".join([f"✓ CP{num}" for num in checkpoint_numbers])
+                checkpoints_item = QTableWidgetItem(checkpoints_text)
+                checkpoints_item.setForeground(QColor(0, 100, 200))  # Azul
+            else:
+                checkpoints_item = QTableWidgetItem("-")
+            self.participants_table.setItem(row, 5, checkpoints_item)
 
             # Última lectura (último timestamp conocido)
             last_time = None

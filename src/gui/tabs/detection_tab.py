@@ -42,7 +42,9 @@ class DetectionTab(BaseTab):
         self.antenna_roles = {}   # {port: [roles]}
         self.antenna_names = {}   # {port: name}
         self.detected_tags = set()
-        
+        self.tag_rows = {}        # {tag_id: row_index} - mapeo de tags a filas
+        self.tag_data = {}        # {tag_id: {'start': bool, 'checkpoints': set, 'finish': bool, 'last_time': str, 'last_antenna': str}}
+
         super().__init__(signals=signals, parent=parent)
     
     def setup_ui(self):
@@ -78,13 +80,16 @@ class DetectionTab(BaseTab):
         
         self.layout.addLayout(controls_layout)
         
-        # Tabla de detecciones
+        # Tabla de detecciones (agrupada por participante)
         self.detections_table = QTableWidget()
-        self.detections_table.setColumnCount(5)
+        self.detections_table.setColumnCount(7)
         self.detections_table.setHorizontalHeaderLabels([
-            "Hora", "Tag", "Puerto", "Rol", "Antena"
+            "Tag", "Nombre", "Distancia", "Largada", "Checkpoints", "Meta", "Última Lectura"
         ])
         self.detections_table.setAlternatingRowColors(True)
+        # Configurar ancho de columnas
+        header = self.detections_table.horizontalHeader()
+        header.setStretchLastSection(True)
         self.layout.addWidget(self.detections_table)
         
         # Estadísticas
@@ -310,37 +315,102 @@ class DetectionTab(BaseTab):
     
     def add_detection_to_table(self, processed: dict):
         """
-        Agregar detección a la tabla
-        
+        Agregar o actualizar detección en la tabla (vista agrupada por participante)
+
         Args:
             processed: Dict con información procesada del tag
         """
-        row = self.detections_table.rowCount()
-        self.detections_table.insertRow(row)
-        
-        # Agregar datos
-        self.detections_table.setItem(row, 0, QTableWidgetItem(processed['timestamp']))
-        self.detections_table.setItem(row, 1, QTableWidgetItem(processed['tag_id']))
-        self.detections_table.setItem(row, 2, QTableWidgetItem(str(processed['port'])))
-        
-        # Formatear texto de roles
-        role_text = self.tag_processor.format_role_text(processed['roles'])
-        self.detections_table.setItem(row, 3, QTableWidgetItem(role_text))
-        
-        # Usar nombre de antena si está disponible
+        tag_id = processed['tag_id']
+
+        # Inicializar datos del tag si es la primera vez que lo vemos
+        if tag_id not in self.tag_data:
+            self.tag_data[tag_id] = {
+                'start': False,
+                'checkpoints': set(),
+                'finish': False,
+                'last_time': '',
+                'last_antenna': '',
+                'name': 'N/A',
+                'distance': 'N/A'
+            }
+
+        # Actualizar datos según el rol detectado
+        roles = processed['roles']
+        if 'start' in roles:
+            self.tag_data[tag_id]['start'] = True
+        if 'checkpoint' in roles:
+            # Determinar número de checkpoint basado en el nombre de antena
+            antenna_name = self.antenna_names.get(processed['port'], processed['antenna_name'])
+            self.tag_data[tag_id]['checkpoints'].add(antenna_name)
+        if 'finish' in roles:
+            self.tag_data[tag_id]['finish'] = True
+
+        # Actualizar última lectura
+        self.tag_data[tag_id]['last_time'] = processed['timestamp']
         antenna_name = self.antenna_names.get(processed['port'], processed['antenna_name'])
-        self.detections_table.setItem(row, 4, QTableWidgetItem(antenna_name))
-        
-        # Aplicar color si existe
+        self.tag_data[tag_id]['last_antenna'] = antenna_name
+
+        # Buscar nombre y distancia del participante desde race_manager
+        # (esto se puede mejorar conectando con signals, pero por ahora usamos valores por defecto)
+
+        # Si el tag ya tiene una fila, actualizarla; si no, crear una nueva
+        if tag_id in self.tag_rows:
+            row = self.tag_rows[tag_id]
+        else:
+            row = self.detections_table.rowCount()
+            self.detections_table.insertRow(row)
+            self.tag_rows[tag_id] = row
+
+        data = self.tag_data[tag_id]
+
+        # Columna 0: Tag ID
+        self.detections_table.setItem(row, 0, QTableWidgetItem(tag_id))
+
+        # Columna 1: Nombre (placeholder por ahora)
+        self.detections_table.setItem(row, 1, QTableWidgetItem(data['name']))
+
+        # Columna 2: Distancia (placeholder por ahora)
+        self.detections_table.setItem(row, 2, QTableWidgetItem(data['distance']))
+
+        # Columna 3: Largada
+        start_icon = "✓" if data['start'] else "-"
+        start_item = QTableWidgetItem(start_icon)
+        if data['start']:
+            start_item.setForeground(QColor(0, 150, 0))  # Verde
+        self.detections_table.setItem(row, 3, start_item)
+
+        # Columna 4: Checkpoints
+        if data['checkpoints']:
+            checkpoints_text = ", ".join(sorted(data['checkpoints']))
+            cp_item = QTableWidgetItem(f"✓ {checkpoints_text}")
+            cp_item.setForeground(QColor(0, 100, 200))  # Azul
+        else:
+            cp_item = QTableWidgetItem("-")
+        self.detections_table.setItem(row, 4, cp_item)
+
+        # Columna 5: Meta
+        finish_icon = "✓" if data['finish'] else "-"
+        finish_item = QTableWidgetItem(finish_icon)
+        if data['finish']:
+            finish_item.setForeground(QColor(200, 150, 0))  # Dorado
+        self.detections_table.setItem(row, 5, finish_item)
+
+        # Columna 6: Última Lectura
+        last_reading = f"{data['last_time']} ({data['last_antenna']})"
+        self.detections_table.setItem(row, 6, QTableWidgetItem(last_reading))
+
+        # Resaltar la fila completa con el color del último evento
         if processed['color_code'] != 'none':
             rgb = self.tag_processor.get_color_rgb(processed['color_code'])
             color = QColor(*rgb)
-            
-            for col in range(5):
-                self.detections_table.item(row, col).setBackground(color)
-        
-        # Scroll al final
-        self.detections_table.scrollToBottom()
+            color.setAlpha(100)  # Hacer el color más transparente
+
+            for col in range(7):
+                if self.detections_table.item(row, col):
+                    self.detections_table.item(row, col).setBackground(color)
+
+        # Scroll para asegurar que la fila actualizada sea visible
+        self.detections_table.scrollToItem(self.detections_table.item(row, 0))
     
     def update_statistics(self):
         """Actualizar estadísticas de detecciones"""
@@ -358,10 +428,12 @@ class DetectionTab(BaseTab):
             "¿Estás seguro de limpiar todas las detecciones?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        
+
         if reply == QMessageBox.StandardButton.Yes:
             self.detections_table.setRowCount(0)
             self.detected_tags.clear()
+            self.tag_rows.clear()
+            self.tag_data.clear()
             self.update_statistics()
             self.log("🗑️ Detecciones limpiadas")
     
