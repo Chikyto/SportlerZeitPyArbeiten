@@ -409,13 +409,18 @@ class EventConfigWidget(QWidget):
         if current_row < 0:
             QMessageBox.warning(self, "Error", "Selecciona una distancia para iniciar")
             return
-            
+
         category_id = self.categories_table.item(current_row, 0).text()
-        
+
         if self.race_manager.start_category(category_id):
             self.refresh_categories_table()
             self.update_active_categories_label()
             self.category_started.emit(category_id)
+
+            # 🔥 AUTO-INICIAR ESCANEO: Emitir señal para que DetectionTab inicie automáticamente
+            if self.signals:
+                logger.info("🚀 Emitiendo señal auto_start_scanning para iniciar detección automáticamente")
+                self.signals.auto_start_scanning.emit()
             
     def finish_selected_category(self):
         """Finalizar categoría seleccionada"""
