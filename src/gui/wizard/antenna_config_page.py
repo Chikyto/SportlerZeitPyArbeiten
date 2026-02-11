@@ -41,9 +41,11 @@ class AntennaConfigurationPage(QWizardPage):
         
         # Descripción
         desc = QLabel(
-            "Configure las funciones de las antenas detectadas.\n"
-            "Una antena puede tener múltiples funciones (ejemplo: largada + checkpoint + llegada "
-            "para carreras de pista)."
+            "Configure las funciones de las antenas detectadas.\n\n"
+            "⚠️ IMPORTANTE: Normalmente cada antena debe tener UNA SOLA función.\n"
+            "• Puerto 1: Largada\n"
+            "• Puertos intermedios: Checkpoints\n"
+            "• Último puerto: Llegada"
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -121,12 +123,12 @@ class AntennaConfigurationPage(QWizardPage):
                     
                     for col, function in enumerate(['largada', 'checkpoint', 'llegada'], start=3):
                         func_checkbox = QCheckBox()
-                        
-                        # Configuración inteligente por defecto
-                        if port == 1:
-                            # Primera antena: todas las funciones para caso simple
+
+                        # Configuración inteligente por defecto: UNA función por antena
+                        if port == 1 and function == 'largada':
+                            # Primera antena: solo largada
                             func_checkbox.setChecked(True)
-                        elif function == 'checkpoint':
+                        elif port > 1 and function == 'checkpoint':
                             # Otras antenas por defecto como checkpoint
                             func_checkbox.setChecked(True)
                         

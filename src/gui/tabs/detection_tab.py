@@ -87,6 +87,11 @@ class DetectionTab(BaseTab):
             "Tag", "Nombre", "Distancia", "Largada", "Checkpoints", "Meta", "Última Lectura"
         ])
         self.detections_table.setAlternatingRowColors(True)
+
+        # Asegurar que las barras de desplazamiento estén siempre disponibles
+        self.detections_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.detections_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
         # Configurar ancho de columnas
         header = self.detections_table.horizontalHeader()
         header.setStretchLastSection(True)

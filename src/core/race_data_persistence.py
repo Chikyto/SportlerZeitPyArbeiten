@@ -90,7 +90,9 @@ class RaceDataPersistence:
                         'name': athlete.name,
                         'tag_id': athlete.tag_id,
                         'team': athlete.team,
-                        'notes': athlete.notes
+                        'notes': athlete.notes,
+                        'gender': athlete.gender,
+                        'birth_date': athlete.birth_date.isoformat() if athlete.birth_date else None
                     }
                     category_data['athletes'].append(athlete_data)
                     total_athletes += 1
@@ -164,6 +166,14 @@ class RaceDataPersistence:
 
                 # Add athletes
                 for athlete_data in cat_data['athletes']:
+                    # Parse birth_date if present
+                    birth_date = None
+                    if athlete_data.get('birth_date'):
+                        try:
+                            birth_date = datetime.fromisoformat(athlete_data['birth_date']).date()
+                        except (ValueError, AttributeError):
+                            logger.warning(f"⚠️  Fecha de nacimiento inválida para atleta {athlete_data.get('name')}")
+
                     athlete = Athlete(
                         athlete_id=athlete_data['athlete_id'],
                         bib_number=athlete_data['bib_number'],
@@ -171,7 +181,9 @@ class RaceDataPersistence:
                         distance_id=cat_data.get('distance_id', cat_data.get('category_id', '')),
                         tag_id=athlete_data.get('tag_id', ''),
                         team=athlete_data.get('team'),
-                        notes=athlete_data.get('notes')
+                        notes=athlete_data.get('notes'),
+                        gender=athlete_data.get('gender'),
+                        birth_date=birth_date
                     )
 
                     category.add_participant(athlete)

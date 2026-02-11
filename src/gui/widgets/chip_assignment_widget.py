@@ -161,6 +161,10 @@ class ChipAssignmentWidget(QWidget):
         self.athletes_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.athletes_table.itemSelectionChanged.connect(self.on_athlete_selected)
 
+        # Asegurar que las barras de desplazamiento estén siempre disponibles
+        self.athletes_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.athletes_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
         athletes_layout.addWidget(self.athletes_table)
 
         # Contador
@@ -1360,8 +1364,8 @@ class ChipAssignmentWidget(QWidget):
 
                 # Header
                 writer.writerow([
-                    'Dorsal', 'Nombre', 'Distancia', 'Chip RFID', 'Estado',
-                    'DNI', 'Email', 'Teléfono', 'Notas'
+                    'Dorsal', 'Nombre', 'Distancia', 'Género', 'Fecha Nacimiento',
+                    'Chip RFID', 'Estado', 'DNI', 'Email', 'Teléfono', 'Notas'
                 ])
 
                 # Datos de todos los atletas
@@ -1381,10 +1385,16 @@ class ChipAssignmentWidget(QWidget):
 
                         estado = '✅ Asignado' if athlete.has_chip_assigned() else '⏳ Pendiente'
 
+                        # Formatear género y fecha de nacimiento
+                        gender_display = athlete.gender or ''
+                        birth_date_str = athlete.birth_date.strftime('%d/%m/%Y') if athlete.birth_date else ''
+
                         writer.writerow([
                             athlete.bib_number,
                             athlete.name,
                             category.name,
+                            gender_display,
+                            birth_date_str,
                             athlete.tag_id or '',
                             estado,
                             dni,
