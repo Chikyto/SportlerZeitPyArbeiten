@@ -181,7 +181,7 @@ class RaceMonitoringWidget(QWidget):
 
         controls_layout.addWidget(QLabel("Distancia:"))
         self.podiums_category_combo = QComboBox()
-        self.podiums_category_combo.addItem("Selecciona una categoría")
+        self.podiums_category_combo.addItem("Selecciona una distancia")
         self.podiums_category_combo.currentTextChanged.connect(self.refresh_podiums)
         controls_layout.addWidget(self.podiums_category_combo)
 
@@ -217,7 +217,7 @@ class RaceMonitoringWidget(QWidget):
         layout.addWidget(scroll_area)
 
         # Información inicial
-        info_label = QLabel("Selecciona una categoría de carrera para ver los podios por categoría de premiación.")
+        info_label = QLabel("Selecciona una distancia para ver los podios clasificados por categoría de premiación (género/edad).")
         info_label.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.podiums_layout.addWidget(info_label)
@@ -235,8 +235,8 @@ class RaceMonitoringWidget(QWidget):
 
         # Obtener categoría seleccionada
         selected_text = self.podiums_category_combo.currentText()
-        if selected_text == "Selecciona una categoría":
-            info_label = QLabel("Selecciona una categoría de carrera para ver los podios.")
+        if selected_text == "Selecciona una distancia":
+            info_label = QLabel("Selecciona una distancia para ver los podios clasificados por categoría de premiación.")
             info_label.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
             info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.podiums_layout.addWidget(info_label)
@@ -360,7 +360,7 @@ class RaceMonitoringWidget(QWidget):
 
         current_text = self.podiums_category_combo.currentText()
         self.podiums_category_combo.clear()
-        self.podiums_category_combo.addItem("Selecciona una categoría")
+        self.podiums_category_combo.addItem("Selecciona una distancia")
 
         for category in self.race_manager.get_all_categories():
             # Solo mostrar categorías finalizadas o en curso
@@ -384,8 +384,8 @@ class RaceMonitoringWidget(QWidget):
 
         # Verificar que hay una categoría seleccionada
         selected_text = self.podiums_category_combo.currentText()
-        if selected_text == "Selecciona una categoría":
-            QMessageBox.warning(self, "Error", "Selecciona una categoría de carrera primero")
+        if selected_text == "Selecciona una distancia":
+            QMessageBox.warning(self, "Error", "Selecciona una distancia primero")
             return
 
         race_category_id = selected_text.split(" - ")[0]
@@ -711,11 +711,11 @@ class RaceMonitoringWidget(QWidget):
 
         stats_text = f"""ESTADÍSTICAS DEL SISTEMA
 {'='*30}
-Categorías activas: {len(active_categories)}
-Total de categorías: {len(all_categories)}
+Distancias activas: {len(active_categories)}
+Total de distancias: {len(all_categories)}
 Total de detecciones: {total_detections}
 
-PARTICIPANTES POR CATEGORÍA:
+PARTICIPANTES POR DISTANCIA:
 """
 
         for category in all_categories:

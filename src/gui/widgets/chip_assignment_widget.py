@@ -142,9 +142,9 @@ class ChipAssignmentWidget(QWidget):
         athletes_layout = QVBoxLayout(athletes_group)
 
         self.athletes_table = QTableWidget()
-        self.athletes_table.setColumnCount(6)
+        self.athletes_table.setColumnCount(8)
         self.athletes_table.setHorizontalHeaderLabels([
-            "Dorsal", "Nombre", "Distancia", "Chip RFID", "Estado", "Info"
+            "Dorsal", "Nombre", "Distancia", "Género", "Fecha Nac.", "Chip RFID", "Estado", "Info"
         ])
 
         header = self.athletes_table.horizontalHeader()
@@ -153,7 +153,9 @@ class ChipAssignmentWidget(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Stretch)
 
         self.athletes_table.setAlternatingRowColors(True)
         self.athletes_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -467,6 +469,18 @@ class ChipAssignmentWidget(QWidget):
                 # Distancia
                 self.athletes_table.setItem(row, 2, QTableWidgetItem(category.name))
 
+                # Género
+                gender_map = {"M": "M", "F": "F", "Otro": "Otro", None: "-"}
+                gender_display = gender_map.get(athlete.gender, athlete.gender or "-")
+                self.athletes_table.setItem(row, 3, QTableWidgetItem(gender_display))
+
+                # Fecha de Nacimiento
+                if athlete.birth_date:
+                    birth_date_str = athlete.birth_date.strftime('%d/%m/%Y')
+                else:
+                    birth_date_str = "-"
+                self.athletes_table.setItem(row, 4, QTableWidgetItem(birth_date_str))
+
                 # Chip RFID
                 chip_item = QTableWidgetItem(athlete.tag_id or "-")
                 if athlete.tag_id:
@@ -474,15 +488,15 @@ class ChipAssignmentWidget(QWidget):
                     assigned_count += 1
                 else:
                     chip_item.setBackground(QColor("#fef3c7"))  # Amarillo claro
-                self.athletes_table.setItem(row, 3, chip_item)
+                self.athletes_table.setItem(row, 5, chip_item)
 
                 # Estado
                 status = "✅ Asignado" if athlete.tag_id else "⏳ Pendiente"
                 status_item = QTableWidgetItem(status)
-                self.athletes_table.setItem(row, 4, status_item)
+                self.athletes_table.setItem(row, 6, status_item)
 
                 # Info adicional
-                self.athletes_table.setItem(row, 5, QTableWidgetItem(athlete.notes or ""))
+                self.athletes_table.setItem(row, 7, QTableWidgetItem(athlete.notes or ""))
 
                 total_count += 1
 
@@ -509,7 +523,7 @@ class ChipAssignmentWidget(QWidget):
             if search_term:
                 name = self.athletes_table.item(row, 1).text().lower()
                 bib = self.athletes_table.item(row, 0).text().lower()
-                chip = self.athletes_table.item(row, 3).text().lower()
+                chip = self.athletes_table.item(row, 5).text().lower()  # Actualizado: chip ahora en columna 5
 
                 if search_term not in name and search_term not in bib and search_term not in chip:
                     show_row = False
@@ -530,7 +544,7 @@ class ChipAssignmentWidget(QWidget):
 
             # Filtrar por estado
             if status_filter != "Todos" and show_row:
-                status = self.athletes_table.item(row, 4).text()
+                status = self.athletes_table.item(row, 6).text()  # Actualizado: estado ahora en columna 6
                 if status_filter == "Pendientes" and "Pendiente" not in status:
                     show_row = False
                 elif status_filter == "Asignados" and "Asignado" not in status:
