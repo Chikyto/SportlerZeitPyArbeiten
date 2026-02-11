@@ -738,23 +738,46 @@ class RaceManager:
         """
         # Obtener todos los resultados de la distancia
         all_results = self.get_results(distance_id)
+        logger.info(f"📊 get_results_by_award_category para {distance_id}:")
+        logger.info(f"  - Total resultados: {len(all_results)}")
+        logger.info(f"  - Estados: {', '.join([f'{r.athlete.name}={r.status.value}' for r in all_results])}")
 
         # Filtrar solo finalizados si se requiere
         if only_finished:
             all_results = [r for r in all_results if r.status == AthleteStatus.FINISHED]
+            logger.info(f"  - Finalizados: {len(all_results)}")
+            if all_results:
+                logger.info(f"  - Finalizados: {', '.join([r.athlete.name for r in all_results])}")
 
         # Obtener categorías de premiación que aplican a esta distancia
         applicable_award_cats = self.get_award_categories_for_distance(distance_id)
+        logger.info(f"  - Award categories aplicables: {len(applicable_award_cats)}")
+        for ac in applicable_award_cats:
+            logger.info(f"    - {ac.award_category_id}: {ac.name}")
 
         # Agrupar por categoría de premiación
         results_by_award: Dict[str, List[AthleteResult]] = {}
 
         for award_cat in applicable_award_cats:
             # Filtrar resultados que pertenecen a esta award_category
-            matching_results = [
-                r for r in all_results
-                if award_cat.applies_to_athlete(r.athlete)
-            ]
+            matching_results = []
+            for r in all_results:
+                applies = award_cat.applies_to_athlete(r.athlete)
+                if applies:
+                    matching_results.append(r)
+                else:
+                    # Log por qué NO aplica
+                    age = r.athlete.get_age()
+                    gender = r.athlete.gender.upper()[0] if r.athlete.gender else None
+                    logger.debug(
+                        f"    ❌ {r.athlete.name} NO aplica a {award_cat.award_category_id}: "
+                        f"género={gender} (req={award_cat.gender}), "
+                        f"edad={age} (req={award_cat.min_age}-{award_cat.max_age})"
+                    )
+
+            logger.info(f"  - {award_cat.award_category_id}: {len(matching_results)} atletas")
+            if matching_results:
+                logger.info(f"    - Atletas: {', '.join([r.athlete.name for r in matching_results])}")
 
             # Ordenar por tiempo (más rápido primero)
             matching_results.sort(key=lambda r: r.get_total_seconds() or float('inf'))
