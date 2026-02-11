@@ -360,36 +360,76 @@ class RaceManager:
             ...     roles=['start']
             ... )
         """
-        logger.debug(f"📡 Procesando detección: Tag {tag_id} en puerto {antenna_port}")
+        logger.info("=" * 80)
+        logger.info(f"🔄 RaceManager.process_detection() INICIADO")
+        logger.info(f"   Tag ID: {tag_id}")
+        logger.info(f"   Puerto: {antenna_port}")
+        logger.info(f"   Timestamp: {timestamp}")
+        logger.info(f"   Roles: {roles}")
+        logger.info("=" * 80)
 
         # 1. Identificar al atleta y su distancia
+        logger.info("🔍 PASO 1: Buscando atleta asociado al chip...")
         athlete, distance = self._find_athlete_by_tag(tag_id)
 
         if not athlete:
-            logger.warning(f"⚠️  Tag {tag_id} no asociado a ningún atleta")
+            logger.warning("=" * 80)
+            logger.warning(f"❌ DETECCIÓN RECHAZADA: Tag {tag_id} NO asociado a ningún atleta")
+            logger.warning("   SOLUCIÓN: Asignar chip en tab 'Asignación de Chips'")
+            logger.warning("=" * 80)
             return None
 
         if not distance:
-            logger.warning(f"⚠️  Atleta {athlete.name} sin distancia activa")
+            logger.warning("=" * 80)
+            logger.warning(f"❌ DETECCIÓN RECHAZADA: Atleta {athlete.name} sin distancia activa")
+            logger.warning("=" * 80)
             return None
+
+        logger.info(f"✅ Atleta encontrado: {athlete.name}")
+        logger.info(f"   Distancia: {distance.name}")
+        logger.info(f"   Estado distancia: {distance.status}")
 
         # Solo procesar si la distancia está corriendo
         if distance.status != RaceStatus.RUNNING:
-            logger.debug(f"Distancia {distance.name} no está en curso, ignorando detección")
+            logger.warning("=" * 80)
+            logger.warning(f"❌ DETECCIÓN RECHAZADA: Distancia '{distance.name}' no está RUNNING")
+            logger.warning(f"   Estado actual: {distance.status}")
+            logger.warning("   SOLUCIÓN: Iniciar distancia desde tab 'Configuración de Evento'")
+            logger.warning("=" * 80)
             return None
+
+        logger.info("✅ Distancia está RUNNING, continuando...")
 
         # 2. Validar períodos de latencia (anti-duplicados)
+        logger.info("🔍 PASO 2: Validando timing (anti-duplicados)...")
         if not self._validate_detection_timing(athlete, antenna_port, timestamp, roles):
+            logger.warning(f"⚠️  Detección ignorada por anti-duplicados")
             return None
+        logger.info("✅ Validación de timing OK")
 
         # 3. Determinar tipo de evento según roles
+        logger.info("🔍 PASO 3: Determinando tipo de evento...")
+        logger.info(f"   Roles de antena: {roles}")
+        logger.info(f"   Estado actual atleta: {self.results[distance.distance_id][athlete.athlete_id].status}")
+
         event_type, checkpoint_num = self._determine_event_type(roles, athlete, distance)
 
         if not event_type:
-            logger.warning(f"⚠️  No se pudo determinar tipo de evento para roles: {roles}")
+            logger.warning("=" * 80)
+            logger.warning(f"❌ DETECCIÓN RECHAZADA: No se pudo determinar tipo de evento")
+            logger.warning(f"   Roles de antena: {roles}")
+            logger.warning(f"   Estado atleta: {self.results[distance.distance_id][athlete.athlete_id].status}")
+            logger.warning("   CAUSA: Rol de antena no coincide con estado del atleta")
+            logger.warning("   Ejemplos:")
+            logger.warning("     - Atleta ya largó pero antena es 'start' solamente")
+            logger.warning("     - Atleta no ha largado pero antena es 'finish' o 'checkpoint'")
+            logger.warning("=" * 80)
             return None
 
+        logger.info(f"✅ Tipo de evento determinado: {event_type}")
+
         # 4. Crear evento de detección
+        logger.info("🔍 PASO 4: Creando evento de detección...")
         event = DetectionEvent(
             tag_id=tag_id,
             timestamp=timestamp,
@@ -399,12 +439,18 @@ class RaceManager:
             athlete=athlete,
             distance_id=distance.distance_id
         )
+        logger.info(f"✅ Evento creado: {event_type} para {athlete.name}")
 
         # 5. Registrar en resultado del atleta
+        logger.info("🔍 PASO 5: Registrando evento en resultado del atleta...")
         result = self.results[distance.distance_id][athlete.athlete_id]
+        logger.info(f"   Estado antes: {result.status}")
         success = self._record_event_in_result(result, event)
 
         if success:
+            logger.info(f"   Estado después: {result.status}")
+            logger.info("✅ Evento registrado exitosamente")
+
             # 6. Actualizar tracking de última detección
             detection_key = (athlete.athlete_id, antenna_port)
             self.last_detections[detection_key] = timestamp
@@ -415,8 +461,17 @@ class RaceManager:
             # 8. Actualizar clasificación
             self._update_classification(distance.distance_id)
 
-            logger.info(f"✅ {event}")
+            logger.info("=" * 80)
+            logger.info(f"✅✅✅ EVENTO PROCESADO EXITOSAMENTE ✅✅✅")
+            logger.info(f"   Atleta: {athlete.name}")
+            logger.info(f"   Evento: {event_type}")
+            logger.info(f"   Nuevo estado: {result.status}")
+            logger.info("=" * 80)
             return event
+        else:
+            logger.error("=" * 80)
+            logger.error(f"❌ ERROR: No se pudo registrar evento en resultado")
+            logger.error("=" * 80)
 
         return None
 

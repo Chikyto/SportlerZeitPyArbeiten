@@ -225,18 +225,35 @@ class MainWindow(QMainWindow):
                 }
         """
         try:
+            logger.info("=" * 80)
+            logger.info("🏁 MainWindow: SEÑAL tag_detected RECIBIDA")
+            logger.info(f"   Tag data: {tag_data}")
+            logger.info("=" * 80)
+
             # Extraer datos necesarios
             tag_id = tag_data.get('tag_id')
             antenna_port = tag_data.get('antenna')  # o 'antenna_port'
             if not antenna_port:
                 antenna_port = tag_data.get('antenna_port')
+                antenna_port = tag_data.get('port')  # Nuevo: también intentar 'port'
             timestamp = tag_data.get('timestamp')
+            if not timestamp:
+                timestamp = tag_data.get('timestamp_obj')  # Intentar timestamp_obj
             roles = tag_data.get('roles', [])
+
+            logger.info(f"📊 Datos extraídos:")
+            logger.info(f"   tag_id: {tag_id}")
+            logger.info(f"   antenna_port: {antenna_port}")
+            logger.info(f"   timestamp: {timestamp}")
+            logger.info(f"   roles: {roles}")
 
             # Validar datos mínimos
             if not tag_id or not antenna_port or not timestamp:
                 logger.warning(f"⚠️  Detección incompleta: {tag_data}")
+                logger.warning(f"   tag_id={tag_id}, antenna_port={antenna_port}, timestamp={timestamp}")
                 return
+
+            logger.info("📤 Enviando a RaceManager.process_detection()...")
 
             # Procesar con RaceManager
             event = self.race_manager.process_detection(
@@ -247,9 +264,13 @@ class MainWindow(QMainWindow):
             )
 
             if event:
-                logger.info(f"🏁 Evento procesado: {event}")
+                logger.info(f"✅ Evento procesado exitosamente: {event}")
             else:
-                logger.debug(f"Tag {tag_id} detectado pero sin evento de carrera asociado")
+                logger.warning(f"⚠️  Tag {tag_id} detectado pero sin evento de carrera asociado")
+                logger.warning("   Posibles causas:")
+                logger.warning("   - Chip no asociado a ningún atleta")
+                logger.warning("   - Distancia no está en estado RUNNING")
+                logger.warning("   - Rol de antena no coincide con estado del atleta")
 
         except Exception as e:
             logger.error(f"❌ Error procesando detección para carrera: {e}")

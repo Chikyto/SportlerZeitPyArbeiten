@@ -270,11 +270,26 @@ class DetectionTab(BaseTab):
     @pyqtSlot(dict)
     def on_tag_detected(self, tag_info):
         """Procesar tag detectado"""
+        # 🔍 DEBUG: Mostrar info del tag detectado
+        tag_id = tag_info.get('number', 'Unknown')
+        antenna_port = tag_info.get('antenna', 'Unknown')
+        logger.info("=" * 80)
+        logger.info(f"🔔 CHIP DETECTADO: {tag_id} en puerto {antenna_port}")
+        logger.info(f"   Puertos configurados: {list(self.antenna_roles.keys())}")
+        logger.info("=" * 80)
+
         # Delegar procesamiento al TagProcessor
         processed = self.tag_processor.process_tag(tag_info)
 
         if not processed:
+            logger.error("=" * 80)
+            logger.error(f"❌ TAG RECHAZADO: {tag_id} en puerto {antenna_port}")
+            logger.error(f"   Razón: Puerto no configurado o sin roles")
+            logger.error(f"   Puertos configurados: {list(self.antenna_roles.keys())}")
+            logger.error("=" * 80)
             return
+
+        logger.info(f"✅ TAG PROCESADO: {processed['tag_id']} - Roles: {processed['roles']}")
 
         # Agregar tag a conjunto de únicos
         self.detected_tags.add(processed['tag_id'])
@@ -288,7 +303,10 @@ class DetectionTab(BaseTab):
         # 🏁 EMITIR SEÑAL PARA RACE MANAGER
         # Enviar información completa de la detección para procesamiento de carrera
         if self.signals:
+            logger.info(f"📡 EMITIENDO SEÑAL tag_detected para RaceManager: {processed['tag_id']}")
             self.signals.tag_detected.emit(processed)
+        else:
+            logger.warning("⚠️  No hay objeto signals, no se puede emitir señal para RaceManager")
     
     def add_detection_to_table(self, processed: dict):
         """
