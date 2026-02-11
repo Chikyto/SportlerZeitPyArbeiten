@@ -202,24 +202,52 @@ class DetectionTab(BaseTab):
             self.log("ERROR: Scanner no disponible")
             QMessageBox.warning(self, "Error", "Scanner no disponible")
             return
-        
+
         if self.is_scanning:
+            logger.info("⚠️  Ya se está escaneando, ignorando solicitud duplicada")
             return
-        
+
         # Crear procesador de tags
         self.tag_processor = TagProcessor(self.antenna_roles, self.signals)
-        
+
         # Crear y arrancar thread de scanning
         self.scan_thread = ScanThread(self.scanner)
         self.scan_thread.tag_detected.connect(self.on_tag_detected)
         self.scan_thread.error_occurred.connect(self.on_scan_error)
         self.scan_thread.start()
-        
+
         self.is_scanning = True
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
-        
+
         self.log("🟢 Detección iniciada - Escaneando antenas...")
+
+    def auto_start_scanning(self):
+        """
+        🔥 Método público para iniciar escaneo automáticamente desde señales
+
+        Este método es llamado cuando se inicia una distancia desde EventConfigWidget.
+        Inicia el escaneo sin mostrar mensajes de error si el scanner no está listo.
+        """
+        logger.info("🚀 DetectionTab.auto_start_scanning() llamado")
+
+        if not self.scanner:
+            logger.warning("⚠️  Scanner no disponible, no se puede auto-iniciar escaneo")
+            self.log("⚠️ Scanner no disponible para auto-inicio de escaneo")
+            return False
+
+        if self.is_scanning:
+            logger.info("✅ Ya se está escaneando, no es necesario iniciar de nuevo")
+            return True
+
+        if not self.antenna_roles:
+            logger.warning("⚠️  No hay antenas configuradas, no se puede auto-iniciar escaneo")
+            self.log("⚠️ No hay antenas configuradas para escaneo")
+            return False
+
+        logger.info("🟢 Iniciando escaneo automáticamente...")
+        self.start_scanning()
+        return True
     
     def stop_scanning(self):
         """Detener detección"""

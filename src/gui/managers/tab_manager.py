@@ -124,7 +124,10 @@ class TabManager:
 
         from ..widgets.event_config_widget import EventConfigWidget
 
-        event_config_widget = EventConfigWidget(race_manager=self.race_manager)
+        event_config_widget = EventConfigWidget(
+            race_manager=self.race_manager,
+            signals=self.signals  # 🔥 Pasar signals para auto-inicio de escaneo
+        )
         self.tab_widget.addTab(event_config_widget, "📋 Gestión de Eventos")
         self.tabs['events'] = event_config_widget
 

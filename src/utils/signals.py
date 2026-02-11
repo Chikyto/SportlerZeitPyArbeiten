@@ -41,6 +41,7 @@ class AppSignals(QObject):
     scanning_started = pyqtSignal()
     scanning_stopped = pyqtSignal()
     scan_progress = pyqtSignal(int)
+    auto_start_scanning = pyqtSignal()  # 🔥 Nueva: Auto-iniciar escaneo cuando se inician distancias
     
     # Errores de scanning
     scanner_error = pyqtSignal(str)

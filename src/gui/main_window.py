@@ -194,6 +194,9 @@ class MainWindow(QMainWindow):
         # Señal de detección de tags → RaceManager
         self.signals.tag_detected.connect(self.on_tag_detected_for_race)
 
+        # 🔥 Señal de auto-inicio de escaneo cuando se inician distancias
+        self.signals.auto_start_scanning.connect(self.on_auto_start_scanning)
+
         logger.info("✅ Señales conectadas")
     
     @pyqtSlot(bool, str)
@@ -252,7 +255,44 @@ class MainWindow(QMainWindow):
             logger.error(f"❌ Error procesando detección para carrera: {e}")
             import traceback
             traceback.print_exc()
-    
+
+    @pyqtSlot()
+    def on_auto_start_scanning(self):
+        """
+        🔥 Callback para auto-iniciar escaneo cuando se inician distancias
+
+        Este método es llamado cuando EventConfigWidget emite la señal auto_start_scanning
+        después de iniciar una o más distancias.
+        """
+        try:
+            logger.info("=" * 80)
+            logger.info("🚀 AUTO-INICIO DE ESCANEO SOLICITADO")
+            logger.info("=" * 80)
+
+            # Obtener referencia al DetectionTab
+            detection_tab = self.tab_manager.get_tab('detection')
+
+            if not detection_tab:
+                logger.error("❌ DetectionTab no encontrado")
+                return
+
+            # Llamar al método de auto-inicio
+            success = detection_tab.auto_start_scanning()
+
+            if success:
+                logger.info("✅ Escaneo automático iniciado exitosamente")
+                logger.info("📡 Las antenas están escaneando chips para la carrera")
+            else:
+                logger.warning("⚠️  No se pudo iniciar escaneo automático")
+                logger.warning("   Verifica configuración de scanner y antenas")
+
+            logger.info("=" * 80)
+
+        except Exception as e:
+            logger.error(f"❌ Error en auto-inicio de escaneo: {e}")
+            import traceback
+            traceback.print_exc()
+
     # ========================================================================
     # Métodos de acceso (delegan a AntennaManager)
     # ========================================================================

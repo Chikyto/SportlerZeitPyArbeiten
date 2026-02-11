@@ -31,9 +31,10 @@ class EventConfigWidget(QWidget):
     category_finished = pyqtSignal(str)  # category_id
     categories_changed = pyqtSignal()  # Se emite cuando cambian las categorías
 
-    def __init__(self, race_manager=None):
+    def __init__(self, race_manager=None, signals=None):
         super().__init__()
         self.race_manager = race_manager if race_manager else RaceManager()
+        self.signals = signals  # 🔥 Agregar soporte para señales globales
 
         # DEBUG: Verificar race_manager recibido
         if race_manager:
@@ -480,6 +481,11 @@ class EventConfigWidget(QWidget):
         # Actualizar UI
         self.refresh_categories_table()
         self.update_active_categories_label()
+
+        # 🔥 AUTO-INICIAR ESCANEO: Emitir señal para que DetectionTab inicie automáticamente
+        if started_count > 0 and self.signals:
+            logger.info("🚀 Emitiendo señal auto_start_scanning para iniciar detección automáticamente")
+            self.signals.auto_start_scanning.emit()
 
         # Mostrar resultado
         result_msg = f"✅ Se iniciaron {started_count} distancia(s) exitosamente"
