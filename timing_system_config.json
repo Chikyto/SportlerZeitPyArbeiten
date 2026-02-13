@@ -6,10 +6,10 @@
   },
   "power_dbm": 30,
   "antennas": {
-    "3": {
+    "5": {
       "enabled": true,
       "name": "largada + checkpoint + llegada",
-      "description": "Antena puerto 3: largada + checkpoint + llegada",
+      "description": "Antena puerto 5: largada + checkpoint + llegada",
       "start": true,
       "finish": true,
       "checkpoint": true,

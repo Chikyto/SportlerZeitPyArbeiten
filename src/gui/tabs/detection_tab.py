@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import pyqtSlot
 from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt
 import logging
 
 from .base_tab import BaseTab
