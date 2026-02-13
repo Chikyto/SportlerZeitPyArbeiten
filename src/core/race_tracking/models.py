@@ -50,6 +50,14 @@ class EventType(Enum):
     START = "start"                 # Largada
     CHECKPOINT = "checkpoint"       # Punto intermedio
     FINISH = "finish"               # Meta
+    LAP = "lap"                     # Vuelta completada (para carreras por vueltas)
+
+
+class RaceMode(Enum):
+    """Modos de carrera"""
+    LINEAR = "linear"               # Carrera lineal: largada → checkpoints → meta
+    LAPS = "laps"                   # Carrera por vueltas: misma antena múltiples veces
+    TIME_BASED = "time_based"       # Carrera por tiempo: máximo de vueltas en X horas
 
 
 # ============================================================================
@@ -190,22 +198,35 @@ class RaceDistance:
     No confundir con AwardCategory (categorías de premiación por género/edad).
 
     Attributes:
-        distance_id: ID único de la distancia (ej: "5k", "10k", "21k", "42k")
-        name: Nombre descriptivo (ej: "5K", "Media Maratón", "Ultra 100K")
-        distance_meters: Distancia en metros
+        distance_id: ID único de la distancia (ej: "5k", "10k", "21k", "42k", "7k_1h")
+        name: Nombre descriptivo (ej: "5K", "Media Maratón", "Ultra 100K", "7K por Hora")
+        distance_meters: Distancia en metros (por vuelta si es carrera por vueltas)
         expected_checkpoints: Número de checkpoints esperados (sin contar largada/meta)
         participants: Lista de atletas inscritos en esta distancia
         status: Estado actual de la carrera
         start_time: Momento de largada oficial (opcional)
         end_time: Momento de finalización (opcional)
         notes: Notas adicionales
+        race_mode: Modo de carrera (LINEAR, LAPS, TIME_BASED)
+        duration_hours: Duración en horas (solo para TIME_BASED) - ej: 6 horas, 12 horas, 24 horas
 
-    Example:
+    Example - Carrera lineal:
         >>> distance = RaceDistance(
         ...     distance_id="21k",
         ...     name="Media Maratón",
         ...     distance_meters=21097.0,
-        ...     expected_checkpoints=2
+        ...     expected_checkpoints=2,
+        ...     race_mode=RaceMode.LINEAR
+        ... )
+
+    Example - Carrera por tiempo:
+        >>> distance = RaceDistance(
+        ...     distance_id="7k_1h",
+        ...     name="7K por Hora - 6 Horas",
+        ...     distance_meters=7000.0,
+        ...     expected_checkpoints=0,
+        ...     race_mode=RaceMode.TIME_BASED,
+        ...     duration_hours=6
         ... )
     """
     distance_id: str
@@ -217,6 +238,8 @@ class RaceDistance:
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     notes: Optional[str] = None
+    race_mode: RaceMode = RaceMode.LINEAR  # Nuevo campo
+    duration_hours: Optional[float] = None  # Nuevo campo (solo para TIME_BASED)
     
     def __post_init__(self):
         """Validar datos al crear"""

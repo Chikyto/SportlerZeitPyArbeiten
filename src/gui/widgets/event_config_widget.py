@@ -294,6 +294,8 @@ class EventConfigWidget(QWidget):
 
     def load_distances_from_chip_assignments(self):
         """Cargar distancias automáticamente desde asignaciones de chips existentes"""
+        from src.gui.widgets.checkpoint_config_dialog import CheckpointConfigDialog
+
         # Obtener todas las distancias actuales
         existing_distances = self.race_manager.get_all_distances()
 
@@ -316,34 +318,55 @@ class EventConfigWidget(QWidget):
         # Crear distancias que no existen
         created_count = 0
         updated_count = 0
+        cancelled_count = 0
 
         for distance_id, athletes in distance_athletes.items():
             # Verificar si la distancia ya existe
             existing = self.race_manager.get_distance(distance_id)
 
             if not existing:
-                # Inferir nombre y distancia desde el ID
+                # Inferir nombre, distancia y checkpoints desde el ID
                 # Ejemplos: "100k" -> "Ultra 100K", "50k" -> "Trail 50K"
                 name = self._infer_distance_name(distance_id)
                 distance_meters = self._infer_distance_meters(distance_id)
+                inferred_checkpoints = self._infer_expected_checkpoints(distance_id)
 
-                # Crear nueva distancia
-                new_distance = RaceDistance(
+                # 🔥 MOSTRAR DIÁLOGO para confirmar/editar checkpoints
+                dialog = CheckpointConfigDialog(
                     distance_id=distance_id,
-                    name=name,
+                    distance_name=name,
                     distance_meters=distance_meters,
-                    expected_checkpoints=0,
-                    participants=athletes,  # Asignar atletas
-                    status=RaceStatus.PENDING,
-                    notes=f"Generada automáticamente desde asignaciones de chips ({len(athletes)} participantes)"
+                    inferred_checkpoints=inferred_checkpoints,
+                    parent=self
                 )
 
-                try:
-                    self.race_manager.add_distance(new_distance)
-                    created_count += 1
-                    logger.info(f"✅ Distancia creada: {distance_id} ({name}) con {len(athletes)} participantes")
-                except ValueError as e:
-                    logger.error(f"❌ Error creando distancia {distance_id}: {e}")
+                result = dialog.exec()
+
+                if result == QDialog.DialogCode.Accepted:
+                    # Usuario confirmó (con o sin cambios)
+                    expected_checkpoints = dialog.get_confirmed_checkpoints()
+
+                    # Crear nueva distancia
+                    new_distance = RaceDistance(
+                        distance_id=distance_id,
+                        name=name,
+                        distance_meters=distance_meters,
+                        expected_checkpoints=expected_checkpoints,
+                        participants=athletes,  # Asignar atletas
+                        status=RaceStatus.PENDING,
+                        notes=f"Generada automáticamente desde asignaciones de chips ({len(athletes)} participantes)"
+                    )
+
+                    try:
+                        self.race_manager.add_distance(new_distance)
+                        created_count += 1
+                        logger.info(f"✅ Distancia creada: {distance_id} ({name}) con {len(athletes)} participantes, {expected_checkpoints} checkpoint(s)")
+                    except ValueError as e:
+                        logger.error(f"❌ Error creando distancia {distance_id}: {e}")
+                else:
+                    # Usuario canceló
+                    cancelled_count += 1
+                    logger.info(f"⏭️  Usuario canceló creación de distancia {distance_id}")
             else:
                 # La distancia ya existe, solo actualizar conteo
                 updated_count += 1
@@ -354,13 +377,19 @@ class EventConfigWidget(QWidget):
         self.categories_changed.emit()
 
         # Mostrar resultado
+        msg_parts = []
         if created_count > 0:
+            msg_parts.append(f"✅ Se crearon {created_count} distancia(s)")
+        if updated_count > 0:
+            msg_parts.append(f"📊 {updated_count} distancia(s) ya existían")
+        if cancelled_count > 0:
+            msg_parts.append(f"⏭️  {cancelled_count} distancia(s) canceladas por el usuario")
+
+        if msg_parts:
             QMessageBox.information(
                 self,
-                "Distancias cargadas",
-                f"✅ Se crearon {created_count} distancia(s) desde las asignaciones de chips.\n"
-                f"📊 {updated_count} distancia(s) ya existían.\n\n"
-                f"Total: {len(distance_athletes)} distancia(s) detectadas."
+                "Carga desde Chips",
+                "\n".join(msg_parts) + f"\n\nTotal detectadas: {len(distance_athletes)} distancia(s)"
             )
         else:
             QMessageBox.information(
@@ -402,7 +431,63 @@ class EventConfigWidget(QWidget):
         # Si no se puede inferir, usar valor por defecto
         logger.warning(f"⚠️  No se pudo inferir distancia para '{distance_id}', usando 10000m por defecto")
         return 10000.0  # 10km por defecto
-        
+
+    def _infer_expected_checkpoints(self, distance_id: str) -> int:
+        """
+        Inferir número de checkpoints esperados según la distancia
+
+        Reglas estándar:
+        - 5K, 7K: 0 checkpoints
+        - 10K, 14K: 1 checkpoint
+        - 21K, 24K, 30K: 2 checkpoints
+        - 42K, 50K: 3 checkpoints
+        - 100K: 5 checkpoints
+
+        Args:
+            distance_id: ID de la distancia (ej: "5k", "10k", "21k")
+
+        Returns:
+            int: Número de checkpoints esperados
+        """
+        # Mapeo directo de IDs conocidos
+        checkpoint_map = {
+            "5k": 0,
+            "7k": 0,
+            "10k": 1,
+            "14k": 1,
+            "21k": 2,
+            "24k": 2,
+            "30k": 2,
+            "42k": 3,
+            "50k": 3,
+            "100k": 5
+        }
+
+        # Buscar coincidencia exacta
+        dist_id_lower = distance_id.lower()
+        if dist_id_lower in checkpoint_map:
+            return checkpoint_map[dist_id_lower]
+
+        # Si no hay coincidencia exacta, inferir según distancia en km
+        import re
+        match = re.search(r'(\d+)\s*k', dist_id_lower)
+        if match:
+            km = int(match.group(1))
+            if km < 10:
+                return 0
+            elif km < 21:
+                return 1
+            elif km < 42:
+                return 2
+            elif km < 100:
+                return 3
+            else:
+                return 5
+
+        # Si no se puede inferir, retornar 0
+        logger.warning(f"⚠️  No se pudo inferir checkpoints para '{distance_id}', usando 0 por defecto")
+        return 0
+
     def start_selected_category(self):
         """Iniciar categoría seleccionada"""
         current_row = self.categories_table.currentRow()
@@ -761,25 +846,45 @@ class CategoryDialog(QDialog):
         self.name_input = QLineEdit()
         form_layout.addWidget(self.name_input, 1, 1)
         
-        form_layout.addWidget(QLabel("Distancia:"), 2, 0)
+        form_layout.addWidget(QLabel("Distancia (m):"), 2, 0)
         self.distance_input = QLineEdit()
         form_layout.addWidget(self.distance_input, 2, 1)
-        
-        form_layout.addWidget(QLabel("Hora Largada:"), 3, 0)
+
+        form_layout.addWidget(QLabel("Modo de Carrera:"), 3, 0)
+        self.race_mode_combo = QComboBox()
+        self.race_mode_combo.addItems(["Lineal (Normal)", "Por Vueltas", "Por Tiempo"])
+        self.race_mode_combo.setToolTip(
+            "Lineal: Largada → Checkpoints → Meta\n"
+            "Por Vueltas: Múltiples pasadas por misma antena\n"
+            "Por Tiempo: Máximo de vueltas en X horas (ej: 7km/hora)"
+        )
+        self.race_mode_combo.currentIndexChanged.connect(self.on_race_mode_changed)
+        form_layout.addWidget(self.race_mode_combo, 3, 1)
+
+        form_layout.addWidget(QLabel("Checkpoints:"), 4, 0)
+        self.checkpoints_input = QSpinBox()
+        self.checkpoints_input.setRange(0, 10)
+        self.checkpoints_input.setValue(0)
+        self.checkpoints_input.setToolTip("Número de checkpoints esperados (sin contar largada/meta)")
+        form_layout.addWidget(self.checkpoints_input, 4, 1)
+
+        form_layout.addWidget(QLabel("Duración (horas):"), 5, 0)
+        self.duration_hours_input = QSpinBox()
+        self.duration_hours_input.setRange(1, 48)
+        self.duration_hours_input.setValue(6)
+        self.duration_hours_input.setToolTip("Duración del evento (solo para modo 'Por Tiempo')")
+        self.duration_hours_input.setEnabled(False)  # Inicialmente deshabilitado
+        form_layout.addWidget(self.duration_hours_input, 5, 1)
+
+        form_layout.addWidget(QLabel("Hora Largada:"), 6, 0)
         self.start_time_input = QTimeEdit()
         self.start_time_input.setTime(QTime(9, 0))  # 09:00 por defecto
-        form_layout.addWidget(self.start_time_input, 3, 1)
-        
-        form_layout.addWidget(QLabel("Duración Max (h):"), 4, 0)
-        self.duration_input = QSpinBox()
-        self.duration_input.setRange(1, 24)
-        self.duration_input.setValue(6)
-        form_layout.addWidget(self.duration_input, 4, 1)
-        
-        form_layout.addWidget(QLabel("Descripción:"), 5, 0)
+        form_layout.addWidget(self.start_time_input, 6, 1)
+
+        form_layout.addWidget(QLabel("Descripción:"), 7, 0)
         self.description_input = QTextEdit()
         self.description_input.setMaximumHeight(60)
-        form_layout.addWidget(self.description_input, 5, 1)
+        form_layout.addWidget(self.description_input, 7, 1)
         
         layout.addLayout(form_layout)
         
@@ -796,24 +901,71 @@ class CategoryDialog(QDialog):
         buttons_layout.addWidget(self.cancel_btn)
         
         layout.addLayout(buttons_layout)
-        
+
+        # Conectar señal para auto-inferir checkpoints cuando cambia el ID
+        self.id_input.textChanged.connect(self.on_distance_id_changed)
+
+    def on_race_mode_changed(self, index):
+        """Manejar cambio de modo de carrera"""
+        # index: 0 = Lineal, 1 = Por Vueltas, 2 = Por Tiempo
+
+        if index == 2:  # Por Tiempo
+            # Habilitar campo de duración
+            self.duration_hours_input.setEnabled(True)
+            self.duration_hours_input.setStyleSheet("background-color: #fef3c7;")
+            # Deshabilitar checkpoints (no aplican en modo por tiempo)
+            self.checkpoints_input.setEnabled(False)
+            self.checkpoints_input.setValue(0)
+        else:
+            # Deshabilitar campo de duración
+            self.duration_hours_input.setEnabled(False)
+            self.duration_hours_input.setStyleSheet("")
+            # Habilitar checkpoints
+            self.checkpoints_input.setEnabled(True)
+
+    def on_distance_id_changed(self, distance_id):
+        """Auto-inferir checkpoints cuando cambia el ID de distancia"""
+        if distance_id and self.parent():
+            # Intentar inferir checkpoints desde el parent (EventConfigWidget)
+            if hasattr(self.parent(), '_infer_expected_checkpoints'):
+                inferred_checkpoints = self.parent()._infer_expected_checkpoints(distance_id)
+                self.checkpoints_input.setValue(inferred_checkpoints)
+
     def load_distance_data(self):
         """Cargar datos de distancia existente"""
+        from src.core.race_tracking.models import RaceMode
+
         if self.distance:
             self.id_input.setText(self.distance.distance_id)
             self.name_input.setText(self.distance.name)
             self.distance_input.setText(str(self.distance.distance_meters))
+            self.checkpoints_input.setValue(self.distance.expected_checkpoints)
+
+            # Cargar modo de carrera
+            if hasattr(self.distance, 'race_mode'):
+                if self.distance.race_mode == RaceMode.LINEAR:
+                    self.race_mode_combo.setCurrentIndex(0)
+                elif self.distance.race_mode == RaceMode.LAPS:
+                    self.race_mode_combo.setCurrentIndex(1)
+                elif self.distance.race_mode == RaceMode.TIME_BASED:
+                    self.race_mode_combo.setCurrentIndex(2)
+
+            # Cargar duración si existe
+            if hasattr(self.distance, 'duration_hours') and self.distance.duration_hours:
+                self.duration_hours_input.setValue(int(self.distance.duration_hours))
+
             if self.distance.start_time:
                 self.start_time_input.setTime(QTime(self.distance.start_time.hour, self.distance.start_time.minute))
             self.description_input.setPlainText(self.distance.notes or "")
 
     def save_category(self):
         """Guardar distancia"""
+        from src.core.race_tracking.models import RaceMode
+
         distance_id = self.id_input.text().strip()
         name = self.name_input.text().strip()
         distance_str = self.distance_input.text().strip()
         start_time_qt = self.start_time_input.time()
-        duration = self.duration_input.value()
         description = self.description_input.toPlainText().strip()
 
         if not all([distance_id, name, distance_str]):
@@ -830,17 +982,32 @@ class CategoryDialog(QDialog):
         # Convertir QTime a datetime
         start_time_py = datetime.now().replace(hour=start_time_qt.hour(), minute=start_time_qt.minute())
 
+        # Determinar modo de carrera
+        race_mode_index = self.race_mode_combo.currentIndex()
+        if race_mode_index == 0:
+            race_mode = RaceMode.LINEAR
+        elif race_mode_index == 1:
+            race_mode = RaceMode.LAPS
+        else:  # 2
+            race_mode = RaceMode.TIME_BASED
+
+        # Obtener número de checkpoints y duración
+        expected_checkpoints = self.checkpoints_input.value()
+        duration_hours = self.duration_hours_input.value() if race_mode == RaceMode.TIME_BASED else None
+
         # Crear distancia
         try:
             self.result_distance = RaceDistance(
                 distance_id=distance_id,
                 name=name,
                 distance_meters=distance_meters,
-                expected_checkpoints=0,  # Por defecto
+                expected_checkpoints=expected_checkpoints,
                 participants=[],
                 status=RaceStatus.PENDING,
                 start_time=start_time_py,
-                notes=description
+                notes=description,
+                race_mode=race_mode,
+                duration_hours=duration_hours
             )
             self.accept()  # Cerrar con éxito
         except Exception as e:

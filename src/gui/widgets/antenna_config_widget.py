@@ -131,7 +131,13 @@ class AntennaConfigWidget(QWidget):
         self.preset_start_finish_btn = QPushButton("Arco Largada+Meta")
         self.preset_start_finish_btn.clicked.connect(self.apply_start_finish_preset)
         presets_buttons_layout.addWidget(self.preset_start_finish_btn)
-        
+
+        self.preset_laps_btn = QPushButton("🔄 Vueltas (1 Antena)")
+        self.preset_laps_btn.clicked.connect(self.apply_laps_preset)
+        self.preset_laps_btn.setToolTip("Carrera por vueltas: 1 antena para largada + vueltas + meta (ej: 7km/hora)")
+        self.preset_laps_btn.setStyleSheet("background-color: #f59e0b; color: white; font-weight: bold;")
+        presets_buttons_layout.addWidget(self.preset_laps_btn)
+
         presets_layout.addLayout(presets_buttons_layout)
         
         # Descripción del preset seleccionado
@@ -221,14 +227,35 @@ class AntennaConfigWidget(QWidget):
     def apply_start_finish_preset(self):
         """Aplicar preset arco largada+meta: 4 antenas para ambos roles"""
         self.preset_description.setText("Arco Largada+Meta: 4 antenas para largada Y meta")
-        
+
         presets = [
             (True, True, True, False, "Largada/Meta 1", "Pos 1 - Largada y Meta"),
             (True, True, True, False, "Largada/Meta 2", "Pos 2 - Largada y Meta"),
             (True, True, True, False, "Largada/Meta 3", "Pos 3 - Largada y Meta"),
             (True, True, True, False, "Largada/Meta 4", "Pos 4 - Largada y Meta")
         ]
-        
+
+        self._apply_preset(presets)
+
+    def apply_laps_preset(self):
+        """
+        Aplicar preset carrera por vueltas: 1 antena para largada+vueltas+meta
+
+        Ideal para carreras de resistencia por tiempo (ej: 7km/hora durante 6 horas)
+        donde los atletas pasan múltiples veces por la misma antena
+        """
+        self.preset_description.setText(
+            "🔄 Vueltas: 1 antena para START + VUELTAS + META | "
+            "Ideal para carreras por tiempo (ej: 7km/hora)"
+        )
+
+        presets = [
+            (True, True, True, False, "Largada/Vueltas/Meta", "Arco único - Cuenta todas las pasadas"),
+            (False, False, False, False, "Antena 2", "Sin usar"),
+            (False, False, False, False, "Antena 3", "Sin usar"),
+            (False, False, False, False, "Antena 4", "Sin usar"),
+        ]
+
         self._apply_preset(presets)
     
     def _apply_preset(self, presets):

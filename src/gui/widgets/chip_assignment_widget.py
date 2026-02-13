@@ -1167,11 +1167,14 @@ class ChipAssignmentWidget(QWidget):
                     "3. Que las columnas 'Nombre', 'Apellido' y 'Distancia' tengan datos"
                 )
 
-            # Crear distancias
-            distances = importer.create_distances()
+            # Crear distancias (con diálogo de confirmación de checkpoints)
+            distances = importer.create_distances(
+                parent_widget=self,
+                show_checkpoint_dialog=True
+            )
 
             if not distances:
-                raise ValueError("No se pudieron crear distancias. Verifica la columna 'Distancia' en el CSV.")
+                raise ValueError("No se pudieron crear distancias. Verifica la columna 'Distancia' en el CSV o si cancelaste todas las configuraciones.")
 
             # Agregar a race_manager
             for distance in distances:
