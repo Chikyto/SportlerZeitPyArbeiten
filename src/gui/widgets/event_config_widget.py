@@ -294,6 +294,8 @@ class EventConfigWidget(QWidget):
 
     def load_distances_from_chip_assignments(self):
         """Cargar distancias automáticamente desde asignaciones de chips existentes"""
+        from src.gui.widgets.checkpoint_config_dialog import CheckpointConfigDialog
+
         # Obtener todas las distancias actuales
         existing_distances = self.race_manager.get_all_distances()
 
@@ -316,6 +318,7 @@ class EventConfigWidget(QWidget):
         # Crear distancias que no existen
         created_count = 0
         updated_count = 0
+        cancelled_count = 0
 
         for distance_id, athletes in distance_athletes.items():
             # Verificar si la distancia ya existe
@@ -326,25 +329,44 @@ class EventConfigWidget(QWidget):
                 # Ejemplos: "100k" -> "Ultra 100K", "50k" -> "Trail 50K"
                 name = self._infer_distance_name(distance_id)
                 distance_meters = self._infer_distance_meters(distance_id)
-                expected_checkpoints = self._infer_expected_checkpoints(distance_id)
+                inferred_checkpoints = self._infer_expected_checkpoints(distance_id)
 
-                # Crear nueva distancia
-                new_distance = RaceDistance(
+                # 🔥 MOSTRAR DIÁLOGO para confirmar/editar checkpoints
+                dialog = CheckpointConfigDialog(
                     distance_id=distance_id,
-                    name=name,
+                    distance_name=name,
                     distance_meters=distance_meters,
-                    expected_checkpoints=expected_checkpoints,
-                    participants=athletes,  # Asignar atletas
-                    status=RaceStatus.PENDING,
-                    notes=f"Generada automáticamente desde asignaciones de chips ({len(athletes)} participantes)"
+                    inferred_checkpoints=inferred_checkpoints,
+                    parent=self
                 )
 
-                try:
-                    self.race_manager.add_distance(new_distance)
-                    created_count += 1
-                    logger.info(f"✅ Distancia creada: {distance_id} ({name}) con {len(athletes)} participantes, {expected_checkpoints} checkpoint(s)")
-                except ValueError as e:
-                    logger.error(f"❌ Error creando distancia {distance_id}: {e}")
+                result = dialog.exec()
+
+                if result == QDialog.DialogCode.Accepted:
+                    # Usuario confirmó (con o sin cambios)
+                    expected_checkpoints = dialog.get_confirmed_checkpoints()
+
+                    # Crear nueva distancia
+                    new_distance = RaceDistance(
+                        distance_id=distance_id,
+                        name=name,
+                        distance_meters=distance_meters,
+                        expected_checkpoints=expected_checkpoints,
+                        participants=athletes,  # Asignar atletas
+                        status=RaceStatus.PENDING,
+                        notes=f"Generada automáticamente desde asignaciones de chips ({len(athletes)} participantes)"
+                    )
+
+                    try:
+                        self.race_manager.add_distance(new_distance)
+                        created_count += 1
+                        logger.info(f"✅ Distancia creada: {distance_id} ({name}) con {len(athletes)} participantes, {expected_checkpoints} checkpoint(s)")
+                    except ValueError as e:
+                        logger.error(f"❌ Error creando distancia {distance_id}: {e}")
+                else:
+                    # Usuario canceló
+                    cancelled_count += 1
+                    logger.info(f"⏭️  Usuario canceló creación de distancia {distance_id}")
             else:
                 # La distancia ya existe, solo actualizar conteo
                 updated_count += 1
@@ -355,13 +377,19 @@ class EventConfigWidget(QWidget):
         self.categories_changed.emit()
 
         # Mostrar resultado
+        msg_parts = []
         if created_count > 0:
+            msg_parts.append(f"✅ Se crearon {created_count} distancia(s)")
+        if updated_count > 0:
+            msg_parts.append(f"📊 {updated_count} distancia(s) ya existían")
+        if cancelled_count > 0:
+            msg_parts.append(f"⏭️  {cancelled_count} distancia(s) canceladas por el usuario")
+
+        if msg_parts:
             QMessageBox.information(
                 self,
-                "Distancias cargadas",
-                f"✅ Se crearon {created_count} distancia(s) desde las asignaciones de chips.\n"
-                f"📊 {updated_count} distancia(s) ya existían.\n\n"
-                f"Total: {len(distance_athletes)} distancia(s) detectadas."
+                "Carga desde Chips",
+                "\n".join(msg_parts) + f"\n\nTotal detectadas: {len(distance_athletes)} distancia(s)"
             )
         else:
             QMessageBox.information(
