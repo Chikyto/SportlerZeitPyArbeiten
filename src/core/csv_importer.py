@@ -643,3 +643,7 @@ if __name__ == "__main__":
     # Exportar lista de dorsales
     importer.export_bib_list('lista_dorsales.csv')
     print(f"\n✅ Lista de dorsales exportada: lista_dorsales.csv")
+
+
+# Alias para compatibilidad con código existente
+CSVImporter = CSVAthleteImporter
