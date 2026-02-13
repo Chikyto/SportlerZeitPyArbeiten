@@ -322,17 +322,18 @@ class EventConfigWidget(QWidget):
             existing = self.race_manager.get_distance(distance_id)
 
             if not existing:
-                # Inferir nombre y distancia desde el ID
+                # Inferir nombre, distancia y checkpoints desde el ID
                 # Ejemplos: "100k" -> "Ultra 100K", "50k" -> "Trail 50K"
                 name = self._infer_distance_name(distance_id)
                 distance_meters = self._infer_distance_meters(distance_id)
+                expected_checkpoints = self._infer_expected_checkpoints(distance_id)
 
                 # Crear nueva distancia
                 new_distance = RaceDistance(
                     distance_id=distance_id,
                     name=name,
                     distance_meters=distance_meters,
-                    expected_checkpoints=0,
+                    expected_checkpoints=expected_checkpoints,
                     participants=athletes,  # Asignar atletas
                     status=RaceStatus.PENDING,
                     notes=f"Generada automáticamente desde asignaciones de chips ({len(athletes)} participantes)"
@@ -341,7 +342,7 @@ class EventConfigWidget(QWidget):
                 try:
                     self.race_manager.add_distance(new_distance)
                     created_count += 1
-                    logger.info(f"✅ Distancia creada: {distance_id} ({name}) con {len(athletes)} participantes")
+                    logger.info(f"✅ Distancia creada: {distance_id} ({name}) con {len(athletes)} participantes, {expected_checkpoints} checkpoint(s)")
                 except ValueError as e:
                     logger.error(f"❌ Error creando distancia {distance_id}: {e}")
             else:
@@ -402,7 +403,63 @@ class EventConfigWidget(QWidget):
         # Si no se puede inferir, usar valor por defecto
         logger.warning(f"⚠️  No se pudo inferir distancia para '{distance_id}', usando 10000m por defecto")
         return 10000.0  # 10km por defecto
-        
+
+    def _infer_expected_checkpoints(self, distance_id: str) -> int:
+        """
+        Inferir número de checkpoints esperados según la distancia
+
+        Reglas estándar:
+        - 5K, 7K: 0 checkpoints
+        - 10K, 14K: 1 checkpoint
+        - 21K, 24K, 30K: 2 checkpoints
+        - 42K, 50K: 3 checkpoints
+        - 100K: 5 checkpoints
+
+        Args:
+            distance_id: ID de la distancia (ej: "5k", "10k", "21k")
+
+        Returns:
+            int: Número de checkpoints esperados
+        """
+        # Mapeo directo de IDs conocidos
+        checkpoint_map = {
+            "5k": 0,
+            "7k": 0,
+            "10k": 1,
+            "14k": 1,
+            "21k": 2,
+            "24k": 2,
+            "30k": 2,
+            "42k": 3,
+            "50k": 3,
+            "100k": 5
+        }
+
+        # Buscar coincidencia exacta
+        dist_id_lower = distance_id.lower()
+        if dist_id_lower in checkpoint_map:
+            return checkpoint_map[dist_id_lower]
+
+        # Si no hay coincidencia exacta, inferir según distancia en km
+        import re
+        match = re.search(r'(\d+)\s*k', dist_id_lower)
+        if match:
+            km = int(match.group(1))
+            if km < 10:
+                return 0
+            elif km < 21:
+                return 1
+            elif km < 42:
+                return 2
+            elif km < 100:
+                return 3
+            else:
+                return 5
+
+        # Si no se puede inferir, retornar 0
+        logger.warning(f"⚠️  No se pudo inferir checkpoints para '{distance_id}', usando 0 por defecto")
+        return 0
+
     def start_selected_category(self):
         """Iniciar categoría seleccionada"""
         current_row = self.categories_table.currentRow()
@@ -761,25 +818,32 @@ class CategoryDialog(QDialog):
         self.name_input = QLineEdit()
         form_layout.addWidget(self.name_input, 1, 1)
         
-        form_layout.addWidget(QLabel("Distancia:"), 2, 0)
+        form_layout.addWidget(QLabel("Distancia (m):"), 2, 0)
         self.distance_input = QLineEdit()
         form_layout.addWidget(self.distance_input, 2, 1)
-        
-        form_layout.addWidget(QLabel("Hora Largada:"), 3, 0)
+
+        form_layout.addWidget(QLabel("Checkpoints:"), 3, 0)
+        self.checkpoints_input = QSpinBox()
+        self.checkpoints_input.setRange(0, 10)
+        self.checkpoints_input.setValue(0)
+        self.checkpoints_input.setToolTip("Número de checkpoints esperados (sin contar largada/meta)")
+        form_layout.addWidget(self.checkpoints_input, 3, 1)
+
+        form_layout.addWidget(QLabel("Hora Largada:"), 4, 0)
         self.start_time_input = QTimeEdit()
         self.start_time_input.setTime(QTime(9, 0))  # 09:00 por defecto
-        form_layout.addWidget(self.start_time_input, 3, 1)
+        form_layout.addWidget(self.start_time_input, 4, 1)
         
-        form_layout.addWidget(QLabel("Duración Max (h):"), 4, 0)
+        form_layout.addWidget(QLabel("Duración Max (h):"), 5, 0)
         self.duration_input = QSpinBox()
         self.duration_input.setRange(1, 24)
         self.duration_input.setValue(6)
-        form_layout.addWidget(self.duration_input, 4, 1)
-        
-        form_layout.addWidget(QLabel("Descripción:"), 5, 0)
+        form_layout.addWidget(self.duration_input, 5, 1)
+
+        form_layout.addWidget(QLabel("Descripción:"), 6, 0)
         self.description_input = QTextEdit()
         self.description_input.setMaximumHeight(60)
-        form_layout.addWidget(self.description_input, 5, 1)
+        form_layout.addWidget(self.description_input, 6, 1)
         
         layout.addLayout(form_layout)
         
@@ -796,13 +860,25 @@ class CategoryDialog(QDialog):
         buttons_layout.addWidget(self.cancel_btn)
         
         layout.addLayout(buttons_layout)
-        
+
+        # Conectar señal para auto-inferir checkpoints cuando cambia el ID
+        self.id_input.textChanged.connect(self.on_distance_id_changed)
+
+    def on_distance_id_changed(self, distance_id):
+        """Auto-inferir checkpoints cuando cambia el ID de distancia"""
+        if distance_id and self.parent():
+            # Intentar inferir checkpoints desde el parent (EventConfigWidget)
+            if hasattr(self.parent(), '_infer_expected_checkpoints'):
+                inferred_checkpoints = self.parent()._infer_expected_checkpoints(distance_id)
+                self.checkpoints_input.setValue(inferred_checkpoints)
+
     def load_distance_data(self):
         """Cargar datos de distancia existente"""
         if self.distance:
             self.id_input.setText(self.distance.distance_id)
             self.name_input.setText(self.distance.name)
             self.distance_input.setText(str(self.distance.distance_meters))
+            self.checkpoints_input.setValue(self.distance.expected_checkpoints)
             if self.distance.start_time:
                 self.start_time_input.setTime(QTime(self.distance.start_time.hour, self.distance.start_time.minute))
             self.description_input.setPlainText(self.distance.notes or "")
@@ -830,13 +906,16 @@ class CategoryDialog(QDialog):
         # Convertir QTime a datetime
         start_time_py = datetime.now().replace(hour=start_time_qt.hour(), minute=start_time_qt.minute())
 
+        # Obtener número de checkpoints
+        expected_checkpoints = self.checkpoints_input.value()
+
         # Crear distancia
         try:
             self.result_distance = RaceDistance(
                 distance_id=distance_id,
                 name=name,
                 distance_meters=distance_meters,
-                expected_checkpoints=0,  # Por defecto
+                expected_checkpoints=expected_checkpoints,
                 participants=[],
                 status=RaceStatus.PENDING,
                 start_time=start_time_py,
