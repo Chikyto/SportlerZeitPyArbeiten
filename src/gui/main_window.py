@@ -19,6 +19,7 @@ from ..core.race_tracking.race_manager import RaceManager
 from ..core.race_tracking.models import EventType
 from .managers.antenna_manager import AntennaManager
 from .managers.tab_manager import TabManager
+from .widgets.finish_ticket_dialog import FinishTicketDialog
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +199,9 @@ class MainWindow(QMainWindow):
         # 🔥 Señal de auto-inicio de escaneo cuando se inician distancias
         self.signals.auto_start_scanning.connect(self.on_auto_start_scanning)
 
+        # 🎟️ Señal de atleta llegando a meta → mostrar ticket
+        self.signals.athlete_finished.connect(self.on_athlete_finished_show_ticket)
+
         logger.info("✅ Señales conectadas")
     
     @pyqtSlot(bool, str)
@@ -325,6 +329,86 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             logger.error(f"❌ Error en auto-inicio de escaneo: {e}")
+
+    @pyqtSlot(str, str, str)
+    def on_athlete_finished_show_ticket(self, athlete_name: str, distance_name: str, formatted_time: str):
+        """
+        Mostrar ticket imprimible cuando un atleta cruza la meta
+
+        Args:
+            athlete_name: Nombre del atleta
+            distance_name: Nombre de la distancia
+            formatted_time: Tiempo formateado (HH:MM:SS)
+        """
+        try:
+            logger.info(f"🎟️  Generando ticket para: {athlete_name}")
+
+            # Buscar el atleta en el race_manager para obtener toda su info
+            athlete = None
+            distance = None
+            result = None
+
+            for dist in self.race_manager.get_all_distances():
+                for participant in dist.participants:
+                    if participant.name == athlete_name:
+                        athlete = participant
+                        distance = dist
+                        # Obtener el resultado
+                        results_dict = self.race_manager.results.get(dist.distance_id, {})
+                        result = results_dict.get(participant.athlete_id)
+                        break
+                if athlete:
+                    break
+
+            if not athlete or not distance or not result:
+                logger.warning(f"⚠️  No se pudo encontrar info completa para {athlete_name}")
+                return
+
+            # Obtener clasificaciones
+            position_overall = result.position or 0
+
+            # Posición por género
+            results_by_gender = self.race_manager.get_results_by_gender(distance.distance_id)
+            gender_key = athlete.gender.upper()[0] if athlete.gender else "Otro"
+            if gender_key not in ["M", "F"]:
+                gender_key = "Otro"
+            gender_results = results_by_gender.get(gender_key, [])
+            position_gender = next((i+1 for i, r in enumerate(gender_results) if r.athlete.athlete_id == athlete.athlete_id), 0)
+
+            # Posición por categoría
+            category = athlete.get_category() or "Sin categoría"
+            results_by_award = self.race_manager.get_results_by_award_category(distance.distance_id)
+            category_results = results_by_award.get(category, [])
+            position_category = next((i+1 for i, r in enumerate(category_results) if r.athlete.athlete_id == athlete.athlete_id), 0)
+
+            # Obtener nombre del evento
+            event_config = self.tab_manager.get_tab('event_config')
+            event_name = "Carrera"
+            if event_config and hasattr(event_config, 'event_name_input'):
+                event_name = event_config.event_name_input.text() or "Carrera"
+
+            # Crear y mostrar el ticket
+            ticket_dialog = FinishTicketDialog(
+                athlete_name=athlete.name,
+                distance_name=distance.name,
+                bib_number=athlete.bib_number,
+                finish_time=formatted_time,
+                position_overall=position_overall,
+                position_gender=position_gender,
+                position_category=position_category,
+                gender=athlete.gender or "Otro",
+                category=category,
+                event_name=event_name,
+                parent=self
+            )
+
+            ticket_dialog.exec()
+            logger.info(f"✅ Ticket mostrado para {athlete_name}")
+
+        except Exception as e:
+            logger.error(f"❌ Error mostrando ticket: {e}")
+            import traceback
+            traceback.print_exc()
             import traceback
             traceback.print_exc()
 

@@ -195,10 +195,36 @@ class RaceMonitoringWidget(QWidget):
         refresh_podiums_btn.clicked.connect(self.refresh_podiums)
         controls_layout.addWidget(refresh_podiums_btn)
 
-        export_podiums_btn = QPushButton("📄 Exportar a CSV")
+        export_podiums_btn = QPushButton("📄 CSV")
         export_podiums_btn.clicked.connect(self.export_podiums_to_csv)
         export_podiums_btn.setStyleSheet("background-color: #10b981; color: white; font-weight: bold;")
+        export_podiums_btn.setToolTip("Exportar podios a CSV")
         controls_layout.addWidget(export_podiums_btn)
+
+        # Botones de exportación a PDF
+        export_pdf_general_btn = QPushButton("📕 PDF General")
+        export_pdf_general_btn.clicked.connect(self.export_pdf_general)
+        export_pdf_general_btn.setStyleSheet("background-color: #e94560; color: white; font-weight: bold;")
+        export_pdf_general_btn.setToolTip("Exportar clasificación general a PDF")
+        controls_layout.addWidget(export_pdf_general_btn)
+
+        export_pdf_gender_btn = QPushButton("📗 PDF Género")
+        export_pdf_gender_btn.clicked.connect(self.export_pdf_by_gender)
+        export_pdf_gender_btn.setStyleSheet("background-color: #0f3460; color: white; font-weight: bold;")
+        export_pdf_gender_btn.setToolTip("Exportar clasificación por género a PDF")
+        controls_layout.addWidget(export_pdf_gender_btn)
+
+        export_pdf_category_btn = QPushButton("📘 PDF Categorías")
+        export_pdf_category_btn.clicked.connect(self.export_pdf_by_category)
+        export_pdf_category_btn.setStyleSheet("background-color: #16213e; color: white; font-weight: bold;")
+        export_pdf_category_btn.setToolTip("Exportar clasificación por categorías a PDF")
+        controls_layout.addWidget(export_pdf_category_btn)
+
+        export_pdf_announcer_btn = QPushButton("🎤 PDF Relator")
+        export_pdf_announcer_btn.clicked.connect(self.export_pdf_announcer)
+        export_pdf_announcer_btn.setStyleSheet("background-color: #f0a500; color: white; font-weight: bold;")
+        export_pdf_announcer_btn.setToolTip("Exportar formato para relator (letra grande)")
+        controls_layout.addWidget(export_pdf_announcer_btn)
 
         controls_layout.addStretch()
 
@@ -478,6 +504,226 @@ class RaceMonitoringWidget(QWidget):
             )
             import logging
             logging.error(f"Error en export_podiums_to_csv: {e}", exc_info=True)
+
+    def export_pdf_general(self):
+        """Exportar clasificación general a PDF"""
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+        from src.utils.pdf_exporter import PDFExporter
+
+        if not self.race_manager:
+            QMessageBox.warning(self, "Sin Race Manager", "No hay race manager configurado")
+            return
+
+        # Obtener distancia seleccionada
+        race_category_id = self.category_combo.currentText()
+        if not race_category_id:
+            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero")
+            return
+
+        distance = self.race_manager.get_distance(race_category_id)
+        if not distance:
+            return
+
+        try:
+            # Diálogo para seleccionar archivo
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Exportar Clasificación General a PDF",
+                f"clasificacion_general_{race_category_id}.pdf",
+                "PDF Files (*.pdf)"
+            )
+
+            if not file_path:
+                return
+
+            # Obtener resultados
+            results = self.race_manager.get_results(race_category_id)
+
+            # Obtener nombre del evento
+            event_name = "Carrera"
+            if hasattr(self.parent(), 'event_name_input'):
+                event_name = self.parent().event_name_input.text() or "Carrera"
+
+            # Crear exporter
+            exporter = PDFExporter(event_name=event_name)
+            exporter.export_general_classification(
+                distance_name=distance.name,
+                results=results,
+                output_path=file_path
+            )
+
+            QMessageBox.information(
+                self,
+                "Éxito",
+                f"PDF de clasificación general exportado:\n{file_path}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error exportando PDF:\n{str(e)}")
+            import logging
+            logging.error(f"Error en export_pdf_general: {e}", exc_info=True)
+
+    def export_pdf_by_gender(self):
+        """Exportar clasificación por género a PDF"""
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+        from src.utils.pdf_exporter import PDFExporter
+
+        if not self.race_manager:
+            QMessageBox.warning(self, "Sin Race Manager", "No hay race manager configurado")
+            return
+
+        race_category_id = self.category_combo.currentText()
+        if not race_category_id:
+            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero")
+            return
+
+        distance = self.race_manager.get_distance(race_category_id)
+        if not distance:
+            return
+
+        try:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Exportar Clasificación por Género a PDF",
+                f"clasificacion_genero_{race_category_id}.pdf",
+                "PDF Files (*.pdf)"
+            )
+
+            if not file_path:
+                return
+
+            # Obtener clasificación por género
+            results_by_gender = self.race_manager.get_results_by_gender(race_category_id)
+
+            event_name = "Carrera"
+            if hasattr(self.parent(), 'event_name_input'):
+                event_name = self.parent().event_name_input.text() or "Carrera"
+
+            exporter = PDFExporter(event_name=event_name)
+            exporter.export_classification_by_gender(
+                distance_name=distance.name,
+                results_by_gender=results_by_gender,
+                output_path=file_path
+            )
+
+            QMessageBox.information(
+                self,
+                "Éxito",
+                f"PDF por género exportado:\n{file_path}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error exportando PDF:\n{str(e)}")
+            import logging
+            logging.error(f"Error en export_pdf_by_gender: {e}", exc_info=True)
+
+    def export_pdf_by_category(self):
+        """Exportar clasificación por categorías IAAF a PDF"""
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+        from src.utils.pdf_exporter import PDFExporter
+
+        if not self.race_manager:
+            QMessageBox.warning(self, "Sin Race Manager", "No hay race manager configurado")
+            return
+
+        race_category_id = self.category_combo.currentText()
+        if not race_category_id:
+            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero")
+            return
+
+        distance = self.race_manager.get_distance(race_category_id)
+        if not distance:
+            return
+
+        try:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Exportar Clasificación por Categorías a PDF",
+                f"clasificacion_categorias_{race_category_id}.pdf",
+                "PDF Files (*.pdf)"
+            )
+
+            if not file_path:
+                return
+
+            # Obtener clasificación por categorías
+            results_by_category = self.race_manager.get_results_by_award_category(race_category_id)
+
+            event_name = "Carrera"
+            if hasattr(self.parent(), 'event_name_input'):
+                event_name = self.parent().event_name_input.text() or "Carrera"
+
+            exporter = PDFExporter(event_name=event_name)
+            exporter.export_classification_by_category(
+                distance_name=distance.name,
+                results_by_category=results_by_category,
+                output_path=file_path
+            )
+
+            QMessageBox.information(
+                self,
+                "Éxito",
+                f"PDF por categorías exportado:\n{file_path}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error exportando PDF:\n{str(e)}")
+            import logging
+            logging.error(f"Error en export_pdf_by_category: {e}", exc_info=True)
+
+    def export_pdf_announcer(self):
+        """Exportar formato para relator a PDF"""
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+        from src.utils.pdf_exporter import PDFExporter
+
+        if not self.race_manager:
+            QMessageBox.warning(self, "Sin Race Manager", "No hay race manager configurado")
+            return
+
+        race_category_id = self.category_combo.currentText()
+        if not race_category_id:
+            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero")
+            return
+
+        distance = self.race_manager.get_distance(race_category_id)
+        if not distance:
+            return
+
+        try:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Exportar Formato para Relator a PDF",
+                f"relator_{race_category_id}.pdf",
+                "PDF Files (*.pdf)"
+            )
+
+            if not file_path:
+                return
+
+            # Obtener resultados
+            results = self.race_manager.get_results(race_category_id)
+
+            event_name = "Carrera"
+            if hasattr(self.parent(), 'event_name_input'):
+                event_name = self.parent().event_name_input.text() or "Carrera"
+
+            exporter = PDFExporter(event_name=event_name)
+            exporter.export_announcer_format(
+                distance_name=distance.name,
+                results=results,
+                output_path=file_path
+            )
+
+            QMessageBox.information(
+                self,
+                "Éxito",
+                f"PDF para relator exportado:\n{file_path}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error exportando PDF:\n{str(e)}")
+            import logging
+            logging.error(f"Error en export_pdf_announcer: {e}", exc_info=True)
 
     def set_race_manager(self, race_manager):
         """Establecer el race manager"""

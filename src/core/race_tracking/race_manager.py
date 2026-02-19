@@ -825,7 +825,68 @@ class RaceManager:
             podiums[award_cat_id] = podium
 
         return podiums
-    
+
+    def get_results_by_gender(
+        self,
+        distance_id: str,
+        only_finished: bool = True
+    ) -> Dict[str, List[AthleteResult]]:
+        """
+        Obtener clasificación general por género (sin importar edad)
+
+        Args:
+            distance_id: ID de la distancia
+            only_finished: Si True, solo incluye atletas que finalizaron
+
+        Returns:
+            Dict con {"M": [resultados], "F": [resultados], "Otro": [resultados]}
+            Cada lista está ordenada por tiempo (más rápido primero)
+
+        Example:
+            >>> results_by_gender = manager.get_results_by_gender("21k")
+            >>> for gender, results in results_by_gender.items():
+            ...     print(f"Género {gender}: {len(results)} finalizadores")
+            ...     for i, r in enumerate(results[:3], 1):
+            ...         print(f"  {i}. {r.athlete.name} - {r.get_formatted_time()}")
+        """
+        all_results = self.get_results(distance_id)
+
+        # Filtrar solo finalizados si se requiere
+        if only_finished:
+            all_results = [r for r in all_results if r.status == AthleteStatus.FINISHED]
+
+        # Agrupar por género
+        results_by_gender: Dict[str, List[AthleteResult]] = {
+            "M": [],
+            "F": [],
+            "Otro": []
+        }
+
+        for result in all_results:
+            gender = result.athlete.gender
+            if gender:
+                gender_normalized = gender.upper()[0] if gender else None
+                if gender_normalized == "M":
+                    results_by_gender["M"].append(result)
+                elif gender_normalized == "F":
+                    results_by_gender["F"].append(result)
+                else:
+                    results_by_gender["Otro"].append(result)
+            else:
+                # Sin género definido
+                results_by_gender["Otro"].append(result)
+
+        # Ordenar cada grupo por tiempo
+        for gender in results_by_gender:
+            results_by_gender[gender].sort(key=lambda r: r.get_total_seconds() or float('inf'))
+
+        logger.info(f"📊 Clasificación por género para {distance_id}:")
+        logger.info(f"  - Masculino: {len(results_by_gender['M'])}")
+        logger.info(f"  - Femenino: {len(results_by_gender['F'])}")
+        logger.info(f"  - Otro/Sin definir: {len(results_by_gender['Otro'])}")
+
+        return results_by_gender
+
     # ========================================================================
     # UTILIDADES
     # ========================================================================
