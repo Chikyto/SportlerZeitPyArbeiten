@@ -4,7 +4,7 @@
     "port": 4001,
     "verified": true
   },
-  "power_dbm": 30,
+  "power_dbm": 25,
   "antennas": {
     "5": {
       "enabled": true,

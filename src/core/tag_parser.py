@@ -71,3 +71,39 @@ class TagParser:
     def reset_stats(self):
         """Reinicia estadísticas"""
         self.detection_stats = {'total': 0, 'valid': 0, 'invalid': 0}
+
+    @staticmethod
+    def normalize_tag_id(tag_id: str) -> str:
+        """
+        Normalizar ID de chip eliminando leading zeros inconsistentes
+
+        Esto asegura que chips leídos por diferentes interfaces (USB vs TCP/IP)
+        se normalicen al mismo formato.
+
+        Ejemplos:
+            '0181D' → '181D'
+            '0818' → '818'
+            '00AB' → 'AB'
+            'E280' → 'E280' (sin cambios)
+
+        Args:
+            tag_id: ID del chip en formato hex string
+
+        Returns:
+            ID normalizado sin leading zeros
+        """
+        if not tag_id:
+            return tag_id
+
+        try:
+            # Convertir hex → int → hex para eliminar leading zeros
+            as_int = int(tag_id, 16)
+            normalized = format(as_int, 'X')  # Uppercase hex sin padding
+
+            logger.debug(f"Tag normalizado: '{tag_id}' → '{normalized}'")
+            return normalized
+
+        except ValueError:
+            # Si no es hex válido, retornar uppercase sin cambios
+            logger.warning(f"⚠️  Tag ID no es hex válido: '{tag_id}', retornando uppercase")
+            return tag_id.upper()

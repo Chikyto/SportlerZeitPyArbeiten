@@ -537,17 +537,38 @@ class RaceManager:
         Returns:
             Tuple (Athlete, RaceDistance) o (None, None) si no se encuentra
         """
+        logger.info(f"🔍 Buscando atleta con chip: '{tag_id}' (len={len(tag_id)})")
+
         # Buscar primero en distancias corriendo
-        for distance in self.get_active_distances():
+        active_distances = self.get_active_distances()
+        logger.debug(f"   Buscando en {len(active_distances)} distancia(s) activa(s)")
+
+        for distance in active_distances:
             athlete = distance.get_participant_by_tag(tag_id)
             if athlete:
+                logger.info(f"✅ MATCH encontrado: {athlete.name} (#{athlete.bib_number}) en {distance.name}")
                 return athlete, distance
 
         # Si no está en activas, buscar en todas
-        for distance in self.distances.values():
+        all_distances = list(self.distances.values())
+        logger.debug(f"   No encontrado en activas, buscando en {len(all_distances)} distancia(s) total(es)")
+
+        for distance in all_distances:
             athlete = distance.get_participant_by_tag(tag_id)
             if athlete:
+                logger.warning(f"⚠️  Chip encontrado en distancia NO activa: {athlete.name} en {distance.name}")
                 return athlete, distance
+
+        # No encontrado - registrar chips disponibles para debugging
+        logger.warning(f"❌ NO MATCH para chip '{tag_id}'")
+        logger.warning("   Chips registrados en base de datos:")
+        chip_count = 0
+        for distance in all_distances:
+            for participant in distance.participants:
+                if participant.tag_id:
+                    logger.debug(f"     - '{participant.tag_id}' → {participant.name}")
+                    chip_count += 1
+        logger.warning(f"   Total de chips asignados: {chip_count}")
 
         return None, None
     

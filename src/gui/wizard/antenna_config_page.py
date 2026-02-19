@@ -9,7 +9,7 @@ import logging
 from PyQt6.QtWidgets import (
     QWizardPage, QVBoxLayout, QLabel, QTableWidget,
     QTableWidgetItem, QCheckBox, QHeaderView,
-    QMessageBox, QWidget, QHBoxLayout
+    QMessageBox, QWidget, QHBoxLayout, QSlider, QGroupBox, QSpinBox
 )
 from PyQt6.QtCore import Qt
 
@@ -49,7 +49,40 @@ class AntennaConfigurationPage(QWizardPage):
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
-        
+
+        # Configuración de potencia
+        power_group = QGroupBox("⚡ Potencia de Transmisión (Alcance)")
+        power_layout = QHBoxLayout()
+
+        # Slider
+        power_label = QLabel("Potencia:")
+        power_layout.addWidget(power_label)
+
+        self.power_slider = QSlider(Qt.Orientation.Horizontal)
+        self.power_slider.setRange(10, 33)
+        self.power_slider.setValue(25)
+        self.power_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.power_slider.setTickInterval(5)
+        self.power_slider.valueChanged.connect(self.on_power_changed)
+        power_layout.addWidget(self.power_slider)
+
+        # SpinBox para valor exacto
+        self.power_spinbox = QSpinBox()
+        self.power_spinbox.setRange(10, 33)
+        self.power_spinbox.setValue(25)
+        self.power_spinbox.setSuffix(" dBm")
+        self.power_spinbox.valueChanged.connect(self.power_slider.setValue)
+        self.power_slider.valueChanged.connect(self.power_spinbox.setValue)
+        power_layout.addWidget(self.power_spinbox)
+
+        # Indicador de distancia aproximada
+        self.distance_label = QLabel("≈ 3 metros")
+        self.distance_label.setStyleSheet("font-weight: bold; color: #0f3460;")
+        power_layout.addWidget(self.distance_label)
+
+        power_group.setLayout(power_layout)
+        layout.addWidget(power_group)
+
         # Tabla de configuración
         self.config_table = QTableWidget()
         self.config_table.setColumnCount(6)
@@ -67,7 +100,25 @@ class AntennaConfigurationPage(QWizardPage):
         layout.addWidget(self.config_table)
         
         self.setLayout(layout)
-    
+
+    def on_power_changed(self, value):
+        """Actualizar indicador de distancia cuando cambia la potencia"""
+        # Aproximaciones de alcance según potencia
+        if value <= 15:
+            distance = "≈ 1 metro"
+        elif value <= 20:
+            distance = "≈ 2 metros"
+        elif value <= 25:
+            distance = "≈ 3 metros"
+        elif value <= 28:
+            distance = "≈ 4-5 metros"
+        elif value <= 30:
+            distance = "≈ 6 metros"
+        else:
+            distance = "≈ 7-8 metros"
+
+        self.distance_label.setText(distance)
+
     def initializePage(self):
         """Se llama al entrar a la página"""
         wizard = self.wizard()
@@ -248,7 +299,7 @@ class AntennaConfigurationPage(QWizardPage):
                     port=port,
                     enabled=True,
                     function=AntennaFunction(primary_function),
-                    power_level=25,
+                    power_level=self.power_spinbox.value(),  # Usar valor del slider
                     description=f"Antena puerto {port}: {func_str}"
                 )
                 
