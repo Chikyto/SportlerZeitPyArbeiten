@@ -1,6 +1,7 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                            QLabel, QGroupBox, QLineEdit, QCheckBox, QGridLayout)
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+                            QLabel, QGroupBox, QLineEdit, QCheckBox, QGridLayout,
+                            QSlider, QSpinBox)
+from PyQt6.QtCore import pyqtSignal, Qt
 
 class AntennaConfigWidget(QWidget):
     """Widget para configuración de antenas - separado del archivo principal"""
@@ -30,7 +31,55 @@ class AntennaConfigWidget(QWidget):
         info_layout.addWidget(setup_info)
         
         layout.addWidget(info_group)
-        
+
+        # Configuración de potencia global
+        power_group = QGroupBox("⚡ Potencia de Transmisión (Alcance)")
+        power_layout = QHBoxLayout()
+
+        power_label = QLabel("Potencia:")
+        power_layout.addWidget(power_label)
+
+        self.power_slider = QSlider(Qt.Orientation.Horizontal)
+        self.power_slider.setRange(10, 33)
+        self.power_slider.setValue(25)
+        self.power_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.power_slider.setTickInterval(5)
+        self.power_slider.valueChanged.connect(self.on_power_changed)
+        power_layout.addWidget(self.power_slider)
+
+        self.power_spinbox = QSpinBox()
+        self.power_spinbox.setRange(10, 33)
+        self.power_spinbox.setValue(25)
+        self.power_spinbox.setSuffix(" dBm")
+        self.power_spinbox.valueChanged.connect(self.power_slider.setValue)
+        self.power_slider.valueChanged.connect(self.power_spinbox.setValue)
+        power_layout.addWidget(self.power_spinbox)
+
+        self.distance_label = QLabel("≈ 3 metros")
+        self.distance_label.setStyleSheet("font-weight: bold; color: #0f3460;")
+        power_layout.addWidget(self.distance_label)
+
+        # Botones de presets rápidos
+        preset_low_btn = QPushButton("🔻 Baja (15 dBm)")
+        preset_low_btn.setToolTip("Alcance ~1 metro - ideal para control cercano")
+        preset_low_btn.clicked.connect(lambda: self.power_slider.setValue(15))
+        power_layout.addWidget(preset_low_btn)
+
+        preset_mid_btn = QPushButton("🔸 Media (25 dBm)")
+        preset_mid_btn.setToolTip("Alcance ~3 metros - recomendado")
+        preset_mid_btn.clicked.connect(lambda: self.power_slider.setValue(25))
+        preset_mid_btn.setStyleSheet("background-color: #10b981; color: white;")
+        power_layout.addWidget(preset_mid_btn)
+
+        preset_high_btn = QPushButton("🔺 Alta (30 dBm)")
+        preset_high_btn.setToolTip("Alcance ~6 metros - solo si necesario")
+        preset_high_btn.clicked.connect(lambda: self.power_slider.setValue(30))
+        preset_high_btn.setStyleSheet("background-color: #f59e0b; color: white;")
+        power_layout.addWidget(preset_high_btn)
+
+        power_group.setLayout(power_layout)
+        layout.addWidget(power_group)
+
         # Configuración individual de antenas con GRID LAYOUT
         antennas_group = QGroupBox("Configuración Individual de Antenas")
         antennas_layout = QVBoxLayout(antennas_group)
@@ -184,7 +233,24 @@ class AntennaConfigWidget(QWidget):
             self.antenna_configs[antenna_id]['checkpoint'].setChecked(False)
         
         self.validate_antenna_config()
-    
+
+    def on_power_changed(self, value):
+        """Actualizar indicador de distancia cuando cambia la potencia"""
+        if value <= 15:
+            distance = "≈ 1 metro"
+        elif value <= 20:
+            distance = "≈ 2 metros"
+        elif value <= 25:
+            distance = "≈ 3 metros"
+        elif value <= 28:
+            distance = "≈ 4-5 metros"
+        elif value <= 30:
+            distance = "≈ 6 metros"
+        else:
+            distance = "≈ 7-8 metros"
+
+        self.distance_label.setText(distance)
+
     def apply_simple_preset(self):
         """Aplicar preset simple: Largada + Meta separadas"""
         self.preset_description.setText("Setup Simple: Antena 1 = Largada, Antena 2 = Meta")
