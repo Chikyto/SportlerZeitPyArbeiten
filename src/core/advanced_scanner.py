@@ -221,7 +221,11 @@ class AdvancedYR8900Scanner:
                         
                         if len(epc_data) > 0:
                             tag_number = self.parser.extract_tag_number(epc_data)
-                            
+
+                            # Normalizar ID para consistencia con USB scanner
+                            if tag_number:
+                                tag_number = self.parser.normalize_tag_id(tag_number)
+
                             if tag_number and tag_number != "N/A":
                                 # ⭐ CRÍTICO: freq_ant ya contiene el puerto correcto
                                 # NO hacer & 0x03 porque eso da valores 0-3

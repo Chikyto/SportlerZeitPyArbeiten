@@ -321,9 +321,13 @@ class YR9011USBScanner(QObject):
 
             uid_hex = uid_bytes.hex().upper()
 
-            logger.debug(f"Tag parseado: UID={uid_hex}")
+            # Normalizar ID para consistencia con TCP/IP scanner
+            from src.core.tag_parser import TagParser
+            uid_normalized = TagParser.normalize_tag_id(uid_hex)
 
-            return uid_hex
+            logger.debug(f"Tag parseado: UID={uid_hex} → normalizado={uid_normalized}")
+
+            return uid_normalized
 
         except Exception as e:
             logger.debug(f"Error parseando respuesta: {e}")
