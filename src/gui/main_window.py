@@ -16,6 +16,7 @@ from PyQt6.QtCore import pyqtSlot
 from src.utils.signals import AppSignals
 from ..core.advanced_scanner import AdvancedYR8900Scanner
 from ..core.race_tracking.race_manager import RaceManager
+from ..core.race_tracking.models import EventType
 from .managers.antenna_manager import AntennaManager
 from .managers.tab_manager import TabManager
 
@@ -273,6 +274,17 @@ class MainWindow(QMainWindow):
                 logger.warning("   - Chip no asociado a ningún atleta")
                 logger.warning("   - Distancia no está en estado RUNNING")
                 logger.warning("   - Rol de antena no coincide con estado del atleta")
+
+            # Resolver nombre y distancia del atleta para mostrar en tabla de detección
+            athlete, distance = self.race_manager._find_athlete_by_tag(tag_id)
+            if athlete and distance and self.signals:
+                self.signals.athlete_tag_resolved.emit(tag_id, athlete.name, distance.name)
+
+                # Si fue un evento de llegada a meta, emitir notificación
+                if event and event.event_type == EventType.FINISH:
+                    result = self.race_manager.results.get(distance.distance_id, {}).get(athlete.athlete_id)
+                    formatted_time = result.get_formatted_time() if result else "N/A"
+                    self.signals.athlete_finished.emit(athlete.name, distance.name, formatted_time)
 
         except Exception as e:
             logger.error(f"❌ Error procesando detección para carrera: {e}")

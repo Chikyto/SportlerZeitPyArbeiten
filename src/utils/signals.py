@@ -55,6 +55,12 @@ class AppSignals(QObject):
     result_calculated = pyqtSignal(dict)
     results_exported = pyqtSignal(str)
 
+    # ===== SEÑALES DE DETECCIÓN CON ATLETA RESUELTO =====
+    # tag_id, athlete_name, distance_name
+    athlete_tag_resolved = pyqtSignal(str, str, str)
+    # athlete_name, distance_name, formatted_time
+    athlete_finished = pyqtSignal(str, str, str)
+
 
 # Singleton para uso global
 _app_signals_instance = None

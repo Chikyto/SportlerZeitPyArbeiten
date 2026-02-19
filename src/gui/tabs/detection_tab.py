@@ -10,7 +10,7 @@ Delegación: ScanThread para scanning, TagProcessor para lógica
 
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QGroupBox, QMessageBox
+    QTableWidgetItem, QGroupBox, QMessageBox, QFrame
 )
 from PyQt6.QtCore import pyqtSlot, Qt
 from PyQt6.QtGui import QColor
@@ -98,6 +98,23 @@ class DetectionTab(BaseTab):
         header.setStretchLastSection(True)
         self.layout.addWidget(self.detections_table)
         
+        # Panel de última llegada a meta
+        finish_frame = QFrame()
+        finish_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        finish_frame.setStyleSheet("background-color: #1a1a2e; border: 2px solid #f0a500; border-radius: 6px; padding: 4px;")
+        finish_layout = QHBoxLayout(finish_frame)
+        finish_layout.setContentsMargins(8, 4, 8, 4)
+
+        finish_title = QLabel("🏁 Última llegada:")
+        finish_title.setStyleSheet("color: #f0a500; font-weight: bold; font-size: 13px; background: transparent; border: none;")
+        finish_layout.addWidget(finish_title)
+
+        self.last_finish_label = QLabel("—")
+        self.last_finish_label.setStyleSheet("color: #ffffff; font-size: 13px; background: transparent; border: none;")
+        finish_layout.addWidget(self.last_finish_label)
+        finish_layout.addStretch()
+        self.layout.addWidget(finish_frame)
+
         # Estadísticas
         stats_layout = QHBoxLayout()
         self.stats_label = QLabel("Detecciones: 0 | Tags únicos: 0")
@@ -110,6 +127,8 @@ class DetectionTab(BaseTab):
         """Conectar señales del sistema"""
         self.safe_connect('scanner_ready', self.on_scanner_ready)
         self.safe_connect('connection_status_changed', self.on_connection_status)
+        self.safe_connect('athlete_tag_resolved', self.on_athlete_tag_resolved)
+        self.safe_connect('athlete_finished', self.on_athlete_finished)
     
     @pyqtSlot(bool, str)
     def on_connection_status(self, connected, message):
@@ -130,6 +149,27 @@ class DetectionTab(BaseTab):
         self.start_btn.setEnabled(True)
         self.log("✓ Scanner listo para detección")
     
+    @pyqtSlot(str, str, str)
+    def on_athlete_tag_resolved(self, tag_id: str, athlete_name: str, distance_name: str):
+        """Actualizar nombre y distancia en la tabla cuando el race_manager resuelve el atleta"""
+        if tag_id in self.tag_data:
+            self.tag_data[tag_id]['name'] = athlete_name
+            self.tag_data[tag_id]['distance'] = distance_name
+
+        if tag_id in self.tag_rows:
+            row = self.tag_rows[tag_id]
+            self.detections_table.setItem(row, 1, QTableWidgetItem(athlete_name))
+            self.detections_table.setItem(row, 2, QTableWidgetItem(distance_name))
+
+    @pyqtSlot(str, str, str)
+    def on_athlete_finished(self, athlete_name: str, distance_name: str, formatted_time: str):
+        """Actualizar panel de última llegada cuando un atleta cruza la meta"""
+        text = f"{athlete_name}  |  {distance_name}  |  {formatted_time}"
+        self.last_finish_label.setText(text)
+        self.last_finish_label.setStyleSheet(
+            "color: #00ff88; font-size: 13px; font-weight: bold; background: transparent; border: none;"
+        )
+
     def update_antenna_roles_from_config(self, antennas_config):
         """
         🔥 MÉTODO CRÍTICO: Actualizar roles desde configuración

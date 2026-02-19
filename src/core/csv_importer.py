@@ -500,27 +500,26 @@ class CSVAthleteImporter:
             logger.debug(f"No se pudo limpiar teléfono: {telefono}")
             return None
 
-    def create_distances(self, parent_widget=None, show_checkpoint_dialog: bool = True) -> List[RaceDistance]:
+    def create_distances(self, parent_widget=None, show_checkpoint_dialog: bool = False) -> List[RaceDistance]:
         """
-        Crear objetos RaceDistance basados en los atletas importados
+        Crear objetos RaceDistance basados en los atletas importados.
+        Los checkpoints se crean con 0 por defecto; el usuario los configura
+        después mediante "Editar Seleccionada" en Gestión de Eventos.
 
         Args:
-            parent_widget: Widget padre para mostrar diálogos (opcional)
-            show_checkpoint_dialog: Si es True, muestra diálogo para confirmar checkpoints
+            parent_widget: Widget padre (reservado para compatibilidad)
+            show_checkpoint_dialog: Ignorado — ya no se usa inferencia automática
 
         Returns:
             List[RaceDistance]: Lista de distancias con participantes
         """
-        from PyQt6.QtWidgets import QDialog
-
         distances = []
 
         for distance_id, athletes in self.athletes_by_category.items():
             if not athletes:
                 continue
 
-            # Obtener info de la distancia
-            # Buscar en el mapeo de distancias
+            # Buscar info de la distancia en el mapeo
             dist_info = None
             for dist, info in self.DISTANCE_MAPPING.items():
                 if info['distance_id'] == distance_id:
@@ -531,48 +530,16 @@ class CSVAthleteImporter:
                 logger.warning(f"⚠️  No se encontró info para distancia {distance_id}")
                 continue
 
-            # Obtener hora de largada si fue capturada del CSV
             start_time = self.distance_start_times.get(distance_id)
 
-            # Determinar checkpoints
-            inferred_checkpoints = dist_info['checkpoints']
-            expected_checkpoints = inferred_checkpoints
-
-            # 🔥 Mostrar diálogo de confirmación si está habilitado y hay parent_widget
-            if show_checkpoint_dialog and parent_widget:
-                try:
-                    from src.gui.widgets.checkpoint_config_dialog import CheckpointConfigDialog
-
-                    dialog = CheckpointConfigDialog(
-                        distance_id=distance_id,
-                        distance_name=dist_info['name'],
-                        distance_meters=dist_info['distance_m'],
-                        inferred_checkpoints=inferred_checkpoints,
-                        parent=parent_widget
-                    )
-
-                    result = dialog.exec()
-
-                    if result == QDialog.DialogCode.Accepted:
-                        expected_checkpoints = dialog.get_confirmed_checkpoints()
-                        logger.info(f"✅ Usuario confirmó {expected_checkpoints} checkpoints para {distance_id}")
-                    else:
-                        logger.info(f"⏭️  Usuario canceló configuración de {distance_id}, omitiendo...")
-                        continue  # Saltar esta distancia si el usuario canceló
-
-                except ImportError as e:
-                    logger.warning(f"⚠️  No se pudo importar CheckpointConfigDialog: {e}")
-                    # Continuar con valor inferido si hay error
-                    expected_checkpoints = inferred_checkpoints
-
-            # Crear distancia
+            # Checkpoints en 0 — el usuario los define luego
             distance = RaceDistance(
                 distance_id=distance_id,
                 name=dist_info['name'],
                 distance_meters=dist_info['distance_m'],
-                expected_checkpoints=expected_checkpoints,
-                participants=athletes.copy(),  # Copiar lista de atletas
-                start_time=start_time,  # Puede ser None si no vino en CSV
+                expected_checkpoints=0,
+                participants=athletes.copy(),
+                start_time=start_time,
                 notes=f"Importado desde CSV - {len(athletes)} participantes"
             )
 
@@ -581,8 +548,7 @@ class CSVAthleteImporter:
             if start_time:
                 logger.info(f"✅ Distancia creada: {distance.name} ({len(athletes)} atletas) - Largada: {start_time.strftime('%H:%M')}")
             else:
-                logger.info(f"✅ Distancia creada: {distance.name} ({len(athletes)} atletas) - ⚠️ Sin hora de largada")
-                logger.info(f"   💡 Configura la hora de largada antes de usar las antenas")
+                logger.info(f"✅ Distancia creada: {distance.name} ({len(athletes)} atletas)")
 
         return distances
 
