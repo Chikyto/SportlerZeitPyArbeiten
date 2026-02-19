@@ -250,7 +250,13 @@ class RaceMonitoringWidget(QWidget):
 
     def refresh_podiums(self):
         """Actualizar visualización de podios"""
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info("🔄 Actualizando podios...")
+
         if not self.race_manager:
+            logger.warning("  ⚠️  No hay race_manager")
             return
 
         # Limpiar layout actual
@@ -261,6 +267,8 @@ class RaceMonitoringWidget(QWidget):
 
         # Obtener categoría seleccionada
         selected_text = self.podiums_category_combo.currentText()
+        logger.info(f"  Distancia seleccionada: {selected_text}")
+
         if selected_text == "Selecciona una distancia":
             info_label = QLabel("Selecciona una distancia para ver los podios clasificados por categoría de premiación.")
             info_label.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
@@ -272,10 +280,13 @@ class RaceMonitoringWidget(QWidget):
 
         # Obtener top_n
         top_n = int(self.podium_top_n_combo.currentText())
+        logger.info(f"  Top N: {top_n}")
 
         # Obtener podios
         try:
+            logger.info(f"  Obteniendo podios para {race_category_id}...")
             podiums = self.race_manager.get_podium_by_award_category(race_category_id, top_n=top_n)
+            logger.info(f"  Podios obtenidos: {len(podiums)} categorías")
 
             if not podiums:
                 no_data_label = QLabel("No hay resultados finalizados aún.")
@@ -483,12 +494,55 @@ class RaceMonitoringWidget(QWidget):
 
                     writer.writerow([])  # Línea vacía entre categorías
 
+                # Clasificación General por Género
+                writer.writerow([])
+                writer.writerow(["=" * 80])
+                writer.writerow(["CLASIFICACIÓN GENERAL POR GÉNERO"])
+                writer.writerow(["=" * 80])
+                writer.writerow([])
+
+                results_by_gender = self.race_manager.get_results_by_gender(race_category_id, only_finished=True)
+
+                for gender_key, gender_name in [("M", "GENERAL MASCULINO"), ("F", "GENERAL FEMENINO")]:
+                    gender_results = results_by_gender.get(gender_key, [])
+                    if not gender_results:
+                        continue
+
+                    writer.writerow([gender_name])
+                    writer.writerow([
+                        "Pos",
+                        "Dorsal",
+                        "Nombre",
+                        "Tiempo",
+                        "Categoría",
+                        "Edad",
+                        "Equipo"
+                    ])
+
+                    for position, result in enumerate(gender_results[:top_n], 1):
+                        age = result.athlete.get_age()
+                        age_str = str(age) if age is not None else "N/D"
+
+                        writer.writerow([
+                            position,
+                            result.athlete.bib_number,
+                            result.athlete.name,
+                            result.get_formatted_time(),
+                            result.athlete.get_category() or "N/D",
+                            age_str,
+                            result.athlete.team or ""
+                        ])
+
+                    writer.writerow([])  # Línea vacía
+
                 # Estadísticas generales al final
                 writer.writerow([])
                 writer.writerow(["ESTADÍSTICAS GENERALES"])
                 writer.writerow(["Total de categorías de premiación:", len(podiums)])
                 total_podium_positions = sum(len(p) for p in podiums.values())
                 writer.writerow(["Total de posiciones en podios:", total_podium_positions])
+                writer.writerow(["Finalizadores masculinos:", len(results_by_gender.get('M', []))])
+                writer.writerow(["Finalizadores femeninos:", len(results_by_gender.get('F', []))])
 
             QMessageBox.information(
                 self,
@@ -509,6 +563,10 @@ class RaceMonitoringWidget(QWidget):
         """Exportar clasificación general a PDF"""
         from PyQt6.QtWidgets import QFileDialog, QMessageBox
         from src.utils.pdf_exporter import PDFExporter
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info("📕 Exportación a PDF General iniciada")
 
         if not self.race_manager:
             QMessageBox.warning(self, "Sin Race Manager", "No hay race manager configurado")
@@ -516,13 +574,18 @@ class RaceMonitoringWidget(QWidget):
 
         # Obtener distancia seleccionada
         race_category_id = self.category_combo.currentText()
+        logger.info(f"  Distancia seleccionada: {race_category_id}")
+
         if not race_category_id:
             QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero")
             return
 
         distance = self.race_manager.get_distance(race_category_id)
         if not distance:
+            logger.error(f"  ❌ Distancia {race_category_id} no encontrada")
             return
+
+        logger.info(f"  Distancia: {distance.name} ({len(distance.participants)} participantes)")
 
         try:
             # Diálogo para seleccionar archivo
@@ -534,23 +597,44 @@ class RaceMonitoringWidget(QWidget):
             )
 
             if not file_path:
+                logger.info("  Usuario canceló selección de archivo")
                 return
+
+            logger.info(f"  Archivo de salida: {file_path}")
 
             # Obtener resultados
             results = self.race_manager.get_results(race_category_id)
+            logger.info(f"  Resultados obtenidos: {len(results)}")
 
-            # Obtener nombre del evento
+            if not results:
+                QMessageBox.warning(self, "Sin resultados", "No hay resultados para exportar")
+                return
+
+            # Obtener nombre del evento desde el tab de configuración
             event_name = "Carrera"
-            if hasattr(self.parent(), 'event_name_input'):
-                event_name = self.parent().event_name_input.text() or "Carrera"
+            try:
+                # Buscar el tab de event_config en la ventana principal
+                main_window = self.window()
+                if hasattr(main_window, 'tab_manager'):
+                    event_config_tab = main_window.tab_manager.get_tab('event_config')
+                    if event_config_tab and hasattr(event_config_tab, 'event_name_input'):
+                        event_name = event_config_tab.event_name_input.text() or "Carrera"
+                        logger.info(f"  Nombre del evento: {event_name}")
+            except Exception as e:
+                logger.warning(f"  No se pudo obtener nombre del evento: {e}, usando 'Carrera'")
 
             # Crear exporter
+            logger.info("  Creando PDFExporter...")
             exporter = PDFExporter(event_name=event_name)
+
+            logger.info("  Generando PDF...")
             exporter.export_general_classification(
                 distance_name=distance.name,
                 results=results,
                 output_path=file_path
             )
+
+            logger.info(f"✅ PDF generado exitosamente: {file_path}")
 
             QMessageBox.information(
                 self,
@@ -559,14 +643,17 @@ class RaceMonitoringWidget(QWidget):
             )
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error exportando PDF:\n{str(e)}")
-            import logging
-            logging.error(f"Error en export_pdf_general: {e}", exc_info=True)
+            logger.error(f"❌ Error en export_pdf_general: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Error exportando PDF:\n{str(e)}\n\nRevisa la consola para más detalles")
 
     def export_pdf_by_gender(self):
         """Exportar clasificación por género a PDF"""
         from PyQt6.QtWidgets import QFileDialog, QMessageBox
         from src.utils.pdf_exporter import PDFExporter
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info("📗 Exportación a PDF por Género iniciada")
 
         if not self.race_manager:
             QMessageBox.warning(self, "Sin Race Manager", "No hay race manager configurado")
@@ -590,14 +677,24 @@ class RaceMonitoringWidget(QWidget):
             )
 
             if not file_path:
+                logger.info("  Usuario canceló selección de archivo")
                 return
 
             # Obtener clasificación por género
             results_by_gender = self.race_manager.get_results_by_gender(race_category_id)
+            logger.info(f"  Masculino: {len(results_by_gender.get('M', []))}")
+            logger.info(f"  Femenino: {len(results_by_gender.get('F', []))}")
 
+            # Obtener nombre del evento
             event_name = "Carrera"
-            if hasattr(self.parent(), 'event_name_input'):
-                event_name = self.parent().event_name_input.text() or "Carrera"
+            try:
+                main_window = self.window()
+                if hasattr(main_window, 'tab_manager'):
+                    event_config_tab = main_window.tab_manager.get_tab('event_config')
+                    if event_config_tab and hasattr(event_config_tab, 'event_name_input'):
+                        event_name = event_config_tab.event_name_input.text() or "Carrera"
+            except:
+                pass
 
             exporter = PDFExporter(event_name=event_name)
             exporter.export_classification_by_gender(
@@ -606,6 +703,8 @@ class RaceMonitoringWidget(QWidget):
                 output_path=file_path
             )
 
+            logger.info(f"✅ PDF por género generado: {file_path}")
+
             QMessageBox.information(
                 self,
                 "Éxito",
@@ -613,9 +712,8 @@ class RaceMonitoringWidget(QWidget):
             )
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error exportando PDF:\n{str(e)}")
-            import logging
-            logging.error(f"Error en export_pdf_by_gender: {e}", exc_info=True)
+            logger.error(f"❌ Error en export_pdf_by_gender: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Error exportando PDF:\n{str(e)}\n\nRevisa la consola para más detalles")
 
     def export_pdf_by_category(self):
         """Exportar clasificación por categorías IAAF a PDF"""

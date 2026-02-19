@@ -312,6 +312,10 @@ class YR9011USBScanner(QObject):
             if len(data) < 16:
                 return None
 
+            # DEBUG: Mostrar todos los bytes del paquete para comparación con TCP/IP
+            full_hex = ' '.join(f'{b:02x}' for b in data)
+            logger.info(f"🔍 DEBUG USB - Paquete completo: [{full_hex}]")
+
             # Extraer UID - posiciones -3 y -2 (penúltimos 2 bytes)
             # Esto lee correctamente "8587" en lugar de "0085"
             uid_bytes = data[-3:-1]
@@ -320,12 +324,13 @@ class YR9011USBScanner(QObject):
                 return None
 
             uid_hex = uid_bytes.hex().upper()
+            logger.info(f"🔍 DEBUG USB - Bytes extraídos data[-3:-1]: [{uid_bytes.hex()}] → '{uid_hex}'")
 
             # Normalizar ID para consistencia con TCP/IP scanner
             from src.core.tag_parser import TagParser
             uid_normalized = TagParser.normalize_tag_id(uid_hex)
 
-            logger.debug(f"Tag parseado: UID={uid_hex} → normalizado={uid_normalized}")
+            logger.info(f"🔍 DEBUG USB - normalize_tag_id() '{uid_hex}' → '{uid_normalized}'")
 
             return uid_normalized
 

@@ -21,46 +21,47 @@ class TagParser:
         Ignora los últimos bytes que pueden ser contadores o metadata
         """
         self.detection_stats['total'] += 1
-        
+
         if len(epc_data) < 2:
             self.detection_stats['invalid'] += 1
             return None
-        
-        # Debug opcional
-        if self.debug:
-            debug_data = epc_data[:min(12, len(epc_data))]
-            print(f"    Debug EPC: {' '.join(f'{b:02x}' for b in debug_data)}")
-        
+
+        # ALWAYS show debug for troubleshooting chip 0818
+        debug_data = epc_data[:min(12, len(epc_data))]
+        logger.info(f"🔍 TagParser.extract_tag_number() - EPC recibido ({len(epc_data)} bytes): {' '.join(f'{b:02x}' for b in debug_data)}")
+
         # Encontrar donde empiezan los bytes significativos
         significant_start = 0
         for i, byte in enumerate(epc_data):
             if byte != 0x00:
                 significant_start = i
                 break
-        
+
         significant_bytes = epc_data[significant_start:]
-        
+        logger.info(f"🔍 TagParser - Bytes significativos (sin leading 00): {' '.join(f'{b:02x}' for b in significant_bytes)}")
+
         if len(significant_bytes) < 2:
             self.detection_stats['invalid'] += 1
             return None
-        
+
         # ⭐ Tomar solo los primeros bytes ESTABLES
         # NO usar los últimos que pueden variar
         if len(significant_bytes) >= 4:
             # Si hay 4+ bytes, usar los primeros 4
             stable_bytes = significant_bytes[:4]
+            logger.info(f"🔍 TagParser - Caso >=4 bytes: tomando primeros 4")
         elif len(significant_bytes) >= 2:
             # Si hay 2-3 bytes, usar los primeros 2
             stable_bytes = significant_bytes[:2]
+            logger.info(f"🔍 TagParser - Caso 2-3 bytes: tomando primeros 2")
         else:
             stable_bytes = significant_bytes
-        
+            logger.info(f"🔍 TagParser - Caso <2 bytes: tomando todos")
+
         # Formatear como hex (sin los bytes variables)
         tag_number = ''.join(f'{b:02X}' for b in stable_bytes)
-        
-        if self.debug:
-            print(f"    → Número estable: {tag_number}")
-        
+        logger.info(f"🔍 TagParser - stable_bytes: [{' '.join(f'{b:02x}' for b in stable_bytes)}] → '{tag_number}'")
+
         self.detection_stats['valid'] += 1
         return tag_number
     

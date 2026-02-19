@@ -220,11 +220,18 @@ class AdvancedYR8900Scanner:
                         epc_data = packet[7:epc_end]
                         
                         if len(epc_data) > 0:
+                            # DEBUG: Mostrar bytes raw del EPC
+                            epc_hex = ' '.join(f'{b:02x}' for b in epc_data)
+                            print(f"{Fore.CYAN}DEBUG TCP/IP - EPC raw: [{epc_hex}]")
+
                             tag_number = self.parser.extract_tag_number(epc_data)
+                            print(f"{Fore.CYAN}DEBUG TCP/IP - extract_tag_number() → '{tag_number}'")
 
                             # Normalizar ID para consistencia con USB scanner
                             if tag_number:
+                                tag_number_before = tag_number
                                 tag_number = self.parser.normalize_tag_id(tag_number)
+                                print(f"{Fore.CYAN}DEBUG TCP/IP - normalize_tag_id() '{tag_number_before}' → '{tag_number}'")
 
                             if tag_number and tag_number != "N/A":
                                 # ⭐ CRÍTICO: freq_ant ya contiene el puerto correcto
