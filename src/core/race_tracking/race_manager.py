@@ -566,11 +566,55 @@ class RaceManager:
         for distance in all_distances:
             for participant in distance.participants:
                 if participant.tag_id:
-                    logger.debug(f"     - '{participant.tag_id}' → {participant.name}")
+                    aliases_str = f" [aliases: {participant.chip_aliases}]" if participant.chip_aliases else ""
+                    logger.debug(f"     - '{participant.tag_id}'{aliases_str} → {participant.name}")
                     chip_count += 1
         logger.warning(f"   Total de chips asignados: {chip_count}")
 
         return None, None
+
+    def register_chip_alias(self, alias_tag_id: str, athlete_id: str) -> bool:
+        """
+        Registrar un ID alternativo (alias) para el chip de un atleta.
+
+        Útil cuando un mismo chip físico es reportado con IDs diferentes por
+        distintos escáneres (USB vs TCP/IP). Ambos IDs quedan asociados al atleta.
+
+        Args:
+            alias_tag_id: ID alternativo detectado (ej: "E3806894" por TCP/IP)
+            athlete_id: ID UUID del atleta al que pertenece el chip
+
+        Returns:
+            True si se registró correctamente, False si hubo error
+        """
+        for distance in self.distances.values():
+            for athlete in distance.participants:
+                if athlete.athlete_id == athlete_id:
+                    added = athlete.add_chip_alias(alias_tag_id)
+                    if added:
+                        logger.info(
+                            f"✅ Alias registrado: '{alias_tag_id}' → {athlete.name} "
+                            f"(chip principal: '{athlete.tag_id}')"
+                        )
+                    else:
+                        logger.info(f"ℹ️  Alias '{alias_tag_id}' ya existía para {athlete.name}")
+                    return True
+        logger.warning(f"❌ No se encontró atleta con ID {athlete_id}")
+        return False
+
+    def get_all_athletes_with_chips(self) -> list:
+        """
+        Obtener lista de todos los atletas que tienen chip asignado.
+
+        Returns:
+            Lista de tuplas (athlete, distance_name)
+        """
+        result = []
+        for distance in self.distances.values():
+            for athlete in distance.participants:
+                if athlete.has_chip_assigned():
+                    result.append((athlete, distance.name))
+        return result
     
     def _determine_event_type(
         self,

@@ -20,6 +20,7 @@ from ..core.race_tracking.models import EventType
 from .managers.antenna_manager import AntennaManager
 from .managers.tab_manager import TabManager
 from .widgets.finish_ticket_dialog import FinishTicketDialog
+from .widgets.chip_alias_dialog import ChipAliasDialog
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,8 @@ class MainWindow(QMainWindow):
         self.race_manager = RaceManager()  # Sistema de timing de carreras
         self.signals = AppSignals()
         self.scanner = None
+        # Set para evitar mostrar el diálogo de alias más de una vez por chip
+        self._shown_alias_dialogs: set = set()
 
         # Setup
         self.setWindowTitle("RFID Athletics Timer")
@@ -202,6 +205,9 @@ class MainWindow(QMainWindow):
         # 🎟️ Señal de atleta llegando a meta → mostrar ticket
         self.signals.athlete_finished.connect(self.on_athlete_finished_show_ticket)
 
+        # 🔗 Chip desconocido → mostrar diálogo para registrar alias
+        self.signals.unknown_chip_detected.connect(self.on_unknown_chip_detected)
+
         logger.info("✅ Señales conectadas")
     
     @pyqtSlot(bool, str)
@@ -289,6 +295,10 @@ class MainWindow(QMainWindow):
                     result = self.race_manager.results.get(distance.distance_id, {}).get(athlete.athlete_id)
                     formatted_time = result.get_formatted_time() if result else "N/A"
                     self.signals.athlete_finished.emit(athlete.name, distance.name, formatted_time)
+            elif not athlete and self.signals:
+                # Chip desconocido: emitir señal para que el usuario pueda registrar alias
+                logger.warning(f"⚠️  Chip desconocido '{tag_id}' - emitiendo señal para registro de alias")
+                self.signals.unknown_chip_detected.emit(tag_id)
 
         except Exception as e:
             logger.error(f"❌ Error procesando detección para carrera: {e}")
@@ -409,6 +419,73 @@ class MainWindow(QMainWindow):
             logger.error(f"❌ Error mostrando ticket: {e}")
             import traceback
             traceback.print_exc()
+            import traceback
+            traceback.print_exc()
+
+    @pyqtSlot(str)
+    def on_unknown_chip_detected(self, tag_id: str):
+        """
+        Manejar detección de chip desconocido.
+
+        Muestra un diálogo (una sola vez por chip) para que el usuario
+        lo asocie como alias de un atleta ya registrado. Útil cuando USB
+        y TCP/IP reportan IDs distintos del mismo chip físico.
+
+        Args:
+            tag_id: ID del chip detectado que no está en la base de datos
+        """
+        try:
+            # Mostrar el diálogo solo una vez por chip desconocido
+            if tag_id in self._shown_alias_dialogs:
+                return
+            self._shown_alias_dialogs.add(tag_id)
+
+            athletes_with_chips = self.race_manager.get_all_athletes_with_chips()
+
+            if not athletes_with_chips:
+                logger.warning(f"⚠️  Chip '{tag_id}' desconocido, pero no hay atletas con chip asignado para comparar")
+                return
+
+            dialog = ChipAliasDialog(
+                unknown_tag_id=tag_id,
+                athletes_with_chips=athletes_with_chips,
+                parent=self
+            )
+            dialog.alias_registered.connect(self._on_alias_confirmed)
+
+            if dialog.exec():
+                # Si aceptó, el alias quedó registrado → limpiar del set para no bloquear futuras re-detecciones
+                self._shown_alias_dialogs.discard(tag_id)
+
+        except Exception as e:
+            logger.error(f"❌ Error mostrando diálogo de alias: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _on_alias_confirmed(self, alias_tag_id: str, athlete_id: str):
+        """
+        Procesar confirmación de registro de alias.
+
+        Args:
+            alias_tag_id: ID alternativo a registrar
+            athlete_id: UUID del atleta al que pertenece
+        """
+        try:
+            success = self.race_manager.register_chip_alias(alias_tag_id, athlete_id)
+            if success:
+                # Guardar los cambios en disco
+                chip_assignment_widget = self.tab_manager.get_tab('chip_assignment')
+                if chip_assignment_widget and hasattr(chip_assignment_widget, 'auto_save_data'):
+                    chip_assignment_widget.auto_save_data()
+                    logger.info(f"💾 Alias guardado en disco")
+                else:
+                    # Fallback: guardar directamente con persistence
+                    from src.core.race_data_persistence import RaceDataPersistence
+                    persistence = RaceDataPersistence()
+                    persistence.save_race_data(self.race_manager)
+                    logger.info(f"💾 Alias guardado (fallback)")
+        except Exception as e:
+            logger.error(f"❌ Error guardando alias: {e}")
             import traceback
             traceback.print_exc()
 
