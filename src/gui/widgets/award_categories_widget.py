@@ -337,7 +337,7 @@ class AwardCategoriesWidget(QWidget):
         elif "5 años" in preset:
             # Preset por 5 años: Sub-19, 20-24, 25-29, 30-34, 35-39, 40-44, 45-49, 50-54, 55-59, 60+
             categories_5y = [
-                ("M_Sub19", "Masculino Sub-19", "M", None, 18),
+                ("M_Sub19", "Masculino Sub-19", "M", 0, 18),
                 ("M_20-24", "Masculino 20-24", "M", 20, 24),
                 ("M_25-29", "Masculino 25-29", "M", 25, 29),
                 ("M_30-34", "Masculino 30-34", "M", 30, 34),
@@ -347,7 +347,7 @@ class AwardCategoriesWidget(QWidget):
                 ("M_50-54", "Masculino 50-54", "M", 50, 54),
                 ("M_55-59", "Masculino 55-59", "M", 55, 59),
                 ("M_60+", "Masculino 60+", "M", 60, None),
-                ("F_Sub19", "Femenino Sub-19", "F", None, 18),
+                ("F_Sub19", "Femenino Sub-19", "F", 0, 18),
                 ("F_20-24", "Femenino 20-24", "F", 20, 24),
                 ("F_25-29", "Femenino 25-29", "F", 25, 29),
                 ("F_30-34", "Femenino 30-34", "F", 30, 34),
@@ -372,13 +372,13 @@ class AwardCategoriesWidget(QWidget):
         elif "10 años" in preset:
             # Preset por 10 años: Sub-19, 20-29, 30-39, 40-49, 50-59, 60+
             categories_10y = [
-                ("M_Sub19", "Masculino Sub-19", "M", None, 18),
+                ("M_Sub19", "Masculino Sub-19", "M", 0, 18),
                 ("M_20-29", "Masculino 20-29", "M", 20, 29),
                 ("M_30-39", "Masculino 30-39", "M", 30, 39),
                 ("M_40-49", "Masculino 40-49", "M", 40, 49),
                 ("M_50-59", "Masculino 50-59", "M", 50, 59),
                 ("M_60+", "Masculino 60+", "M", 60, None),
-                ("F_Sub19", "Femenino Sub-19", "F", None, 18),
+                ("F_Sub19", "Femenino Sub-19", "F", 0, 18),
                 ("F_20-29", "Femenino 20-29", "F", 20, 29),
                 ("F_30-39", "Femenino 30-39", "F", 30, 39),
                 ("F_40-49", "Femenino 40-49", "F", 40, 49),
