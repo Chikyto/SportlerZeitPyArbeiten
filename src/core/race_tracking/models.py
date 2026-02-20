@@ -266,9 +266,10 @@ class RaceDistance:
         if any(p.athlete_id == athlete.athlete_id for p in self.participants):
             raise ValueError(f"Atleta {athlete.name} ya está inscrito en esta distancia")
 
-        # Verificar que no haya tag_id duplicado
-        if any(p.tag_id == athlete.tag_id for p in self.participants):
-            raise ValueError(f"Tag {athlete.tag_id} ya está asignado a otro atleta")
+        # Verificar que no haya tag_id duplicado (solo si el tag no está vacío)
+        if athlete.tag_id and athlete.tag_id.strip():
+            if any(p.tag_id == athlete.tag_id for p in self.participants):
+                raise ValueError(f"Tag {athlete.tag_id} ya está asignado a otro atleta")
 
         # Verificar que no haya dorsal duplicado
         if any(p.bib_number == athlete.bib_number for p in self.participants):
