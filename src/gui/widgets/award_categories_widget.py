@@ -360,7 +360,7 @@ class AwardCategoriesWidget(QWidget):
             ]
             for cat_id, name, gender, min_age, max_age in categories_5y:
                 cat = AwardCategory(
-                    category_id=cat_id,
+                    award_category_id=cat_id,
                     name=name,
                     gender=gender,
                     min_age=min_age,
@@ -387,7 +387,7 @@ class AwardCategoriesWidget(QWidget):
             ]
             for cat_id, name, gender, min_age, max_age in categories_10y:
                 cat = AwardCategory(
-                    category_id=cat_id,
+                    award_category_id=cat_id,
                     name=name,
                     gender=gender,
                     min_age=min_age,
