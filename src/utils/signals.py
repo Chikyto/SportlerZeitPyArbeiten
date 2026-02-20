@@ -60,9 +60,6 @@ class AppSignals(QObject):
     athlete_tag_resolved = pyqtSignal(str, str, str)
     # athlete_name, distance_name, formatted_time
     athlete_finished = pyqtSignal(str, str, str)
-    # Chip detectado que no está en la base de datos (para registrar alias)
-    # tag_id
-    unknown_chip_detected = pyqtSignal(str)
 
 
 # Singleton para uso global

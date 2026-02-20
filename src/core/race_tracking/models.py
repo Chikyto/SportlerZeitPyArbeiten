@@ -99,7 +99,6 @@ class Athlete:
     team: Optional[str] = None
     notes: Optional[str] = None
     athlete_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    chip_aliases: List[str] = field(default_factory=list)  # IDs alternativos del mismo chip
 
     def __post_init__(self):
         """Validar datos al crear"""
@@ -114,39 +113,6 @@ class Athlete:
     def has_chip_assigned(self) -> bool:
         """Verifica si el atleta tiene chip asignado"""
         return bool(self.tag_id and self.tag_id.strip())
-
-    def matches_tag(self, tag_id: str) -> bool:
-        """
-        Verificar si un tag_id coincide con este atleta (tag principal o alias)
-
-        Args:
-            tag_id: ID del chip a verificar
-
-        Returns:
-            True si coincide con el tag principal o algún alias
-        """
-        if self.tag_id == tag_id:
-            return True
-        return tag_id in self.chip_aliases
-
-    def add_chip_alias(self, alias_tag_id: str) -> bool:
-        """
-        Agregar un alias de chip (ID alternativo para el mismo chip físico)
-
-        Útil cuando USB y TCP/IP reportan diferentes IDs para el mismo chip.
-
-        Args:
-            alias_tag_id: ID alternativo a registrar
-
-        Returns:
-            True si se agregó, False si ya existía
-        """
-        if alias_tag_id == self.tag_id:
-            return False
-        if alias_tag_id in self.chip_aliases:
-            return False
-        self.chip_aliases.append(alias_tag_id)
-        return True
 
     def get_age(self) -> Optional[int]:
         """
@@ -329,11 +295,7 @@ class RaceDistance:
     
     def get_participant_by_tag(self, tag_id: str) -> Optional[Athlete]:
         """
-        Buscar participante por tag_id o alias
-
-        Busca primero por tag_id principal, luego por aliases.
-        Esto soporta chips que son detectados con IDs diferentes por
-        USB (ej: "818") vs TCP/IP (ej: "E3806894").
+        Buscar participante por tag_id
 
         Args:
             tag_id: ID del chip RFID
@@ -342,7 +304,7 @@ class RaceDistance:
             Athlete si se encuentra, None si no
         """
         for athlete in self.participants:
-            if athlete.matches_tag(tag_id):
+            if athlete.tag_id == tag_id:
                 return athlete
         return None
     
