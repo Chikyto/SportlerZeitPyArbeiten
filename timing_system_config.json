@@ -4,18 +4,19 @@
     "port": 4001,
     "verified": true
   },
-  "power_dbm": 25,
+  "power_dbm": 30,
   "antennas": {
     "5": {
       "enabled": true,
-      "name": "largada + llegada",
-      "description": "Antena puerto 5: largada + llegada",
+      "name": "largada + checkpoint + llegada",
+      "description": "Antena puerto 5: largada + checkpoint + llegada",
       "start": true,
       "finish": true,
-      "checkpoint": false,
+      "checkpoint": true,
       "power_level": 25,
       "functions": [
         "largada",
+        "checkpoint",
         "llegada"
       ]
     }
