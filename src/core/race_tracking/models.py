@@ -595,9 +595,9 @@ class AwardCategory:
             raise ValueError("award_category_id no puede estar vacío")
         if not self.name:
             raise ValueError("name no puede estar vacío")
-        if self.min_age < 0:
+        if self.min_age is not None and self.min_age < 0:
             raise ValueError("min_age debe ser >= 0")
-        if self.max_age is not None and self.max_age < self.min_age:
+        if self.max_age is not None and self.min_age is not None and self.max_age < self.min_age:
             raise ValueError("max_age debe ser >= min_age")
         if self.gender and self.gender.upper() not in ['M', 'F', 'O', None]:
             # Normalizar género
