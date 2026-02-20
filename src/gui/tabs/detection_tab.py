@@ -10,7 +10,7 @@ Delegación: ScanThread para scanning, TagProcessor para lógica
 
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QGroupBox, QMessageBox, QFrame
+    QTableWidgetItem, QGroupBox, QMessageBox, QFrame, QSlider, QSpinBox
 )
 from PyQt6.QtCore import pyqtSlot, Qt
 from PyQt6.QtGui import QColor
@@ -80,7 +80,61 @@ class DetectionTab(BaseTab):
         controls_layout.addWidget(self.clear_btn)
         
         self.layout.addLayout(controls_layout)
-        
+
+        # --- Panel de potencia online ---
+        power_frame = QFrame()
+        power_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        power_frame.setStyleSheet("background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 2px;")
+        power_online_layout = QHBoxLayout(power_frame)
+        power_online_layout.setContentsMargins(8, 4, 8, 4)
+
+        power_icon = QLabel("⚡")
+        power_online_layout.addWidget(power_icon)
+
+        power_lbl = QLabel("Potencia:")
+        power_lbl.setStyleSheet("font-weight: bold; border: none; background: transparent;")
+        power_online_layout.addWidget(power_lbl)
+
+        self.online_power_slider = QSlider(Qt.Orientation.Horizontal)
+        self.online_power_slider.setRange(10, 33)
+        self.online_power_slider.setValue(25)
+        self.online_power_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.online_power_slider.setTickInterval(5)
+        self.online_power_slider.setMaximumWidth(160)
+        self.online_power_slider.valueChanged.connect(self._on_online_power_slider_changed)
+        power_online_layout.addWidget(self.online_power_slider)
+
+        self.online_power_spinbox = QSpinBox()
+        self.online_power_spinbox.setRange(10, 33)
+        self.online_power_spinbox.setValue(25)
+        self.online_power_spinbox.setSuffix(" dBm")
+        self.online_power_spinbox.setMaximumWidth(80)
+        self.online_power_spinbox.valueChanged.connect(self.online_power_slider.setValue)
+        self.online_power_slider.valueChanged.connect(self.online_power_spinbox.setValue)
+        power_online_layout.addWidget(self.online_power_spinbox)
+
+        self.online_distance_label = QLabel("≈ 3 m")
+        self.online_distance_label.setStyleSheet("color: #0f3460; font-weight: bold; border: none; background: transparent; min-width: 50px;")
+        power_online_layout.addWidget(self.online_distance_label)
+
+        self.apply_power_btn = QPushButton("Aplicar")
+        self.apply_power_btn.setToolTip("Aplicar potencia al lector RFID conectado")
+        self.apply_power_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0f3460;
+                color: white;
+                font-weight: bold;
+                padding: 3px 10px;
+                border-radius: 3px;
+            }
+            QPushButton:hover { background-color: #1a5276; }
+            QPushButton:disabled { background-color: #aaa; }
+        """)
+        self.apply_power_btn.clicked.connect(self.apply_power_online)
+        power_online_layout.addWidget(self.apply_power_btn)
+
+        self.layout.addWidget(power_frame)
+
         # Tabla de detecciones (agrupada por participante)
         self.detections_table = QTableWidget()
         self.detections_table.setColumnCount(7)
@@ -169,6 +223,71 @@ class DetectionTab(BaseTab):
         self.last_finish_label.setStyleSheet(
             "color: #00ff88; font-size: 13px; font-weight: bold; background: transparent; border: none;"
         )
+
+    def _on_online_power_slider_changed(self, value: int):
+        """Actualizar etiqueta de distancia estimada"""
+        if value <= 15:
+            dist = "≈ 1 m"
+        elif value <= 20:
+            dist = "≈ 2 m"
+        elif value <= 25:
+            dist = "≈ 3 m"
+        elif value <= 28:
+            dist = "≈ 4-5 m"
+        elif value <= 30:
+            dist = "≈ 6 m"
+        else:
+            dist = "≈ 7-8 m"
+        self.online_distance_label.setText(dist)
+
+    def apply_power_online(self):
+        """Aplicar potencia al lector RFID conectado en tiempo real"""
+        power_dbm = self.online_power_spinbox.value()
+
+        if not self.scanner:
+            QMessageBox.warning(self, "Sin conexión", "No hay lector RFID conectado.")
+            return
+
+        if not hasattr(self.scanner, 'set_output_power'):
+            QMessageBox.warning(self, "No soportado", "Este lector no soporta cambio de potencia en línea.")
+            return
+
+        try:
+            ok = self.scanner.set_output_power(power_dbm)
+            if ok:
+                self.apply_power_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #10b981;
+                        color: white;
+                        font-weight: bold;
+                        padding: 3px 10px;
+                        border-radius: 3px;
+                    }
+                """)
+                self.apply_power_btn.setText("✓ Aplicado")
+                logger.info(f"⚡ Potencia aplicada online: {power_dbm} dBm")
+                # Restaurar el botón después de 2 segundos
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(2000, self._reset_apply_power_btn)
+            else:
+                QMessageBox.warning(self, "Error", f"No se pudo aplicar {power_dbm} dBm al lector.")
+        except Exception as e:
+            logger.error(f"❌ Error aplicando potencia: {e}")
+            QMessageBox.critical(self, "Error", f"Error al aplicar potencia:\n{e}")
+
+    def _reset_apply_power_btn(self):
+        """Restaurar el botón de potencia a su estado normal"""
+        self.apply_power_btn.setText("Aplicar")
+        self.apply_power_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0f3460;
+                color: white;
+                font-weight: bold;
+                padding: 3px 10px;
+                border-radius: 3px;
+            }
+            QPushButton:hover { background-color: #1a5276; }
+        """)
 
     def update_antenna_roles_from_config(self, antennas_config):
         """
