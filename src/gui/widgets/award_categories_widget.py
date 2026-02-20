@@ -365,7 +365,7 @@ class AwardCategoriesWidget(QWidget):
                     gender=gender,
                     min_age=min_age,
                     max_age=max_age,
-                    applicable_distances=None  # Aplica a todas
+                    distance_ids=None  # Aplica a todas
                 )
                 self.race_manager.add_award_category(cat)
 
@@ -392,7 +392,7 @@ class AwardCategoriesWidget(QWidget):
                     gender=gender,
                     min_age=min_age,
                     max_age=max_age,
-                    applicable_distances=None  # Aplica a todas
+                    distance_ids=None  # Aplica a todas
                 )
                 self.race_manager.add_award_category(cat)
 
