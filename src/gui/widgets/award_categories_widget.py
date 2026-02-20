@@ -65,6 +65,31 @@ class AwardCategoriesWidget(QWidget):
         desc_label.setStyleSheet("color: #666; font-style: italic; margin-bottom: 10px;")
         layout.addWidget(desc_label)
 
+        # ====== PRESETS DE CATEGORÍAS ======
+        presets_group = QGroupBox("⚡ Presets de Categorías")
+        presets_layout = QHBoxLayout(presets_group)
+
+        preset_label = QLabel("Seleccionar preset:")
+        presets_layout.addWidget(preset_label)
+
+        self.presets_combo = QComboBox()
+        self.presets_combo.addItems([
+            "Seleccionar...",
+            "IAAF (Estándar internacional)",
+            "Por 5 años (20-24, 25-29, 30-34...)",
+            "Por 10 años (20-29, 30-39, 40-49...)"
+        ])
+        self.presets_combo.setMinimumWidth(300)
+        presets_layout.addWidget(self.presets_combo)
+
+        apply_preset_btn = QPushButton("✨ Aplicar Preset")
+        apply_preset_btn.clicked.connect(self.apply_preset)
+        apply_preset_btn.setStyleSheet("background-color: #8b5cf6; color: white; font-weight: bold; padding: 8px;")
+        presets_layout.addWidget(apply_preset_btn)
+
+        presets_layout.addStretch()
+        layout.addWidget(presets_group)
+
         # Botones de gestión
         buttons_layout = QHBoxLayout()
 
@@ -284,6 +309,96 @@ class AwardCategoriesWidget(QWidget):
                 QMessageBox.information(self, "Éxito", f"Categoría '{category.name}' eliminada")
             except ValueError as e:
                 QMessageBox.warning(self, "Error", str(e))
+
+    def apply_preset(self):
+        """Aplicar preset de categorías seleccionado"""
+        preset = self.presets_combo.currentText()
+
+        if preset == "Seleccionar...":
+            QMessageBox.warning(self, "Atención", "Por favor selecciona un preset")
+            return
+
+        reply = QMessageBox.question(
+            self, "Confirmar",
+            f"¿Aplicar preset '{preset}'?\n\n"
+            "Esto reemplazará todas las categorías actuales.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Limpiar categorías actuales
+        self.race_manager.award_categories.clear()
+
+        if "IAAF" in preset:
+            self.race_manager.reset_award_categories_to_iaaf()
+
+        elif "5 años" in preset:
+            # Preset por 5 años: Sub-19, 20-24, 25-29, 30-34, 35-39, 40-44, 45-49, 50-54, 55-59, 60+
+            categories_5y = [
+                ("M_Sub19", "Masculino Sub-19", "M", None, 18),
+                ("M_20-24", "Masculino 20-24", "M", 20, 24),
+                ("M_25-29", "Masculino 25-29", "M", 25, 29),
+                ("M_30-34", "Masculino 30-34", "M", 30, 34),
+                ("M_35-39", "Masculino 35-39", "M", 35, 39),
+                ("M_40-44", "Masculino 40-44", "M", 40, 44),
+                ("M_45-49", "Masculino 45-49", "M", 45, 49),
+                ("M_50-54", "Masculino 50-54", "M", 50, 54),
+                ("M_55-59", "Masculino 55-59", "M", 55, 59),
+                ("M_60+", "Masculino 60+", "M", 60, None),
+                ("F_Sub19", "Femenino Sub-19", "F", None, 18),
+                ("F_20-24", "Femenino 20-24", "F", 20, 24),
+                ("F_25-29", "Femenino 25-29", "F", 25, 29),
+                ("F_30-34", "Femenino 30-34", "F", 30, 34),
+                ("F_35-39", "Femenino 35-39", "F", 35, 39),
+                ("F_40-44", "Femenino 40-44", "F", 40, 44),
+                ("F_45-49", "Femenino 45-49", "F", 45, 49),
+                ("F_50-54", "Femenino 50-54", "F", 50, 54),
+                ("F_55-59", "Femenino 55-59", "F", 55, 59),
+                ("F_60+", "Femenino 60+", "F", 60, None),
+            ]
+            for cat_id, name, gender, min_age, max_age in categories_5y:
+                cat = AwardCategory(
+                    category_id=cat_id,
+                    name=name,
+                    gender=gender,
+                    min_age=min_age,
+                    max_age=max_age,
+                    applicable_distances=None  # Aplica a todas
+                )
+                self.race_manager.add_award_category(cat)
+
+        elif "10 años" in preset:
+            # Preset por 10 años: Sub-19, 20-29, 30-39, 40-49, 50-59, 60+
+            categories_10y = [
+                ("M_Sub19", "Masculino Sub-19", "M", None, 18),
+                ("M_20-29", "Masculino 20-29", "M", 20, 29),
+                ("M_30-39", "Masculino 30-39", "M", 30, 39),
+                ("M_40-49", "Masculino 40-49", "M", 40, 49),
+                ("M_50-59", "Masculino 50-59", "M", 50, 59),
+                ("M_60+", "Masculino 60+", "M", 60, None),
+                ("F_Sub19", "Femenino Sub-19", "F", None, 18),
+                ("F_20-29", "Femenino 20-29", "F", 20, 29),
+                ("F_30-39", "Femenino 30-39", "F", 30, 39),
+                ("F_40-49", "Femenino 40-49", "F", 40, 49),
+                ("F_50-59", "Femenino 50-59", "F", 50, 59),
+                ("F_60+", "Femenino 60+", "F", 60, None),
+            ]
+            for cat_id, name, gender, min_age, max_age in categories_10y:
+                cat = AwardCategory(
+                    category_id=cat_id,
+                    name=name,
+                    gender=gender,
+                    min_age=min_age,
+                    max_age=max_age,
+                    applicable_distances=None  # Aplica a todas
+                )
+                self.race_manager.add_award_category(cat)
+
+        self.refresh_table()
+        self.award_categories_changed.emit()
+        QMessageBox.information(self, "Éxito", f"Preset '{preset}' aplicado correctamente")
 
     def reset_to_iaaf(self):
         """Resetear categorías a IAAF por defecto"""

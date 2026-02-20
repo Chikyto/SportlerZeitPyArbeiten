@@ -285,10 +285,106 @@ class RaceMonitoringWidget(QWidget):
         # Obtener podios
         try:
             logger.info(f"  Obteniendo podios para {race_category_id}...")
+
+            # ========== 1. GENERALES POR GÉNERO (SIN CATEGORÍA DE EDAD) ==========
+            results_by_gender = self.race_manager.get_results_by_gender(race_category_id, only_finished=True)
+
+            for gender_key in ["M", "F"]:
+                gender_results = results_by_gender.get(gender_key, [])
+                if not gender_results:
+                    continue
+
+                gender_name = "General Masculino" if gender_key == "M" else "General Femenino"
+
+                # Crear grupo para general
+                group = QGroupBox(f"🏆 {gender_name}")
+                group.setStyleSheet("""
+                    QGroupBox {
+                        font-weight: bold;
+                        border: 3px solid #3b82f6;
+                        border-radius: 5px;
+                        margin-top: 10px;
+                        padding-top: 10px;
+                        background-color: #eff6ff;
+                    }
+                    QGroupBox::title {
+                        color: #1e40af;
+                        subcontrol-origin: margin;
+                        left: 10px;
+                        padding: 0 5px;
+                        font-size: 14px;
+                    }
+                """)
+
+                group_layout = QVBoxLayout(group)
+
+                # Crear tabla
+                podium_table = QTableWidget()
+                podium_table.setColumnCount(5)
+                podium_table.setHorizontalHeaderLabels([
+                    "Pos", "Dorsal", "Nombre", "Tiempo", "Edad"
+                ])
+
+                display_results = gender_results[:top_n]
+                podium_table.setRowCount(len(display_results))
+
+                for idx, result in enumerate(display_results):
+                    position = idx + 1
+
+                    # Posición con medalla
+                    pos_item = QTableWidgetItem()
+                    if position == 1:
+                        pos_item.setText("🥇 1°")
+                        pos_item.setBackground(QColor("#ffd700"))
+                    elif position == 2:
+                        pos_item.setText("🥈 2°")
+                        pos_item.setBackground(QColor("#c0c0c0"))
+                    elif position == 3:
+                        pos_item.setText("🥉 3°")
+                        pos_item.setBackground(QColor("#cd7f32"))
+                    else:
+                        pos_item.setText(f"{position}°")
+
+                    pos_item.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+                    podium_table.setItem(idx, 0, pos_item)
+
+                    # Dorsal
+                    podium_table.setItem(idx, 1, QTableWidgetItem(str(result.athlete.bib_number)))
+
+                    # Nombre
+                    name_item = QTableWidgetItem(result.athlete.name)
+                    name_item.setFont(QFont("Arial", 10, QFont.Weight.Bold if position <= 3 else QFont.Weight.Normal))
+                    podium_table.setItem(idx, 2, name_item)
+
+                    # Tiempo
+                    time_item = QTableWidgetItem(result.get_formatted_time())
+                    time_item.setFont(QFont("Arial", 10, QFont.Weight.Bold if position <= 3 else QFont.Weight.Normal))
+                    podium_table.setItem(idx, 3, time_item)
+
+                    # Edad
+                    age = result.athlete.get_age()
+                    age_str = f"{age} años" if age is not None else "N/D"
+                    podium_table.setItem(idx, 4, QTableWidgetItem(age_str))
+
+                # Configurar tabla
+                header = podium_table.horizontalHeader()
+                header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+                header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+                header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+                header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+                header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+
+                podium_table.setMaximumHeight(100 + (len(display_results) * 30))
+                podium_table.setAlternatingRowColors(True)
+
+                group_layout.addWidget(podium_table)
+                self.podiums_layout.addWidget(group)
+
+            # ========== 2. CATEGORÍAS DE EDAD (IAAF, etc) ==========
             podiums = self.race_manager.get_podium_by_award_category(race_category_id, top_n=top_n)
             logger.info(f"  Podios obtenidos: {len(podiums)} categorías")
 
-            if not podiums:
+            if not podiums and not results_by_gender.get("M") and not results_by_gender.get("F"):
                 no_data_label = QLabel("No hay resultados finalizados aún.")
                 no_data_label.setStyleSheet("color: #f59e0b; font-style: italic; padding: 20px;")
                 no_data_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
