@@ -266,6 +266,7 @@ class ResultsExporter:
     def _add_distance_to_pdf(self, elements, distance, config, styles):
         """Agregar resultados de una distancia al PDF"""
         from reportlab.lib import colors
+        from reportlab.lib.units import inch
         from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
         from reportlab.lib.enums import TA_CENTER
 
