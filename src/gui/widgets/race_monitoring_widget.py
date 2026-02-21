@@ -339,12 +339,24 @@ class RaceMonitoringWidget(QWidget):
 
         # Verificar si hay checkpoints
         if distance.expected_checkpoints == 0:
-            self.splits_table.setRowCount(0)
+            self.splits_table.setRowCount(1)
             self.splits_table.setColumnCount(1)
-            self.splits_table.setHorizontalHeaderLabels(["Información"])
-            self.splits_table.setItem(0, 0, QTableWidgetItem(
-                "Esta distancia no tiene checkpoints configurados"
-            ))
+            self.splits_table.setHorizontalHeaderLabels(["⚠️ Información"])
+
+            info_item = QTableWidgetItem(
+                "Esta distancia no tiene checkpoints configurados.\n\n"
+                "Para ver splits, ve a 'Gestión de Eventos' y configura\n"
+                "el número de checkpoints para esta distancia."
+            )
+            info_item.setForeground(QColor(200, 100, 0))  # Naranja
+            from PyQt6.QtGui import QFont
+            info_item.setFont(QFont("Arial", 10))
+            self.splits_table.setItem(0, 0, info_item)
+
+            # Ajustar altura de fila para mostrar mensaje completo
+            self.splits_table.setRowHeight(0, 100)
+
+            logger.info(f"  ⚠️  Distancia '{distance.name}' no tiene checkpoints configurados")
             return
 
         # Obtener resultados
@@ -698,13 +710,21 @@ class RaceMonitoringWidget(QWidget):
         self.splits_category_combo.clear()
         self.splits_category_combo.addItem("Selecciona una distancia")
 
+        count_added = 0
         for category in self.race_manager.get_all_categories():
-            # Solo mostrar categorías que tengan checkpoints configurados
-            if category.expected_checkpoints > 0:
-                # Solo mostrar categorías finalizadas o en curso
-                from src.core.race_tracking.models import RaceStatus
-                if category.status in [RaceStatus.RUNNING, RaceStatus.FINISHED]:
-                    self.splits_category_combo.addItem(f"{category.distance_id} - {category.name}")
+            # Mostrar todas las categorías RUNNING o FINISHED
+            from src.core.race_tracking.models import RaceStatus
+            if category.status in [RaceStatus.RUNNING, RaceStatus.FINISHED]:
+                # Agregar indicador si tiene checkpoints o no
+                if category.expected_checkpoints > 0:
+                    self.splits_category_combo.addItem(
+                        f"{category.distance_id} - {category.name} ({category.expected_checkpoints} CPs)"
+                    )
+                else:
+                    self.splits_category_combo.addItem(
+                        f"{category.distance_id} - {category.name} (sin CPs)"
+                    )
+                count_added += 1
 
         # Restaurar selección si es posible
         index = self.splits_category_combo.findText(current_text)

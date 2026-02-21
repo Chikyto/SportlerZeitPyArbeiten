@@ -274,10 +274,22 @@ class ExportResultsDialog(QDialog):
                     "❌ No se pudo exportar los resultados.\n\n"
                     "Verifica que:\n"
                     "• Tengas permisos de escritura\n"
-                    "• El archivo no esté abierto en otra aplicación\n"
-                    "• Para PDF: pip install reportlab\n"
-                    "• Para Excel: pip install openpyxl"
+                    "• El archivo no esté abierto en otra aplicación"
                 )
+
+        except ImportError as e:
+            # Error de librería faltante
+            missing_lib = "reportlab" if "reportlab" in str(e) else "openpyxl"
+            format_name = "PDF" if missing_lib == "reportlab" else "Excel"
+
+            QMessageBox.warning(
+                self,
+                f"Librería {missing_lib} no instalada",
+                f"⚠️ Para exportar a {format_name} necesitas instalar la librería {missing_lib}.\n\n"
+                f"Ejecuta en la terminal:\n\n"
+                f"   pip install {missing_lib}\n\n"
+                f"Mientras tanto, puedes exportar a CSV que no requiere librerías adicionales."
+            )
 
         except Exception as e:
             logger.error(f"❌ Error en exportación: {e}")

@@ -190,18 +190,19 @@ class ResultsExporter:
         Returns:
             bool: True si la exportación fue exitosa
         """
+        # Intentar importar reportlab
         try:
-            # Intentar importar reportlab
-            try:
-                from reportlab.lib import colors
-                from reportlab.lib.pagesizes import A4, letter
-                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-                from reportlab.lib.units import inch
-                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-                from reportlab.lib.enums import TA_CENTER, TA_LEFT
-            except ImportError:
-                logger.error("❌ reportlab no está instalado. Instala con: pip install reportlab")
-                return False
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4, letter
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+            from reportlab.lib.enums import TA_CENTER, TA_LEFT
+        except ImportError:
+            logger.error("❌ reportlab no está instalado. Instala con: pip install reportlab")
+            raise ImportError("Librería reportlab no instalada")
+
+        try:
 
             config = config or ExportConfig()
 
@@ -331,14 +332,15 @@ class ResultsExporter:
         Returns:
             bool: True si la exportación fue exitosa
         """
+        # Intentar importar openpyxl
         try:
-            # Intentar importar openpyxl
-            try:
-                from openpyxl import Workbook
-                from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-            except ImportError:
-                logger.error("❌ openpyxl no está instalado. Instala con: pip install openpyxl")
-                return False
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        except ImportError:
+            logger.error("❌ openpyxl no está instalado. Instala con: pip install openpyxl")
+            raise ImportError("Librería openpyxl no instalada")
+
+        try:
 
             config = config or ExportConfig()
 
