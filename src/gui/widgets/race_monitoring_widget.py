@@ -893,13 +893,17 @@ class RaceMonitoringWidget(QWidget):
             QMessageBox.warning(self, "Sin Race Manager", "No hay race manager configurado")
             return
 
-        # Obtener distancia seleccionada
-        race_category_id = self.category_combo.currentText()
-        logger.info(f"  Distancia seleccionada: {race_category_id}")
+        # Obtener distancia seleccionada del combo de podios
+        selected_text = self.podiums_category_combo.currentText()
+        logger.info(f"  Distancia seleccionada: {selected_text}")
 
-        if not race_category_id:
-            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero")
+        if selected_text == "Selecciona una distancia" or not selected_text:
+            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero en el tab de Podios")
             return
+
+        # Extraer distance_id del formato "distance_id - nombre"
+        race_category_id = selected_text.split(" - ")[0]
+        logger.info(f"  Distance ID extraído: {race_category_id}")
 
         distance = self.race_manager.get_distance(race_category_id)
         if not distance:
@@ -980,13 +984,18 @@ class RaceMonitoringWidget(QWidget):
             QMessageBox.warning(self, "Sin Race Manager", "No hay race manager configurado")
             return
 
-        race_category_id = self.category_combo.currentText()
-        if not race_category_id:
-            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero")
+        # Obtener distancia del combo de podios
+        selected_text = self.podiums_category_combo.currentText()
+        if selected_text == "Selecciona una distancia" or not selected_text:
+            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero en el tab de Podios")
             return
+
+        race_category_id = selected_text.split(" - ")[0]
+        logger.info(f"  Distance ID: {race_category_id}")
 
         distance = self.race_manager.get_distance(race_category_id)
         if not distance:
+            logger.error(f"  ❌ Distancia {race_category_id} no encontrada")
             return
 
         try:
@@ -1045,13 +1054,18 @@ class RaceMonitoringWidget(QWidget):
             QMessageBox.warning(self, "Sin Race Manager", "No hay race manager configurado")
             return
 
-        race_category_id = self.category_combo.currentText()
-        if not race_category_id:
-            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero")
+        # Obtener distancia del combo de podios
+        selected_text = self.podiums_category_combo.currentText()
+        if selected_text == "Selecciona una distancia" or not selected_text:
+            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero en el tab de Podios")
             return
+
+        race_category_id = selected_text.split(" - ")[0]
+        logger.info(f"  Distance ID: {race_category_id}")
 
         distance = self.race_manager.get_distance(race_category_id)
         if not distance:
+            logger.error(f"  ❌ Distancia {race_category_id} no encontrada")
             return
 
         try:
@@ -1099,13 +1113,18 @@ class RaceMonitoringWidget(QWidget):
             QMessageBox.warning(self, "Sin Race Manager", "No hay race manager configurado")
             return
 
-        race_category_id = self.category_combo.currentText()
-        if not race_category_id:
-            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero")
+        # Obtener distancia del combo de podios
+        selected_text = self.podiums_category_combo.currentText()
+        if selected_text == "Selecciona una distancia" or not selected_text:
+            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero en el tab de Podios")
             return
+
+        race_category_id = selected_text.split(" - ")[0]
+        logger.info(f"  Distance ID: {race_category_id}")
 
         distance = self.race_manager.get_distance(race_category_id)
         if not distance:
+            logger.error(f"  ❌ Distancia {race_category_id} no encontrada")
             return
 
         try:
