@@ -45,7 +45,22 @@ class RaceMonitoringWidget(QWidget):
         self.auto_refresh_btn.clicked.connect(self.toggle_auto_refresh)
         self.auto_refresh_btn.setStyleSheet("background-color: green; color: white;")
         controls_layout.addWidget(self.auto_refresh_btn)
-        
+
+        # Botón de exportación
+        self.export_btn = QPushButton("📊 Exportar Resultados")
+        self.export_btn.clicked.connect(self.show_export_dialog)
+        self.export_btn.setStyleSheet("""
+            QPushButton {
+                background: #3b82f6;
+                color: white;
+                padding: 8px 15px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background: #2563eb; }
+        """)
+        controls_layout.addWidget(self.export_btn)
+
         controls_layout.addStretch()
         
         # Estado del sistema
@@ -1200,3 +1215,25 @@ PARTICIPANTES POR DISTANCIA:
         lines = text.split('\n')
         if len(lines) > 50:
             self.events_log.setPlainText('\n'.join(lines[-50:]))
+
+    def show_export_dialog(self):
+        """Mostrar diálogo de exportación de resultados"""
+        try:
+            from .export_results_dialog import ExportResultsDialog
+
+            dialog = ExportResultsDialog(self.race_manager, parent=self)
+            dialog.exec()
+
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Error abriendo diálogo de exportación: {e}")
+            import traceback
+            traceback.print_exc()
+
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"No se pudo abrir el diálogo de exportación:\n{str(e)}"
+            )
