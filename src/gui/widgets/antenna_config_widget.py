@@ -88,7 +88,7 @@ class AntennaConfigWidget(QWidget):
         self.antennas_grid = QGridLayout()
         
         # Headers
-        headers = ["Antena", "Habilitada", "Largada", "Meta", "Checkpoint", "Nombre", "Descripción"]
+        headers = ["Antena", "Habilitada", "Largada", "Meta", "Checkpoint", "CP#", "Nombre", "Descripción"]
         for col, header in enumerate(headers):
             header_label = QLabel(header)
             header_label.setStyleSheet("font-weight: bold; padding: 5px;")
@@ -124,10 +124,19 @@ class AntennaConfigWidget(QWidget):
             
             # Columna 4: Checkbox Checkpoint
             checkpoint_checkbox = QCheckBox()
-            checkpoint_checkbox.stateChanged.connect(self.validate_antenna_config)
+            checkpoint_checkbox.stateChanged.connect(lambda state, aid=antenna_id: self.on_checkpoint_changed(aid, state))
             self.antennas_grid.addWidget(checkpoint_checkbox, row, 4)
-            
-            # Columna 5: Nombre
+
+            # Columna 5: Número de Checkpoint (SpinBox)
+            checkpoint_number = QSpinBox()
+            checkpoint_number.setRange(1, 20)
+            checkpoint_number.setValue(1)
+            checkpoint_number.setMaximumWidth(60)
+            checkpoint_number.setEnabled(False)  # Deshabilitado por defecto
+            checkpoint_number.setToolTip("Número del checkpoint (1, 2, 3...)")
+            self.antennas_grid.addWidget(checkpoint_number, row, 5)
+
+            # Columna 7: Nombre
             name_input = QLineEdit()
             default_names = ["Largada", "Meta", f"Control {antenna_id-1}", f"Control {antenna_id-1}"]
             if antenna_id < 4:
@@ -135,23 +144,24 @@ class AntennaConfigWidget(QWidget):
             else:
                 name_input.setText(f"Antena {antenna_id + 1}")
             name_input.setMaximumWidth(150)
-            self.antennas_grid.addWidget(name_input, row, 5)
-            
-            # Columna 6: Descripción
+            self.antennas_grid.addWidget(name_input, row, 6)
+
+            # Columna 8: Descripción
             desc_input = QLineEdit()
             default_descs = ["Línea de largada", "Línea de meta", "Punto de control", "Punto de control"]
             if antenna_id < 4:
                 desc_input.setText(default_descs[antenna_id])
             else:
                 desc_input.setText("Sin configurar")
-            self.antennas_grid.addWidget(desc_input, row, 6)
-            
+            self.antennas_grid.addWidget(desc_input, row, 7)
+
             # Guardar referencias
             self.antenna_configs[antenna_id] = {
                 'enabled': enabled_checkbox,
                 'start': start_checkbox,
                 'finish': finish_checkbox,
                 'checkpoint': checkpoint_checkbox,
+                'checkpoint_number': checkpoint_number,
                 'name': name_input,
                 'description': desc_input
             }
@@ -232,6 +242,26 @@ class AntennaConfigWidget(QWidget):
             self.antenna_configs[antenna_id]['finish'].setChecked(False)
             self.antenna_configs[antenna_id]['checkpoint'].setChecked(False)
         
+        self.validate_antenna_config()
+
+    def on_checkpoint_changed(self, antenna_id, state):
+        """
+        Manejar cambio de checkbox de checkpoint
+        Habilita/deshabilita el spinbox de número de checkpoint
+        """
+        is_checked = state == 2  # Qt.CheckState.Checked
+
+        # Habilitar/deshabilitar spinbox de número
+        checkpoint_number = self.antenna_configs[antenna_id]['checkpoint_number']
+        checkpoint_number.setEnabled(is_checked)
+
+        # Si se marca, actualizar el nombre sugerido
+        if is_checked:
+            cp_num = checkpoint_number.value()
+            name_input = self.antenna_configs[antenna_id]['name']
+            if not name_input.text() or "Antena" in name_input.text():
+                name_input.setText(f"Checkpoint {cp_num}")
+
         self.validate_antenna_config()
 
     def on_power_changed(self, value):
@@ -404,6 +434,7 @@ class AntennaConfigWidget(QWidget):
                     'start': config['start'].isChecked(),
                     'finish': config['finish'].isChecked(),
                     'checkpoint': config['checkpoint'].isChecked(),
+                    'checkpoint_number': config['checkpoint_number'].value() if config['checkpoint'].isChecked() else None,
                     'name': config['name'].text(),
                     'description': config['description'].text()
                 }
@@ -449,7 +480,14 @@ class AntennaConfigWidget(QWidget):
                 controls['start'].setCheckState(Qt.CheckState.Checked if start else Qt.CheckState.Unchecked)
                 controls['finish'].setCheckState(Qt.CheckState.Checked if finish else Qt.CheckState.Unchecked)
                 controls['checkpoint'].setCheckState(Qt.CheckState.Checked if checkpoint else Qt.CheckState.Unchecked)
-                
+
+                # Número de checkpoint
+                if checkpoint and 'checkpoint_number' in config and config['checkpoint_number']:
+                    controls['checkpoint_number'].setValue(config['checkpoint_number'])
+                    controls['checkpoint_number'].setEnabled(True)
+                else:
+                    controls['checkpoint_number'].setEnabled(False)
+
                 # Textos
                 controls['name'].setText(config.get('name', f'Antena {antenna_id + 1}'))
                 controls['description'].setText(config.get('description', 'Sin configurar'))
