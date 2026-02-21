@@ -113,7 +113,7 @@ class PDFExporter:
                 str(athlete.bib_number),
                 athlete.name,
                 athlete.gender or '-',
-                athlete.get_category() or '-',
+                athlete.category or '-',
                 result.get_formatted_time()
             ])
 
@@ -193,7 +193,7 @@ class PDFExporter:
                     str(i),
                     str(athlete.bib_number),
                     athlete.name,
-                    athlete.get_category() or '-',
+                    athlete.category or '-',
                     result.get_formatted_time()
                 ])
 
@@ -324,7 +324,7 @@ class PDFExporter:
                 ['Posición General:', str(result.position or '-')],
                 ['Dorsal:', str(athlete.bib_number)],
                 ['Género:', athlete.gender or '-'],
-                ['Categoría:', athlete.get_category() or '-'],
+                ['Categoría:', athlete.category or '-'],
                 ['Tiempo:', result.get_formatted_time()],
             ]
 
