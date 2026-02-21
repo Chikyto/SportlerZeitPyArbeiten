@@ -85,6 +85,9 @@ class RaceMonitoringWidget(QWidget):
         # Tab 4: Podios por categoría de premiación
         self.setup_podiums_tab()
 
+        # Tab 5: Tiempos parciales (Splits)
+        self.setup_splits_tab()
+
         layout.addWidget(self.monitoring_tabs)
         
     def setup_categories_overview_tab(self):
@@ -262,6 +265,171 @@ class RaceMonitoringWidget(QWidget):
         info_label.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
         info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.podiums_layout.addWidget(info_label)
+
+    def setup_splits_tab(self):
+        """Tab con tiempos parciales (splits) detallados"""
+        tab = QWidget()
+        self.monitoring_tabs.addTab(tab, "⏱️ Tiempos Parciales")
+
+        layout = QVBoxLayout(tab)
+
+        # Controles
+        controls_layout = QHBoxLayout()
+
+        controls_layout.addWidget(QLabel("Distancia:"))
+        self.splits_category_combo = QComboBox()
+        self.splits_category_combo.addItem("Selecciona una distancia")
+        self.splits_category_combo.currentTextChanged.connect(self.refresh_splits)
+        controls_layout.addWidget(self.splits_category_combo)
+
+        refresh_splits_btn = QPushButton("🔄 Actualizar")
+        refresh_splits_btn.clicked.connect(self.refresh_splits)
+        controls_layout.addWidget(refresh_splits_btn)
+
+        controls_layout.addStretch()
+
+        layout.addLayout(controls_layout)
+
+        # Tabla de splits
+        self.splits_table = QTableWidget()
+        self.splits_table.setAlternatingRowColors(True)
+        self.splits_table.setSortingEnabled(True)
+
+        # Configurar tabla
+        header = self.splits_table.horizontalHeader()
+        header.setStretchLastSection(True)
+
+        layout.addWidget(self.splits_table)
+
+        # Información inicial
+        info_label = QLabel(
+            "Selecciona una distancia para ver los tiempos parciales (splits) de cada checkpoint.\n\n"
+            "Los splits muestran el tiempo transcurrido en cada segmento de la carrera."
+        )
+        info_label.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
+        info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+    def refresh_splits(self):
+        """Actualizar visualización de splits"""
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info("🔄 Actualizando splits...")
+
+        if not self.race_manager:
+            logger.warning("  ⚠️  No hay race_manager")
+            return
+
+        # Obtener distancia seleccionada
+        selected_text = self.splits_category_combo.currentText()
+
+        if selected_text == "Selecciona una distancia":
+            return
+
+        # Extraer distance_id
+        distance_id = selected_text.split(" - ")[0]
+
+        # Obtener distancia
+        distance = self.race_manager.get_distance(distance_id)
+        if not distance:
+            logger.warning(f"  ⚠️  Distancia {distance_id} no encontrada")
+            return
+
+        # Verificar si hay checkpoints
+        if distance.expected_checkpoints == 0:
+            self.splits_table.setRowCount(0)
+            self.splits_table.setColumnCount(1)
+            self.splits_table.setHorizontalHeaderLabels(["Información"])
+            self.splits_table.setItem(0, 0, QTableWidgetItem(
+                "Esta distancia no tiene checkpoints configurados"
+            ))
+            return
+
+        # Obtener resultados
+        results = self.race_manager.get_results(distance_id)
+
+        if not results:
+            self.splits_table.setRowCount(0)
+            return
+
+        # Configurar columnas dinámicamente según número de checkpoints
+        num_checkpoints = distance.expected_checkpoints
+        columns = ["Pos", "Dorsal", "Nombre"]
+
+        # Agregar columnas de splits
+        for i in range(1, num_checkpoints + 1):
+            columns.append(f"Split CP{i}")
+
+        columns.append("Tiempo Final")
+
+        self.splits_table.setColumnCount(len(columns))
+        self.splits_table.setHorizontalHeaderLabels(columns)
+
+        # Llenar tabla
+        self.splits_table.setRowCount(len(results))
+
+        for row_idx, result in enumerate(results):
+            athlete = result.athlete
+
+            # Posición
+            pos_item = QTableWidgetItem(str(result.position or "-"))
+            pos_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.splits_table.setItem(row_idx, 0, pos_item)
+
+            # Dorsal
+            bib_item = QTableWidgetItem(str(athlete.bib_number or "-"))
+            bib_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.splits_table.setItem(row_idx, 1, bib_item)
+
+            # Nombre
+            self.splits_table.setItem(row_idx, 2, QTableWidgetItem(athlete.name))
+
+            # Splits
+            col = 3
+            for i in range(1, num_checkpoints + 1):
+                if i in result.splits:
+                    split = result.splits[i]
+                    hours = int(split.total_seconds() // 3600)
+                    minutes = int((split.total_seconds() % 3600) // 60)
+                    seconds = int(split.total_seconds() % 60)
+                    split_text = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+                    split_item = QTableWidgetItem(split_text)
+                    split_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+                    # Colorear según velocidad (opcional)
+                    # Verde para splits rápidos, amarillo normal, rojo lentos
+                    split_item.setForeground(QColor(0, 100, 0))  # Verde por defecto
+
+                    self.splits_table.setItem(row_idx, col, split_item)
+                else:
+                    not_passed_item = QTableWidgetItem("-")
+                    not_passed_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    not_passed_item.setForeground(QColor(150, 150, 150))  # Gris
+                    self.splits_table.setItem(row_idx, col, not_passed_item)
+
+                col += 1
+
+            # Tiempo final
+            final_time_item = QTableWidgetItem(
+                result.get_formatted_time() if result.finish_time else "-"
+            )
+            final_time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            if result.finish_time:
+                final_time_item.setForeground(QColor(0, 0, 200))  # Azul
+                final_time_item.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+
+            self.splits_table.setItem(row_idx, col, final_time_item)
+
+        # Ajustar tamaño de columnas
+        header = self.splits_table.horizontalHeader()
+        for i in range(len(columns)):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+        logger.info(f"✅ Splits actualizados: {len(results)} atletas, {num_checkpoints} checkpoints")
 
     def refresh_podiums(self):
         """Actualizar visualización de podios"""
@@ -520,6 +688,28 @@ class RaceMonitoringWidget(QWidget):
         index = self.podiums_category_combo.findText(current_text)
         if index >= 0:
             self.podiums_category_combo.setCurrentIndex(index)
+
+    def refresh_splits_category_combo(self):
+        """Actualizar combo de categorías para splits"""
+        if not self.race_manager:
+            return
+
+        current_text = self.splits_category_combo.currentText()
+        self.splits_category_combo.clear()
+        self.splits_category_combo.addItem("Selecciona una distancia")
+
+        for category in self.race_manager.get_all_categories():
+            # Solo mostrar categorías que tengan checkpoints configurados
+            if category.expected_checkpoints > 0:
+                # Solo mostrar categorías finalizadas o en curso
+                from src.core.race_tracking.models import RaceStatus
+                if category.status in [RaceStatus.RUNNING, RaceStatus.FINISHED]:
+                    self.splits_category_combo.addItem(f"{category.distance_id} - {category.name}")
+
+        # Restaurar selección si es posible
+        index = self.splits_category_combo.findText(current_text)
+        if index >= 0:
+            self.splits_category_combo.setCurrentIndex(index)
 
     def export_podiums_to_csv(self):
         """Exportar podios por categoría de premiación a CSV"""
@@ -959,8 +1149,9 @@ class RaceMonitoringWidget(QWidget):
         if index >= 0:
             self.category_combo.setCurrentIndex(index)
 
-        # También actualizar el combo de podios
+        # También actualizar el combo de podios y splits
         self.refresh_podiums_category_combo()
+        self.refresh_splits_category_combo()
         
     def on_category_changed(self):
         """Manejar cambio de categoría seleccionada"""
