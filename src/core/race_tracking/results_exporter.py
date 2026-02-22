@@ -136,7 +136,7 @@ class ResultsExporter:
                 athlete.name,
                 athlete.gender or "-",
                 athlete.age or "-",
-                athlete.category or "-",
+                athlete.get_award_category() or "-",
                 result.get_formatted_time() if result.finish_time else "-",
                 self._get_status_text(result.status)
             ]
@@ -296,7 +296,7 @@ class ResultsExporter:
                 str(result.position or "-"),
                 str(athlete.bib_number or "-"),
                 athlete.name,
-                athlete.category or "-",
+                athlete.get_award_category() or "-",
                 result.get_formatted_time() if result.finish_time else "-"
             ])
 
@@ -414,7 +414,7 @@ class ResultsExporter:
             ws.cell(row=row_idx, column=3, value=athlete.name)
             ws.cell(row=row_idx, column=4, value=athlete.gender or "-")
             ws.cell(row=row_idx, column=5, value=athlete.age or "-")
-            ws.cell(row=row_idx, column=6, value=athlete.category or "-")
+            ws.cell(row=row_idx, column=6, value=athlete.get_award_category() or "-")
             ws.cell(row=row_idx, column=7, value=result.get_formatted_time() if result.finish_time else "-")
 
             # Aplicar bordes
