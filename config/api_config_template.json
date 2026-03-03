@@ -1,0 +1,49 @@
+{
+  "_comment": "Configuración de integración con Plataforma de Registro",
+  "_instructions": "1. Copiar este archivo a api_config.json, 2. Completar con tus datos, 3. Ejecutar: python scripts/test_integration.py",
+
+  "api_url": "https://your-backend.run.app",
+  "api_key": "your-api-key-here",
+  "event_id": "your-event-id",
+
+  "sync_enabled": true,
+  "sync_interval_seconds": 10,
+
+  "import_enabled": true,
+  "export_enabled": true,
+
+  "retry_attempts": 3,
+  "retry_backoff_seconds": 2,
+  "timeout_seconds": 10,
+
+  "_endpoints": {
+    "_comment": "Endpoints por defecto, no modificar a menos que sea necesario",
+    "categories": "/api/events/{event_id}/categories",
+    "athletes": "/api/events/{event_id}/athletes",
+    "detection": "/api/events/{event_id}/detection",
+    "result": "/api/events/{event_id}/result",
+    "results_final": "/api/events/{event_id}/results/final"
+  },
+
+  "_examples": {
+    "_comment": "Ejemplos de configuración",
+    "example_1": {
+      "description": "Cloud Run (Google Cloud)",
+      "api_url": "https://your-service-xyz123.run.app",
+      "api_key": "sk_live_abc123def456...",
+      "event_id": "ultra-trail-2026"
+    },
+    "example_2": {
+      "description": "Vercel Backend",
+      "api_url": "https://your-backend.vercel.app",
+      "api_key": "Bearer abc123...",
+      "event_id": "carrera-10k-2026"
+    },
+    "example_3": {
+      "description": "Sin autenticación (testing local)",
+      "api_url": "http://localhost:3000",
+      "api_key": "",
+      "event_id": "test-event"
+    }
+  }
+}
