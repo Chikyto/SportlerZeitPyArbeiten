@@ -270,31 +270,41 @@ class ConfigurationTab(BaseTab):
         """Aplicar cambios en configuración de antenas"""
         if not self.wizard_config:
             return
-        
+
         # Leer checkboxes y actualizar config
         updated = 0
-        for row in range(8):
-            port_num = row
+        for row in range(self.antennas_table.rowCount()):
+            # Obtener el número de puerto real desde la columna 0
+            port_item = self.antennas_table.item(row, 0)
+            if not port_item:
+                continue
+
+            # Extraer número de puerto del texto "Puerto N"
+            port_text = port_item.text()
+            port_num = int(port_text.split()[-1])
             port_str = str(port_num)
-            
+
             # Leer checkboxes
             enabled_widget = self.antennas_table.cellWidget(row, 1)
+            if not enabled_widget:
+                continue
+
             enabled = enabled_widget.layout().itemAt(0).widget().isChecked()
-            
+
             if enabled:
                 start_widget = self.antennas_table.cellWidget(row, 2)
                 start = start_widget.layout().itemAt(0).widget().isChecked()
-                
+
                 finish_widget = self.antennas_table.cellWidget(row, 3)
                 finish = finish_widget.layout().itemAt(0).widget().isChecked()
-                
+
                 checkpoint_widget = self.antennas_table.cellWidget(row, 4)
                 checkpoint = checkpoint_widget.layout().itemAt(0).widget().isChecked()
-                
+
                 # Actualizar o crear config de esta antena
                 if port_str not in self.wizard_config.get('antennas', {}):
                     self.wizard_config['antennas'][port_str] = {}
-                
+
                 self.wizard_config['antennas'][port_str].update({
                     'enabled': True,
                     'start': start,
@@ -303,11 +313,15 @@ class ConfigurationTab(BaseTab):
                     'name': f'Antena {port_num}'
                 })
                 updated += 1
-        
+            else:
+                # Si está desmarcada, deshabilitar la antena en la config
+                if port_str in self.wizard_config.get('antennas', {}):
+                    self.wizard_config['antennas'][port_str]['enabled'] = False
+
         # Guardar
         self.save_config()
         self.log(f"✅ Configuración aplicada: {updated} antenas actualizadas")
-        
+
         QMessageBox.information(
             self,
             "Configuración Aplicada",
