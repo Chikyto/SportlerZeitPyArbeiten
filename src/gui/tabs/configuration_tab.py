@@ -269,65 +269,86 @@ class ConfigurationTab(BaseTab):
     def apply_antenna_config(self):
         """Aplicar cambios en configuración de antenas"""
         if not self.wizard_config:
+            self.log("❌ No hay configuración disponible")
+            QMessageBox.warning(
+                self,
+                "Error",
+                "No hay configuración disponible.\n\nEjecute el wizard de configuración primero."
+            )
             return
 
-        # Leer checkboxes y actualizar config
-        updated = 0
-        for row in range(self.antennas_table.rowCount()):
-            # Obtener el número de puerto real desde la columna 0
-            port_item = self.antennas_table.item(row, 0)
-            if not port_item:
-                continue
+        try:
+            # Asegurar que existe la clave 'antennas'
+            if 'antennas' not in self.wizard_config:
+                self.wizard_config['antennas'] = {}
 
-            # Extraer número de puerto del texto "Puerto N"
-            port_text = port_item.text()
-            port_num = int(port_text.split()[-1])
-            port_str = str(port_num)
+            # Leer checkboxes y actualizar config
+            updated = 0
+            for row in range(self.antennas_table.rowCount()):
+                # Obtener el número de puerto real desde la columna 0
+                port_item = self.antennas_table.item(row, 0)
+                if not port_item:
+                    continue
 
-            # Leer checkboxes
-            enabled_widget = self.antennas_table.cellWidget(row, 1)
-            if not enabled_widget:
-                continue
+                # Extraer número de puerto del texto "Puerto N"
+                port_text = port_item.text()
+                port_num = int(port_text.split()[-1])
+                port_str = str(port_num)
 
-            enabled = enabled_widget.layout().itemAt(0).widget().isChecked()
+                # Leer checkboxes
+                enabled_widget = self.antennas_table.cellWidget(row, 1)
+                if not enabled_widget:
+                    continue
 
-            if enabled:
-                start_widget = self.antennas_table.cellWidget(row, 2)
-                start = start_widget.layout().itemAt(0).widget().isChecked()
+                enabled = enabled_widget.layout().itemAt(0).widget().isChecked()
 
-                finish_widget = self.antennas_table.cellWidget(row, 3)
-                finish = finish_widget.layout().itemAt(0).widget().isChecked()
+                if enabled:
+                    start_widget = self.antennas_table.cellWidget(row, 2)
+                    start = start_widget.layout().itemAt(0).widget().isChecked()
 
-                checkpoint_widget = self.antennas_table.cellWidget(row, 4)
-                checkpoint = checkpoint_widget.layout().itemAt(0).widget().isChecked()
+                    finish_widget = self.antennas_table.cellWidget(row, 3)
+                    finish = finish_widget.layout().itemAt(0).widget().isChecked()
 
-                # Actualizar o crear config de esta antena
-                if port_str not in self.wizard_config.get('antennas', {}):
-                    self.wizard_config['antennas'][port_str] = {}
+                    checkpoint_widget = self.antennas_table.cellWidget(row, 4)
+                    checkpoint = checkpoint_widget.layout().itemAt(0).widget().isChecked()
 
-                self.wizard_config['antennas'][port_str].update({
-                    'enabled': True,
-                    'start': start,
-                    'finish': finish,
-                    'checkpoint': checkpoint,
-                    'name': f'Antena {port_num}'
-                })
-                updated += 1
-            else:
-                # Si está desmarcada, deshabilitar la antena en la config
-                if port_str in self.wizard_config.get('antennas', {}):
-                    self.wizard_config['antennas'][port_str]['enabled'] = False
+                    # Actualizar o crear config de esta antena
+                    if port_str not in self.wizard_config['antennas']:
+                        self.wizard_config['antennas'][port_str] = {}
 
-        # Guardar
-        self.save_config()
-        self.log(f"✅ Configuración aplicada: {updated} antenas actualizadas")
+                    self.wizard_config['antennas'][port_str].update({
+                        'enabled': True,
+                        'start': start,
+                        'finish': finish,
+                        'checkpoint': checkpoint,
+                        'name': f'Antena {port_num}'
+                    })
+                    updated += 1
+                else:
+                    # Si está desmarcada, deshabilitar la antena en la config
+                    if port_str in self.wizard_config['antennas']:
+                        self.wizard_config['antennas'][port_str]['enabled'] = False
 
-        QMessageBox.information(
-            self,
-            "Configuración Aplicada",
-            f"Se actualizó la configuración de {updated} antenas.\n\n"
-            "Reinicie la aplicación para aplicar los cambios."
-        )
+            # Guardar
+            self.save_config()
+            self.log(f"✅ Configuración aplicada: {updated} antenas actualizadas")
+
+            QMessageBox.information(
+                self,
+                "Configuración Aplicada",
+                f"Se actualizó la configuración de {updated} antenas.\n\n"
+                "Reinicie la aplicación para aplicar los cambios."
+            )
+
+        except Exception as e:
+            self.log(f"❌ Error aplicando configuración: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error al aplicar configuración:\n\n{e}"
+            )
+            import traceback
+            traceback.print_exc()
     
     def save_config(self):
         """Guardar configuración en archivo"""
@@ -356,41 +377,72 @@ class ConfigurationTab(BaseTab):
         """Re-escanear antenas físicas"""
         if not self.scanner:
             self.log("❌ Scanner no disponible")
+            QMessageBox.warning(
+                self,
+                "Error",
+                "Scanner no disponible.\n\nVerifique la conexión con el lector RFID."
+            )
             return
-        
-        self.log("🔄 Re-escaneando antenas físicas...")
-        detected = self.scanner.detect_connected_antennas()
-        self.log(f"✅ Detectadas {len(detected)} antenas: {detected}")
-        
-        # Actualizar el wizard_config con las antenas detectadas
-        if not self.wizard_config:
-            self.wizard_config = {'connection': {}, 'antennas': {}}
-        
-        # Crear/actualizar entradas para antenas detectadas
-        for port in detected:
-            port_str = str(port)
-            if port_str not in self.wizard_config.get('antennas', {}):
-                self.wizard_config['antennas'][port_str] = {
-                    'enabled': True,
-                    'name': f'Antena {port}',
-                    'start': False,
-                    'finish': False,
-                    'checkpoint': False
-                }
-            else:
-                # Marcar como habilitada si ya existe
-                self.wizard_config['antennas'][port_str]['enabled'] = True
-        
-        # Recargar la tabla con las antenas actualizadas
-        self.load_config_data()
-        
-        QMessageBox.information(
-            self,
-            "Re-escaneo Completado",
-            f"Se detectaron {len(detected)} antenas.\n\n"
-            f"Puertos: {', '.join(map(str, detected))}\n\n"
-            "Configure los roles y haga clic en 'Aplicar Cambios'."
-        )
+
+        try:
+            self.log("🔄 Re-escaneando antenas físicas...")
+
+            # Verificar que el método existe
+            if not hasattr(self.scanner, 'detect_connected_antennas'):
+                self.log("❌ El scanner no soporta detección de antenas")
+                QMessageBox.warning(
+                    self,
+                    "Función no disponible",
+                    "El scanner actual no soporta detección automática de antenas."
+                )
+                return
+
+            detected = self.scanner.detect_connected_antennas()
+            self.log(f"✅ Detectadas {len(detected)} antenas: {detected}")
+
+            # Actualizar el wizard_config con las antenas detectadas
+            if not self.wizard_config:
+                self.wizard_config = {'connection': {}, 'antennas': {}}
+
+            # Asegurar que existe la clave 'antennas'
+            if 'antennas' not in self.wizard_config:
+                self.wizard_config['antennas'] = {}
+
+            # Crear/actualizar entradas para antenas detectadas
+            for port in detected:
+                port_str = str(port)
+                if port_str not in self.wizard_config['antennas']:
+                    self.wizard_config['antennas'][port_str] = {
+                        'enabled': True,
+                        'name': f'Antena {port}',
+                        'start': False,
+                        'finish': False,
+                        'checkpoint': False
+                    }
+                else:
+                    # Marcar como habilitada si ya existe
+                    self.wizard_config['antennas'][port_str]['enabled'] = True
+
+            # Recargar la tabla con las antenas actualizadas
+            self.load_config_data()
+
+            QMessageBox.information(
+                self,
+                "Re-escaneo Completado",
+                f"Se detectaron {len(detected)} antenas.\n\n"
+                f"Puertos: {', '.join(map(str, detected))}\n\n"
+                "Configure los roles y haga clic en 'Aplicar Cambios'."
+            )
+
+        except Exception as e:
+            self.log(f"❌ Error en re-escaneo: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error al re-escanear antenas:\n\n{e}"
+            )
+            import traceback
+            traceback.print_exc()
     
     def rerun_wizard(self):
         """Re-ejecutar el wizard sin reiniciar"""

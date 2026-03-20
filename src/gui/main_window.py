@@ -60,28 +60,50 @@ class MainWindow(QMainWindow):
     def _normalize_config(self, config):
         """
         Normalizar configuración para asegurar tipos correctos
-        
+
         Args:
-            config: Configuración del wizard
-        
+            config: Configuración del wizard (dict o SystemConfig)
+
         Returns:
             dict: Configuración normalizada
         """
         if not config:
             return config
-        
+
         logger.info("🔧 Normalizando configuración")
-        
+
+        # Convertir SystemConfig a diccionario si es necesario
+        from config.system_config import SystemConfig
+        if isinstance(config, SystemConfig):
+            logger.info("📦 Convirtiendo SystemConfig a diccionario")
+            config = {
+                'connection': {
+                    'host': config.reader.host,
+                    'port': config.reader.port
+                },
+                'antennas': {
+                    str(port): {
+                        'enabled': antenna.enabled,
+                        'start': antenna.function.value == 'largada',
+                        'finish': antenna.function.value == 'llegada',
+                        'checkpoint': antenna.function.value == 'checkpoint',
+                        'name': antenna.description or f'Antena {port}'
+                    }
+                    for port, antenna in config.antennas.items()
+                }
+            }
+            logger.info(f"✅ SystemConfig convertido a diccionario")
+
         # Normalizar keys de antennas a int
-        if 'antennas' in config:
+        if isinstance(config, dict) and 'antennas' in config:
             antennas_normalized = {}
             for key, value in config['antennas'].items():
                 port_int = int(key) if isinstance(key, str) else key
                 antennas_normalized[port_int] = value
-            
+
             config['antennas'] = antennas_normalized
             logger.info(f"✅ Antenas normalizadas: {list(antennas_normalized.keys())}")
-        
+
         return config
     
     def setup_ui(self):
