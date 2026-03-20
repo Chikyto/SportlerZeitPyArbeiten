@@ -59,6 +59,12 @@ class TabManager:
             chip_widget = self.tabs['chip_assignment']
             chip_widget.scanner = scanner
             logger.info("✅ Scanner actualizado en ChipAssignmentWidget")
+
+        # 🔥 FIX: También actualizar scanner en ConfigurationTab
+        if 'configuration' in self.tabs:
+            config_tab = self.tabs['configuration']
+            config_tab.scanner = scanner
+            logger.info("✅ Scanner actualizado en ConfigurationTab")
     
     def set_antenna_manager(self, antenna_manager):
         """
@@ -263,14 +269,18 @@ class TabManager:
         """Aplicar configuración al ConfigurationTab"""
         try:
             logger.info("⚙️  Actualizando ConfigurationTab...")
-            
+
             config_tab = self.get_tab('configuration')
-            if config_tab and hasattr(config_tab, 'load_configuration'):
-                config_tab.load_configuration(config)
+            if config_tab:
+                # 🔥 FIX: Actualizar wizard_config directamente
+                config_tab.wizard_config = config
+                # Recargar datos en la UI
+                if hasattr(config_tab, 'load_config_data'):
+                    config_tab.load_config_data()
                 logger.info("✅ ConfigurationTab actualizado")
             else:
-                logger.warning("⚠️  ConfigurationTab no tiene método load_configuration")
-                
+                logger.warning("⚠️  ConfigurationTab no encontrado")
+
         except Exception as e:
             logger.error(f"❌ Error actualizando ConfigurationTab: {e}")
             import traceback
