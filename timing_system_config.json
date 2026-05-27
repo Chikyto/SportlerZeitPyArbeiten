@@ -6,29 +6,42 @@
   },
   "power_dbm": 30,
   "antennas": {
-    "1": {
+    "2": {
       "enabled": true,
-      "name": "largada + llegada",
-      "description": "Antena puerto 1: largada + llegada",
+      "name": "largada + checkpoint",
+      "description": "Antena puerto 2: largada + checkpoint",
       "start": true,
-      "finish": true,
-      "checkpoint": false,
+      "finish": false,
+      "checkpoint": true,
       "power_level": 25,
       "functions": [
         "largada",
-        "llegada"
+        "checkpoint"
       ]
     },
-    "6": {
+    "4": {
       "enabled": true,
       "name": "checkpoint",
-      "description": "Antena puerto 6: checkpoint",
+      "description": "Antena puerto 4: checkpoint",
       "start": false,
       "finish": false,
       "checkpoint": true,
       "power_level": 25,
       "functions": [
         "checkpoint"
+      ]
+    },
+    "7": {
+      "enabled": true,
+      "name": "checkpoint + llegada",
+      "description": "Antena puerto 7: checkpoint + llegada",
+      "start": false,
+      "finish": true,
+      "checkpoint": true,
+      "power_level": 25,
+      "functions": [
+        "checkpoint",
+        "llegada"
       ]
     }
   }

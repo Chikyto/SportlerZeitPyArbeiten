@@ -334,7 +334,18 @@ class DetectionTab(BaseTab):
         # Actualizar procesador de tags si existe
         if self.tag_processor:
             self.tag_processor.update_antenna_roles(self.antenna_roles)
-    
+
+        # Actualizar antenas disponibles en el scanner
+        if hasattr(self, 'scanner') and self.scanner:
+            self.scanner.available_antennas = sorted(self.antenna_roles.keys())
+            logger.info(f"🔄 Scanner actualizado con antenas: {self.scanner.available_antennas}")
+
+        if self.is_scanning and self.scan_thread and self.scanner:
+            self.scanner.available_antennas = sorted(self.antenna_roles.keys())
+            logger.info(f"🔄 Scanner actualizado en caliente: {self.scanner.available_antennas}")
+
+
+
     def update_antenna_list_ui(self):
         """Actualizar lista visual de antenas configuradas"""
         # Limpiar layout anterior
@@ -376,6 +387,16 @@ class DetectionTab(BaseTab):
         if self.is_scanning:
             logger.info("⚠️  Ya se está escaneando, ignorando solicitud duplicada")
             return
+
+        self.scanner.available_antennas = sorted(self.antenna_roles.keys())
+        logger.info(f"🔄 Iniciando scan con antenas: {self.scanner.available_antennas}")
+
+        # Crear procesador de tags
+        self.tag_processor = TagProcessor(self.antenna_roles, self.signals)
+
+        # Crear y arrancar thread de scanning
+        self.scan_thread = ScanThread(self.scanner)
+
 
         # Crear procesador de tags
         self.tag_processor = TagProcessor(self.antenna_roles, self.signals)

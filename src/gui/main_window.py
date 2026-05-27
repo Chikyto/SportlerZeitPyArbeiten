@@ -165,7 +165,11 @@ class MainWindow(QMainWindow):
                 return
             
             # Configurar antenas habilitadas
+            antennas_config = self.wizard_config.get('antennas', {})
+            self.antenna_manager = AntennaManager(antennas_config)
             enabled_ports = self.antenna_manager.get_enabled_antennas()
+            logger.info(f"📡 Antenas habilitadas: {enabled_ports}")
+            self.scanner.available_antennas = enabled_ports
             logger.info(f"📡 Antenas habilitadas: {enabled_ports}")
             self.scanner.available_antennas = enabled_ports
       

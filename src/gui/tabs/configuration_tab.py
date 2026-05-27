@@ -333,12 +333,13 @@ class ConfigurationTab(BaseTab):
             self.save_config()
             self.log(f"✅ Configuración aplicada: {updated} antenas actualizadas")
 
-            QMessageBox.information(
-                self,
-                "Configuración Aplicada",
-                f"Se actualizó la configuración de {updated} antenas.\n\n"
-                "Reinicie la aplicación para aplicar los cambios."
-            )
+            main_window = self.window()
+            if hasattr(main_window, 'tab_manager'):
+                main_window.tab_manager.apply_config_to_all_tabs(self.wizard_config)
+
+
+            QMessageBox.information(self, "OK", f"Configuración aplicada: {updated} antenas.")
+            
 
         except Exception as e:
             self.log(f"❌ Error aplicando configuración: {e}")
@@ -426,6 +427,10 @@ class ConfigurationTab(BaseTab):
             # Recargar la tabla con las antenas actualizadas
             self.load_config_data()
 
+            main_window = self.window()
+            if hasattr(main_window, 'tab_manager'):
+                main_window.tab_manager.apply_config_to_all_tabs(self.wizard_config)
+
             QMessageBox.information(
                 self,
                 "Re-escaneo Completado",
@@ -484,12 +489,13 @@ class ConfigurationTab(BaseTab):
                         main_window.wizard_config = new_config
                     if hasattr(main_window, 'setup_scanner'):
                         main_window.setup_scanner()
+                    if hasattr(main_window, 'tab_manager'):
+                        main_window.tab_manager.apply_config_to_all_tabs(new_config)
                     
                     QMessageBox.information(
                         self,
                         "Configuración Actualizada",
                         "La nueva configuración ha sido aplicada.\n\n"
-                        "Reinicie la aplicación para aplicar todos los cambios."
                     )
                 else:
                     self.log("⚠️ Wizard cancelado")
