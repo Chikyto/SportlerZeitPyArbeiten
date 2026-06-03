@@ -1093,29 +1093,8 @@ class ChipAssignmentWidget(QWidget):
             logger.info(f"🗑️ Asignación limpiada para {self.selected_athlete.name}")
 
     def import_from_web(self):
-        """Importar atletas desde CSV o API web"""
-        from PyQt6.QtWidgets import QFileDialog
-
-        # Diálogo para elegir método
-        reply = QMessageBox.question(
-            self,
-            "Método de Importación",
-            "¿Cómo deseas importar los atletas?\n\n"
-            "• CSV: Archivo exportado desde Firebase\n"
-            "• API: Conectar directamente a Cloud Run",
-            QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Open
-        )
-
-        if reply == QMessageBox.StandardButton.Cancel:
-            return
-
-        if reply == QMessageBox.StandardButton.Open:
-            # Importar desde CSV
-            self.import_from_csv()
-        elif reply == QMessageBox.StandardButton.Apply:
-            # Importar desde API
-            self.import_from_api()
+        """Importar atletas desde Cloud Run API"""
+        self.import_from_api()
 
     def import_from_csv(self):
         """Importar desde archivo CSV"""
@@ -1226,13 +1205,127 @@ class ChipAssignmentWidget(QWidget):
             traceback.print_exc()
 
     def import_from_api(self):
-        """Importar desde Cloud Run API"""
-        QMessageBox.information(
-            self,
-            "API Cloud Run",
-            "Importación desde Cloud Run próximamente.\n\n"
-            "Por ahora, usa importación desde CSV exportado de Firebase."
-        )
+        """Importar atletas desde Cloud Run API usando api_config.json"""
+        import json
+        import os
+        import sys
+        from src.core.athlete_importer import AthleteImporter
+        from src.core.race_tracking.models import RaceDistance
+        from src.core.csv_importer import CSVAthleteImporter
+
+        # Buscar api_config.json desde la raíz del proyecto
+        config_path = None
+        for root in [os.path.dirname(os.path.abspath(sys.argv[0])), os.getcwd()]:
+            candidate = os.path.join(root, 'config', 'api_config.json')
+            if os.path.exists(candidate):
+                config_path = candidate
+                break
+
+        if not config_path:
+            QMessageBox.critical(self, "Configuración no encontrada",
+                "No se encontró config/api_config.json.\n"
+                "Verificá que el archivo exista en la carpeta config/ del proyecto.")
+            return
+
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except Exception as e:
+            QMessageBox.critical(self, "Error de configuración",
+                                f"No se pudo leer api_config.json:\n{e}")
+            return
+
+        api_url  = config.get('api_url',  '').rstrip('/')
+        api_key  = config.get('api_key',  '')
+        event_id = config.get('event_id', '')
+
+        if not api_url or not event_id:
+            QMessageBox.critical(self, "Configuración incompleta",
+                f"Faltan campos en api_config.json:\n"
+                f"  api_url:  {'✓' if api_url  else '✗ falta'}\n"
+                f"  event_id: {'✓' if event_id else '✗ falta'}\n"
+                f"  api_key:  {'✓' if api_key  else '✗ (opcional)'}")
+            return
+
+        try:
+            importer = AthleteImporter(api_url=api_url, api_key=api_key)
+            athletes_by_dist = importer.import_athletes(event_id=event_id)
+
+            if not athletes_by_dist:
+                QMessageBox.warning(self, "Sin atletas",
+                    "No se encontraron atletas con pago aprobado para este evento.\n\n"
+                    "Verificá que el event_id en api_config.json sea correcto.")
+                return
+
+            # Reusar el mapeo de distancias del importador CSV
+            distance_map = {
+                info['distance_id']: info
+                for info in CSVAthleteImporter.DISTANCE_MAPPING.values()
+            }
+
+            for dist_id, athletes in athletes_by_dist.items():
+                if not athletes:
+                    continue
+                existing = self.race_manager.get_distance(dist_id)
+                if existing:
+                    for athlete in athletes:
+                        existing_athlete = next(
+                            (a for a in existing.participants if a.athlete_id == athlete.athlete_id),
+                            None
+                        )
+                        if existing_athlete:
+                            # Actualizar chip si cambió
+                            if athlete.tag_id:
+                                existing_athlete.tag_id = athlete.tag_id
+                        else:
+                            try:
+                                existing.add_participant(athlete)
+                            except ValueError:
+                                pass
+                else:
+                    info = distance_map.get(dist_id, {})
+                    distance = RaceDistance(
+                        distance_id=dist_id,
+                        name=info.get('name', dist_id.upper()),
+                        distance_meters=info.get('distance_m', 0),
+                        expected_checkpoints=0,
+                        participants=athletes,
+                        start_time=None,
+                        notes=f"Importado desde API — evento {event_id}"
+                    )
+                    self.race_manager.add_distance(distance)
+
+            self.refresh_athletes_table()
+            self.refresh_category_filter()
+            self.categories_imported.emit()
+
+            total = sum(len(a) for a in athletes_by_dist.values())
+            QMessageBox.information(self, "Importación Exitosa",
+                f"✅ Importados desde Cloud Run:\n\n"
+                f"• {len(athletes_by_dist)} distancias\n"
+                f"• {total} atletas\n\n"
+                f"Ahora podés asignar chips RFID a cada corredor.")
+            logger.info(f"✅ Importación API: {total} atletas en {len(athletes_by_dist)} distancias")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error",
+                f"Error importando desde API:\n{str(e)}\n\n"
+                f"Verificá que el backend esté accesible y el api_key sea válido.")
+            logger.error(f"❌ Error importando desde API: {e}")
+            import traceback
+            traceback.print_exc()
+
+    @staticmethod
+    def _distance_meters(category_id: str) -> float:
+
+        """Infiere distancia en metros del nombre de categoría."""
+        mapping = {
+            '5K': 5000, '10K': 10000, '15K': 15000,
+            '21K': 21097, '42K': 42195,
+            'MEDIO': 21097, 'MEDIA': 21097,
+            'MARATON': 42195, 'MARATÓN': 42195,
+        }
+        return float(mapping.get(category_id.upper().replace(' ', ''), 0))
 
     def import_assignments_from_csv(self):
         """Importar asignaciones de chips desde CSV externo"""

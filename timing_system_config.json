@@ -1,46 +1,32 @@
 {
   "connection": {
-    "host": "192.168.0.178",
+    "host": "192.168.0.177",
     "port": 4001,
     "verified": true
   },
   "power_dbm": 30,
   "antennas": {
-    "2": {
+    "1": {
       "enabled": true,
-      "name": "largada + checkpoint",
-      "description": "Antena puerto 2: largada + checkpoint",
+      "name": "largada",
+      "description": "Antena puerto 1: largada",
       "start": true,
       "finish": false,
-      "checkpoint": true,
+      "checkpoint": false,
       "power_level": 25,
       "functions": [
-        "largada",
-        "checkpoint"
+        "largada"
       ]
     },
-    "4": {
+    "2": {
       "enabled": true,
-      "name": "checkpoint",
-      "description": "Antena puerto 4: checkpoint",
-      "start": false,
-      "finish": false,
-      "checkpoint": true,
-      "power_level": 25,
-      "functions": [
-        "checkpoint"
-      ]
-    },
-    "7": {
-      "enabled": true,
-      "name": "checkpoint + llegada",
-      "description": "Antena puerto 7: checkpoint + llegada",
+      "name": "llegada",
+      "description": "Antena puerto 2: llegada",
       "start": false,
       "finish": true,
-      "checkpoint": true,
+      "checkpoint": false,
       "power_level": 25,
       "functions": [
-        "checkpoint",
         "llegada"
       ]
     }

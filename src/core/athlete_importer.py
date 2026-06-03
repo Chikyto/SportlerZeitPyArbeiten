@@ -14,7 +14,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime
 from dataclasses import asdict
 
-from src.core.race_tracking.models import Athlete, RaceCategory
+from src.core.race_tracking.models import Athlete, RaceDistance
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,17 @@ class AthleteImporter:
         >>> for athlete in athletes:
         ...     category.add_participant(athlete)
     """
+
+    def _parse_birth_date(self, fecha: str):
+        if not fecha or not fecha.strip():
+            return None
+        from datetime import datetime
+        for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y']:
+            try:
+                return datetime.strptime(fecha.strip(), fmt)
+            except ValueError:
+                continue
+        return None
 
     def __init__(self, api_url: str, api_key: Optional[str] = None):
         """
@@ -116,7 +127,8 @@ class AthleteImporter:
             athletes_data = data
         else:
             raise ValueError(f"Formato de respuesta no esperado: {type(data)}")
-
+        if athletes_data:
+            logger.info(f"🔍 Raw primer atleta: {athletes_data[0]}")
         for athlete_data in athletes_data:
             try:
                 # Extraer datos del atleta (ajustar campos según tu API)
@@ -125,7 +137,7 @@ class AthleteImporter:
                     athlete_id=athlete_data.get('id') or athlete_data.get('athlete_id'),
 
                     # Chip RFID (puede venir vacío si no fue asignado aún)
-                    tag_id=athlete_data.get('chip_id') or athlete_data.get('rfid_tag') or '',
+                    tag_id=athlete_data.get('chip_code') or athlete_data.get('chip_id') or athlete_data.get('rfid_tag') or '',
 
                     # Número de dorsal
                     bib_number=athlete_data.get('bib_number') or athlete_data.get('bib') or 0,
@@ -135,13 +147,20 @@ class AthleteImporter:
                           or athlete_data.get('name', 'Unknown'),
 
                     # Categoría
-                    category_id=athlete_data.get('category_id') or athlete_data.get('category'),
+                    distance_id=(athlete_data.get('category_id') or athlete_data.get('category') or '').lower(),
 
                     # Equipo (opcional)
                     team=athlete_data.get('team') or athlete_data.get('club'),
 
+                    # Género (opcional)
+                    gender=athlete_data.get('gender') or None,
+                    
+                    # Fecha de nacimiento (opcional, parsear si viene como string)
+                    birth_date=self._parse_birth_date(athlete_data.get('birth_date', '')) if athlete_data.get('birth_date') else None,
+
                     # Notas adicionales (puedes guardar más info aquí)
                     notes=self._build_notes(athlete_data)
+                    
                 )
 
                 # Agrupar por categoría
@@ -206,7 +225,7 @@ class AthleteImporter:
 
         return " | ".join(notes_parts)
 
-    def import_categories(self, event_id: str) -> List[RaceCategory]:
+    def import_categories(self, event_id: str) -> List[RaceDistance]:
         """
         Importar categorías desde el sistema web
 
@@ -233,8 +252,8 @@ class AthleteImporter:
 
             for cat_data in categories_data:
                 try:
-                    category = RaceCategory(
-                        category_id=cat_data.get('id') or cat_data.get('category_id'),
+                    category = RaceDistance(
+                        distance_id=cat_data.get('id') or cat_data.get('category_id'),
                         name=cat_data.get('name'),
                         distance=float(cat_data.get('distance_meters', 0) or cat_data.get('distance', 0)),
                         expected_checkpoints=int(cat_data.get('checkpoints', 0)),
