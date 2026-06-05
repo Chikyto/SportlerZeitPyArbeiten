@@ -300,8 +300,8 @@ class ChipAssignmentWidget(QWidget):
         self.export_button.clicked.connect(self.save_assignments)
         bottom_buttons.addWidget(self.export_button)
 
-        self.clear_all_button = QPushButton("🗑️ Nueva Sesión")
-        self.clear_all_button.setToolTip("Borra todos los atletas y chips. Usá esto antes de un nuevo evento.")
+        self.clear_all_button = QPushButton("🗑️ Nuevo Evento")
+        self.clear_all_button.setToolTip("Borra todos los atletas y chips. Usá esto antes de cargar un nuevo evento.")
         self.clear_all_button.setStyleSheet("color: #dc2626;")
         self.clear_all_button.clicked.connect(self.clear_all_data)
         bottom_buttons.addWidget(self.clear_all_button)
@@ -1708,15 +1708,20 @@ class ChipAssignmentWidget(QWidget):
                 last_save_str = "desconocida"
 
             msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("Datos Guardados Encontrados")
+            msg_box.setWindowTitle("Sesión anterior encontrada")
             msg_box.setText(
-                f"Se encontraron datos guardados de una sesión anterior.\n\n"
-                f"Última guardado: {last_save_str}\n\n"
+                f"Hay datos guardados del evento anterior.\n\n"
+                f"Guardado: {last_save_str}\n\n"
                 f"¿Qué querés hacer?"
             )
-            btn_load   = msg_box.addButton("Cargar datos",       QMessageBox.ButtonRole.YesRole)
-            btn_skip   = msg_box.addButton("Ignorar (sesión nueva)", QMessageBox.ButtonRole.NoRole)
-            btn_delete = msg_box.addButton("Borrar y empezar de cero", QMessageBox.ButtonRole.DestructiveRole)
+            msg_box.setInformativeText(
+                "• Retomar → carga atletas y chips del evento anterior\n"
+                "• Nuevo evento → arranca vacío (el archivo guardado se conserva)\n"
+                "• Eliminar datos → borra el archivo guardado definitivamente"
+            )
+            btn_load   = msg_box.addButton("Retomar evento anterior", QMessageBox.ButtonRole.YesRole)
+            btn_skip   = msg_box.addButton("Nuevo evento",            QMessageBox.ButtonRole.NoRole)
+            btn_delete = msg_box.addButton("Eliminar datos guardados", QMessageBox.ButtonRole.DestructiveRole)
             msg_box.setDefaultButton(btn_skip)
             msg_box.exec()
 
