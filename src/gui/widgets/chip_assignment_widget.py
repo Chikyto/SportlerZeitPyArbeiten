@@ -460,6 +460,14 @@ class ChipAssignmentWidget(QWidget):
 
         self.athletes_table.setRowCount(0)
 
+        # Detectar chips duplicados antes de pintar
+        chip_map = {}
+        for category in self.race_manager.get_all_categories():
+            for athlete in category.participants:
+                if athlete.tag_id:
+                    chip_map.setdefault(athlete.tag_id, []).append(athlete.athlete_id)
+        duplicate_chips = {chip for chip, ids in chip_map.items() if len(ids) > 1}
+
         total_count = 0
         assigned_count = 0
 
@@ -473,7 +481,7 @@ class ChipAssignmentWidget(QWidget):
 
                 # Nombre
                 name_item = QTableWidgetItem(athlete.name)
-                name_item.setData(Qt.ItemDataRole.UserRole, athlete.athlete_id)  # Guardar ID
+                name_item.setData(Qt.ItemDataRole.UserRole, athlete.athlete_id)
                 self.athletes_table.setItem(row, 1, name_item)
 
                 # Distancia
@@ -492,31 +500,41 @@ class ChipAssignmentWidget(QWidget):
                 self.athletes_table.setItem(row, 4, QTableWidgetItem(birth_date_str))
 
                 # Chip RFID
+                is_dup = bool(athlete.tag_id and athlete.tag_id in duplicate_chips)
                 chip_item = QTableWidgetItem(athlete.tag_id or "-")
-                if athlete.tag_id:
-                    chip_item.setBackground(QColor("#d1fae5"))  # Verde claro
+                if is_dup:
+                    chip_item.setBackground(QColor("#fecaca"))   # Rojo claro — duplicado
+                    chip_item.setToolTip("⚠️ Este chip está asignado a más de un atleta")
+                elif athlete.tag_id:
+                    chip_item.setBackground(QColor("#d1fae5"))   # Verde claro — ok
                     assigned_count += 1
                 else:
-                    chip_item.setBackground(QColor("#fef3c7"))  # Amarillo claro
+                    chip_item.setBackground(QColor("#fef3c7"))   # Amarillo — pendiente
                 self.athletes_table.setItem(row, 5, chip_item)
 
                 # Estado
-                status = "✅ Asignado" if athlete.tag_id else "⏳ Pendiente"
-                status_item = QTableWidgetItem(status)
-                self.athletes_table.setItem(row, 6, status_item)
+                if is_dup:
+                    status = "⚠️ Chip duplicado"
+                elif athlete.tag_id:
+                    status = "✅ Asignado"
+                else:
+                    status = "⏳ Pendiente"
+                self.athletes_table.setItem(row, 6, QTableWidgetItem(status))
 
                 # Info adicional
                 self.athletes_table.setItem(row, 7, QTableWidgetItem(athlete.notes or ""))
 
                 total_count += 1
 
-        pending_count = total_count - assigned_count
-
-        self.count_label.setText(
-            f"Total: {total_count} atletas | "
-            f"✅ Asignados: {assigned_count} | "
-            f"⏳ Pendientes: {pending_count}"
+        pending_count = total_count - assigned_count - sum(
+            1 for cat in self.race_manager.get_all_categories()
+            for ath in cat.participants if ath.tag_id and ath.tag_id in duplicate_chips
         )
+        dup_count = len(duplicate_chips)
+        label = f"Total: {total_count} | ✅ {assigned_count} | ⏳ {pending_count}"
+        if dup_count:
+            label += f" | ⚠️ {dup_count} chip{'s' if dup_count > 1 else ''} duplicado{'s' if dup_count > 1 else ''}"
+        self.count_label.setText(label)
 
         self.update_stats()
 
