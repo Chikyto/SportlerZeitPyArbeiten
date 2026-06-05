@@ -104,6 +104,14 @@ class TagProcessor:
             # Emitir señales si están disponibles
             if self.signals:
                 self._emit_signals(tag_number, port, timestamp, roles)
+                # Full detection info for backend integration
+                ts_iso = timestamp_obj.isoformat() if isinstance(timestamp_obj, datetime) else str(timestamp_obj)
+                self.signals.tag_detected.emit({
+                    'chip_id': tag_number,
+                    'antenna_id': str(port),
+                    'timestamp': ts_iso,
+                    'reading_type': self._get_reading_type(roles),
+                })
             
             return {
                 'tag_id': tag_number,
@@ -167,6 +175,18 @@ class TagProcessor:
         }
         return color_map.get(color_code, (255, 255, 255))
     
+    def _get_reading_type(self, roles: List[str]) -> str:
+        """Map antenna roles to backend reading_type value."""
+        has_start = 'start' in roles
+        has_finish = 'finish' in roles
+        if has_start and has_finish:
+            return 'start_finish'
+        if has_finish:
+            return 'finish'
+        if has_start:
+            return 'start'
+        return 'checkpoint'
+
     def _emit_signals(self, tag_id: str, port: int, timestamp: str, roles: List[str]):
         """
         Emitir señales apropiadas según roles

@@ -176,7 +176,8 @@ class TabManager:
         logger.info("🔄 Aplicando configuración a todos los tabs")
         logger.info("=" * 80)
         
-        antennas_config = config.get('antennas', {})
+        raw_antennas = config.get('antennas', {})
+        antennas_config = {k: v for k, v in raw_antennas.items() if str(k).isdigit()}
         
         # Debug
         logger.info(f"📦 Configuración a aplicar:")

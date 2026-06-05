@@ -8,8 +8,13 @@ Responsabilidad única: Coordinación de alto nivel y UI principal
 Delegación: AntennaManager para antenas, TabManager para tabs
 """
 
+import json
 import logging
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, 
+import os
+import threading
+
+import requests
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                             QTabWidget, QLabel, QMessageBox)
 from PyQt6.QtCore import pyqtSlot
 
@@ -40,6 +45,7 @@ class MainWindow(QMainWindow):
         self.antenna_manager = AntennaManager(self.wizard_config)
         self.signals = AppSignals()
         self.scanner = None
+        self.cloud_config = self._load_cloud_config()
         
         # Setup
         self.setWindowTitle("RFID Athletics Timer")
@@ -184,10 +190,10 @@ class MainWindow(QMainWindow):
     def connect_signals(self):
         """Conectar señales del sistema"""
         logger.info("🔌 Conectando señales...")
-        
-        # Señal de estado de conexión
+
         self.signals.connection_status_changed.connect(self.on_connection_status_changed)
-        
+        self.signals.tag_detected.connect(self.on_tag_detected_for_backend)
+
         logger.info("✅ Señales conectadas")
     
     @pyqtSlot(bool, str)
@@ -200,6 +206,65 @@ class MainWindow(QMainWindow):
             self.status_label.setText(f"✗ {message}")
             logger.warning(f"✗ {message}")
     
+    # ========================================================================
+    # Integración Cloud Backend
+    # ========================================================================
+
+    def _load_cloud_config(self):
+        """Cargar configuración cloud desde config/api_config.json."""
+        try:
+            path = 'config/api_config.json'
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                cloud = data.get('cloud', {})
+                if cloud.get('api_url') and cloud.get('api_key'):
+                    logger.info("☁️ Cloud config cargada")
+                    return {
+                        'api_url': cloud['api_url'],   # ya contiene /api/v1
+                        'token': cloud['api_key'],
+                        'event_id': cloud.get('event_id', ''),
+                    }
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo cargar cloud config: {e}")
+        return None
+
+    @pyqtSlot(dict)
+    def on_tag_detected_for_backend(self, tag_info: dict):
+        """Handler de tag_detected: envía detección al backend en hilo daemon."""
+        self._send_detection_to_backend(
+            tag_info['chip_id'],
+            tag_info['antenna_id'],
+            tag_info['timestamp'],
+            tag_info['reading_type'],
+        )
+
+    def _send_detection_to_backend(self, chip_id: str, antenna_id: str,
+                                   timestamp: str, reading_type: str):
+        """Enviar una detección RFID al backend cloud (no bloqueante)."""
+        if not self.cloud_config:
+            return
+
+        def _post():
+            try:
+                url = f"{self.cloud_config['api_url']}/timing/reads"
+                headers = {'Authorization': f"Bearer {self.cloud_config['token']}"}
+                payload = {
+                    'chip_id': chip_id,
+                    'antenna_id': antenna_id,
+                    'timestamp': timestamp,
+                    'reading_type': reading_type,
+                }
+                r = requests.post(url, json=payload, headers=headers, timeout=5)
+                if r.status_code not in (200, 201):
+                    logger.warning(f"⚠️ Backend respondió {r.status_code}: {r.text[:100]}")
+                else:
+                    logger.info(f"☁️ Detección enviada: {chip_id} → {reading_type}")
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo enviar al backend: {e}")
+
+        threading.Thread(target=_post, daemon=True).start()
+
     # ========================================================================
     # Métodos de acceso (delegan a AntennaManager)
     # ========================================================================

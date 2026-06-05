@@ -1,8 +1,11 @@
 """
 Tab de configuración unificado - Conexión + Antenas del Wizard
 """
+import json
+import os
+
 from PyQt6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox, 
+    QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QPushButton, QGroupBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QTextEdit, QCheckBox, QWidget,
 )
@@ -112,6 +115,66 @@ class ConfigurationTab(BaseTab):
         
         self.layout.addWidget(antennas_group)
         
+        # === SECCIÓN 3: INTEGRACIÓN CLOUD ===
+        cloud_group = QGroupBox("☁️ Integración Cloud Backend")
+        cloud_layout = QVBoxLayout(cloud_group)
+
+        # Estado
+        self.cloud_status_label = QLabel("⚪ No configurado")
+        self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        cloud_layout.addWidget(self.cloud_status_label)
+
+        # URL del backend (sin /api/v1)
+        url_row = QHBoxLayout()
+        url_row.addWidget(QLabel("URL Backend:"))
+        self.api_url_input = QLineEdit()
+        self.api_url_input.setPlaceholderText("https://tu-backend.run.app")
+        url_row.addWidget(self.api_url_input)
+        cloud_layout.addLayout(url_row)
+
+        # Event ID
+        event_row = QHBoxLayout()
+        event_row.addWidget(QLabel("Event ID:"))
+        self.event_id_input = QLineEdit()
+        self.event_id_input.setPlaceholderText("hbcMynoxLHeG5dc5IxAZ")
+        event_row.addWidget(self.event_id_input)
+        cloud_layout.addLayout(event_row)
+
+        # Nombre del agente
+        agent_row = QHBoxLayout()
+        agent_row.addWidget(QLabel("Nombre Agente:"))
+        self.agent_name_input = QLineEdit()
+        self.agent_name_input.setPlaceholderText("Equipo de cronometraje")
+        agent_row.addWidget(self.agent_name_input)
+        cloud_layout.addLayout(agent_row)
+
+        # Token
+        token_row = QHBoxLayout()
+        token_row.addWidget(QLabel("Token (agt_...):"))
+        self.token_input = QLineEdit()
+        self.token_input.setPlaceholderText("agt_...")
+        self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        token_row.addWidget(self.token_input)
+        cloud_layout.addLayout(token_row)
+
+        # Botones
+        cloud_btns = QHBoxLayout()
+        save_cloud_btn = QPushButton("💾 Guardar Config Cloud")
+        save_cloud_btn.clicked.connect(self._save_cloud_config)
+        cloud_btns.addWidget(save_cloud_btn)
+
+        test_cloud_btn = QPushButton("🧪 Verificar Conexión")
+        test_cloud_btn.clicked.connect(self._test_cloud_connection)
+        cloud_btns.addWidget(test_cloud_btn)
+
+        cloud_btns.addStretch()
+        cloud_layout.addLayout(cloud_btns)
+
+        self.layout.addWidget(cloud_group)
+
+        # Cargar config cloud guardada
+        self._load_cloud_config_from_file()
+
         # === LOG ===
         log_group = QGroupBox("📋 Log de Actividad")
         log_layout = QVBoxLayout(log_group)
@@ -273,8 +336,9 @@ class ConfigurationTab(BaseTab):
         
         # Leer checkboxes y actualizar config
         updated = 0
-        for row in range(8):
-            port_num = row
+        antennas = self.wizard_config.get('antennas', {})
+        antenna_ports = sorted([int(p) for p in antennas.keys()])
+        for row, port_num in enumerate(antenna_ports):
             port_str = str(port_num)
             
             # Leer checkboxes
@@ -433,6 +497,121 @@ class ConfigurationTab(BaseTab):
                 import traceback
                 traceback.print_exc()
     
+    # ========================================================================
+    # Cloud Backend Integration
+    # ========================================================================
+
+    def _save_cloud_config(self):
+        """Guardar configuración cloud bajo sub-key 'cloud' en api_config.json."""
+        path = 'config/api_config.json'
+        try:
+            data = {}
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            base_url = self.api_url_input.text().strip().rstrip('/')
+            data['cloud'] = {
+                'api_url': base_url + '/api/v1',
+                'event_id': self.event_id_input.text().strip(),
+                'agent_name': self.agent_name_input.text().strip(),
+                'api_key': self.token_input.text().strip(),
+            }
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            self.cloud_status_label.setText("🟡 Configurado (sin verificar)")
+            self.cloud_status_label.setStyleSheet(
+                "font-weight: bold; font-size: 13px; color: orange;")
+            self.log("☁️ Config cloud guardada en config/api_config.json")
+
+            # Recargar en MainWindow si está disponible
+            main_window = self.window()
+            if hasattr(main_window, '_load_cloud_config'):
+                main_window.cloud_config = main_window._load_cloud_config()
+                self.log("✅ Config cloud recargada en MainWindow")
+        except Exception as e:
+            logger.warning(f"⚠️ Error guardando cloud config: {e}")
+            self.log(f"❌ Error guardando cloud config: {e}")
+
+    def _load_cloud_config_from_file(self):
+        """Cargar config cloud desde archivo y mostrar en UI."""
+        path = 'config/api_config.json'
+        try:
+            if not os.path.exists(path):
+                return
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            cloud = data.get('cloud', {})
+            if cloud.get('api_url') and cloud.get('api_key'):
+                self._apply_cloud_config_to_ui(cloud)
+                self.cloud_status_label.setText("🟡 Configurado (sin verificar)")
+                self.cloud_status_label.setStyleSheet(
+                    "font-weight: bold; font-size: 13px; color: orange;")
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo cargar cloud config: {e}")
+
+    def _apply_cloud_config_to_ui(self, cloud: dict):
+        """Poblar campos UI desde dict de cloud config."""
+        api_url = cloud.get('api_url', '')
+        # Strip /api/v1 for display
+        if api_url.endswith('/api/v1'):
+            api_url = api_url[:-7]
+        self.api_url_input.setText(api_url)
+        self.event_id_input.setText(cloud.get('event_id', ''))
+        self.agent_name_input.setText(cloud.get('agent_name', ''))
+        self.token_input.setText(cloud.get('api_key', ''))
+
+    def _test_cloud_connection(self):
+        """Verificar conexión con el backend cloud."""
+        import threading
+        import requests
+
+        base_url = self.api_url_input.text().strip().rstrip('/')
+        token = self.token_input.text().strip()
+        event_id = self.event_id_input.text().strip()
+
+        if not base_url or not token:
+            QMessageBox.warning(self, "Faltan datos", "Ingrese URL y Token antes de verificar.")
+            return
+
+        self.cloud_status_label.setText("🔄 Verificando...")
+        self.cloud_status_label.setStyleSheet(
+            "font-weight: bold; font-size: 13px; color: gray;")
+
+        def _check():
+            try:
+                url = f"{base_url}/api/v1/timing/events/{event_id}/reads/summary"
+                r = requests.get(url, timeout=5)
+                ok = r.status_code in (200, 404)  # 404 = event not found but backend reachable
+                return ok, r.status_code
+            except Exception as e:
+                return False, str(e)
+
+        def _run():
+            ok, code = _check()
+            # Use QTimer.singleShot to update UI safely from main thread
+            from PyQt6.QtCore import QTimer
+
+            def _update():
+                if ok:
+                    self.cloud_status_label.setText("🟢 Conectado")
+                    self.cloud_status_label.setStyleSheet(
+                        "font-weight: bold; font-size: 13px; color: green;")
+                    self.log(f"✅ Backend alcanzable (HTTP {code})")
+                else:
+                    self.cloud_status_label.setText("🔴 Sin conexión")
+                    self.cloud_status_label.setStyleSheet(
+                        "font-weight: bold; font-size: 13px; color: red;")
+                    self.log(f"❌ No se pudo conectar: {code}")
+
+            QTimer.singleShot(0, _update)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    # ========================================================================
+    # Utilidades
+    # ========================================================================
+
     def get_timestamp(self):
         """Timestamp formateado"""
         return datetime.now().strftime('%H:%M:%S')
