@@ -194,33 +194,41 @@ class ChipAssignmentWidget(QWidget):
         # Selector de tipo de lector
         scanner_type_group = QGroupBox("Tipo de Lector")
         scanner_type_layout = QVBoxLayout(scanner_type_group)
+        scanner_type_layout.setSpacing(4)
 
         self.scanner_button_group = QButtonGroup()
 
-        self.network_scanner_radio = QRadioButton("🌐 Antenas de Competencia (YR8900)")
+        # Fila: Antenas de Competencia
+        row_network = QHBoxLayout()
+        self.network_scanner_radio = QRadioButton("🌐 Antenas (YR8900)")
         self.network_scanner_radio.setChecked(True)
         self.network_scanner_radio.toggled.connect(lambda: self.set_scanner_mode("network"))
         self.scanner_button_group.addButton(self.network_scanner_radio)
-        scanner_type_layout.addWidget(self.network_scanner_radio)
+        row_network.addWidget(self.network_scanner_radio)
+        scanner_type_layout.addLayout(row_network)
 
-        self.usb_scanner_radio = QRadioButton("🔌 Lector USB Kiosco (YR9011)")
+        # Fila: Lector USB
+        row_usb = QHBoxLayout()
+        self.usb_scanner_radio = QRadioButton("🔌 USB Kiosco (YR9011)")
         self.usb_scanner_radio.toggled.connect(lambda: self.set_scanner_mode("usb"))
         self.scanner_button_group.addButton(self.usb_scanner_radio)
-        scanner_type_layout.addWidget(self.usb_scanner_radio)
+        row_usb.addWidget(self.usb_scanner_radio)
+        self.usb_status_label = QLabel("No conectado")
+        self.usb_status_label.setStyleSheet("color: #999; font-size: 10px;")
+        row_usb.addWidget(self.usb_status_label)
+        scanner_type_layout.addLayout(row_usb)
 
-        self.usb_status_label = QLabel("📴 Lector USB no conectado")
-        self.usb_status_label.setStyleSheet("color: #666; font-size: 11px; margin-left: 20px;")
-        scanner_type_layout.addWidget(self.usb_status_label)
-
-        self.local_scanner_radio = QRadioButton("🌐 Lector Local (WebSocket)")
+        # Fila: Lector Local WebSocket
+        row_local = QHBoxLayout()
+        self.local_scanner_radio = QRadioButton("🌐 Local (WebSocket)")
         self.local_scanner_radio.setToolTip("Conecta a un servicio lector local en ws://localhost:8765")
         self.local_scanner_radio.toggled.connect(lambda: self.set_scanner_mode("local"))
         self.scanner_button_group.addButton(self.local_scanner_radio)
-        scanner_type_layout.addWidget(self.local_scanner_radio)
-
-        self.local_status_label = QLabel("⬤ No conectado")
-        self.local_status_label.setStyleSheet("color: #666; font-size: 11px; margin-left: 20px;")
-        scanner_type_layout.addWidget(self.local_status_label)
+        row_local.addWidget(self.local_scanner_radio)
+        self.local_status_label = QLabel("No conectado")
+        self.local_status_label.setStyleSheet("color: #999; font-size: 10px;")
+        row_local.addWidget(self.local_status_label)
+        scanner_type_layout.addLayout(row_local)
 
         assignment_layout.addWidget(scanner_type_group)
 
