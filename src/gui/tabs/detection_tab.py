@@ -36,18 +36,16 @@ class DetectionTab(BaseTab):
     - Actualizar estadísticas
     """
     
-    def __init__(self, signals=None, parent=None):
+    def __init__(self, signals=None, race_manager=None, parent=None):
         self.scanner = None
         self.scan_thread = None
         self.tag_processor = None
         self.is_scanning = False
+        self.race_manager = race_manager
         self.antenna_roles = {}   # {port: [roles]}
         self.antenna_names = {}   # {port: name}
         self.detected_tags = set()
         self.tag_rows = {}        # {tag_id: row_index}
-        # tag_data structure:
-        # {tag_id: {start_ts, start_dt, checkpoint_ts: {cp_num: str},
-        #           finish_ts, finish_dt, name, distance, bib}}
         self.tag_data = {}
 
         # Timer para actualizar tiempo acumulado en vivo
@@ -561,9 +559,26 @@ class DetectionTab(BaseTab):
         else:
             logger.warning("⚠️  No hay objeto signals, no se puede emitir señal para RaceManager")
     
+    def _tag_in_running_distance(self, tag_id: str) -> bool:
+        """True si el chip pertenece a una distancia en curso (o no hay race_manager)."""
+        if not self.race_manager:
+            return True
+        for dist in self.race_manager.get_all_distances():
+            from src.core.race_tracking.models import RaceStatus
+            if dist.status == RaceStatus.RUNNING:
+                if any(a.tag_id == tag_id for a in dist.participants):
+                    return True
+        # Chip desconocido (no asignado) — no mostrar
+        return False
+
     def add_detection_to_table(self, processed: dict):
         """Agregar o actualizar detección en la tabla (agrupada por participante)."""
         tag_id = processed['tag_id']
+
+        # Solo mostrar chips de distancias en curso
+        if not self._tag_in_running_distance(tag_id):
+            logger.debug(f"Chip {tag_id} ignorado en tabla — distancia no iniciada o chip desconocido")
+            return
         roles = processed['roles']
         port = processed['port']
         ts_str = processed['timestamp']             # "HH:MM:SS.mmm"

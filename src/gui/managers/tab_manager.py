@@ -118,7 +118,7 @@ class TabManager:
         
         from ..tabs import DetectionTab
         
-        detection_tab = DetectionTab(signals=self.signals)
+        detection_tab = DetectionTab(signals=self.signals, race_manager=self.race_manager)
         self.tab_widget.addTab(detection_tab, "🔍 Detección")
         self.tabs['detection'] = detection_tab
         

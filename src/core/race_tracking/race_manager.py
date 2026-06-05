@@ -415,9 +415,17 @@ class RaceManager:
             return None
         logger.info("✅ Validación de timing OK")
 
-        # 3. Determinar tipo de evento según roles
         logger.info("🔍 PASO 3: Determinando tipo de evento...")
         logger.info(f"   Roles de antena: {roles}")
+
+        # Inicializar resultado si el atleta fue agregado después de crear la distancia
+        if athlete.athlete_id not in self.results.get(distance.distance_id, {}):
+            logger.warning(f"⚠️  Atleta {athlete.name} sin resultado inicializado — inicializando ahora")
+            self.results.setdefault(distance.distance_id, {})[athlete.athlete_id] = AthleteResult(
+                athlete=athlete,
+                distance_id=distance.distance_id
+            )
+
         logger.info(f"   Estado actual atleta: {self.results[distance.distance_id][athlete.athlete_id].status}")
 
         event_type, checkpoint_num = self._determine_event_type(roles, athlete, distance)
