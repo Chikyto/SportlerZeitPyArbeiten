@@ -1378,15 +1378,30 @@ class ChipAssignmentWidget(QWidget):
 
     @staticmethod
     def _distance_meters(category_id: str) -> float:
-
         """Infiere distancia en metros del nombre de categoría."""
+        import re
+        name = category_id.upper().replace('_', ' ')
+
+        # Mapeo de nombres conocidos
         mapping = {
-            '5K': 5000, '10K': 10000, '15K': 15000,
-            '21K': 21097, '42K': 42195,
-            'MEDIO': 21097, 'MEDIA': 21097,
-            'MARATON': 42195, 'MARATÓN': 42195,
+            '5K': 5000, '10K': 10000, '15K': 15000, '21K': 21097, '42K': 42195,
+            'MEDIO': 21097, 'MEDIA': 21097, 'MARATON': 42195, 'MARATÓN': 42195,
         }
-        return float(mapping.get(category_id.upper().replace(' ', ''), 0))
+        for key, val in mapping.items():
+            if key in name:
+                return float(val)
+
+        # Parsear número seguido de KM / KILÓMETRO(S) / K
+        m = re.search(r'(\d+(?:[.,]\d+)?)\s*(?:KIL[OÓ]METROS?|KM|K)\b', name)
+        if m:
+            return float(m.group(1).replace(',', '.')) * 1000
+
+        # Parsear número seguido de M / METRO(S)
+        m = re.search(r'(\d+(?:[.,]\d+)?)\s*(?:METROS?|M)\b', name)
+        if m:
+            return float(m.group(1).replace(',', '.'))
+
+        return 1.0  # valor mínimo válido si no se puede inferir
 
     def import_assignments_from_csv(self):
         """Importar asignaciones de chips desde CSV externo"""
