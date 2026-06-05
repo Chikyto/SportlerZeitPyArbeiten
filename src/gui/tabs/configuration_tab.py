@@ -511,52 +511,66 @@ class ConfigurationTab(BaseTab):
             "Se abrirá el wizard de configuración.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        
-        if reply == QMessageBox.StandardButton.Yes:
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        main_window = self.window()
+
+        # 1. Desconectar scanner para liberar el socket del lector
+        scanner = getattr(main_window, 'scanner', None)
+        if scanner and hasattr(scanner, 'disconnect'):
             try:
-                # Importar wizard
-                from src.gui.wizard.configuration_wizard import ConfigurationWizard
-                
-                # Ejecutar wizard
-                wizard = ConfigurationWizard()
-                if wizard.exec():
-                    # Obtener nueva config
-                    new_config = wizard.get_configuration()
-                    
-                    # Guardar
-                    import json
-                    with open('timing_system_config.json', 'w') as f:
-                        json.dump(new_config, f, indent=2)
-                    
-                    self.log("✅ Nueva configuración guardada")
-                    
-                    # Actualizar la config actual
-                    self.wizard_config = new_config
-                    
-                    # Recargar datos en el tab
-                    self.load_config_data()
-                    
-                    # Actualizar scanner en MainWindow
-                    main_window = self.window()
-                    if hasattr(main_window, 'wizard_config'):
-                        main_window.wizard_config = new_config
-                    if hasattr(main_window, 'setup_scanner'):
-                        main_window.setup_scanner()
-                    if hasattr(main_window, 'tab_manager'):
-                        main_window.tab_manager.apply_config_to_all_tabs(new_config)
-                    
-                    QMessageBox.information(
-                        self,
-                        "Configuración Actualizada",
-                        "La nueva configuración ha sido aplicada.\n\n"
-                    )
-                else:
-                    self.log("⚠️ Wizard cancelado")
-                    
+                scanner.disconnect()
+                self.log("🔌 Scanner desconectado para re-configuración")
             except Exception as e:
-                self.log(f"❌ Error ejecutando wizard: {e}")
-                import traceback
-                traceback.print_exc()
+                self.log(f"⚠️ No se pudo desconectar scanner: {e}")
+
+        try:
+            # 2. Cargar config guardada para pre-poblar el wizard con el IP correcto
+            from config.system_config import SystemConfig
+            saved_config = SystemConfig()
+            saved_config.load_from_file('timing_system_config.json')
+
+            # 3. Abrir wizard con la config actual (IP correcta)
+            from src.gui.wizard.auto_wizard import AutoConfigurationWizard
+            wizard = AutoConfigurationWizard(config=saved_config)
+
+            if wizard.exec():
+                new_config = wizard.get_configuration()
+
+                with open('timing_system_config.json', 'w') as f:
+                    json.dump(new_config, f, indent=2)
+
+                self.log("✅ Nueva configuración guardada")
+                self.wizard_config = new_config
+                self.load_config_data()
+
+                if hasattr(main_window, 'wizard_config'):
+                    main_window.wizard_config = new_config
+                if hasattr(main_window, 'setup_scanner'):
+                    main_window.setup_scanner()
+                if hasattr(main_window, 'tab_manager'):
+                    main_window.tab_manager.apply_config_to_all_tabs(new_config)
+
+                QMessageBox.information(
+                    self,
+                    "Configuración Actualizada",
+                    "La nueva configuración ha sido aplicada."
+                )
+            else:
+                self.log("⚠️ Wizard cancelado — reconectando scanner anterior...")
+                # Reconectar con la config que había antes
+                if hasattr(main_window, 'setup_scanner'):
+                    main_window.setup_scanner()
+
+        except Exception as e:
+            self.log(f"❌ Error ejecutando wizard: {e}")
+            import traceback
+            traceback.print_exc()
+            # Intentar reconectar aunque haya fallado
+            if hasattr(main_window, 'setup_scanner'):
+                main_window.setup_scanner()
     
     def import_szconfig(self):
         """Importar archivo .szconfig generado desde el front web"""
