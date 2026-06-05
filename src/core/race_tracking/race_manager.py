@@ -599,6 +599,17 @@ class RaceManager:
         if result.status == AthleteStatus.RUNNING:
             # Si tiene rol 'finish'
             if 'finish' in roles:
+                if result.start_time:
+                    from datetime import datetime
+                    elapsed = (datetime.now() - result.start_time).total_seconds()
+                    min_seconds = max(30.0, distance.distance_meters / 6.0)
+                    if elapsed < min_seconds:
+                        logger.warning(
+                            f"⏱️ FINISH ignorado para {athlete.name}: "
+                            f"solo {elapsed:.1f}s transcurridos "
+                            f"(mínimo {min_seconds:.0f}s para {distance.distance_meters:.0f}m)"
+                        )
+                        return None, None
                 return EventType.FINISH, None
 
             # Si tiene rol 'checkpoint'

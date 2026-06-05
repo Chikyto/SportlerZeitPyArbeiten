@@ -9,10 +9,15 @@ Delegación: AntennaManager para antenas, TabManager para tabs
 """
 
 import logging
+import threading
+import json
+import os
+import threading
+import requests
+
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                             QTabWidget, QLabel, QMessageBox)
 from PyQt6.QtCore import pyqtSlot
-
 from src.utils.signals import AppSignals
 from ..core.advanced_scanner import AdvancedYR8900Scanner
 from ..core.race_tracking.race_manager import RaceManager
@@ -42,6 +47,7 @@ class MainWindow(QMainWindow):
         self.wizard_config = self._normalize_config(wizard_config)
         self.antenna_manager = AntennaManager(self.wizard_config)
         self.race_manager = RaceManager()  # Sistema de timing de carreras
+        self.cloud_config = self._load_cloud_config()
         self.signals = AppSignals()
         self.scanner = None
 
@@ -226,7 +232,7 @@ class MainWindow(QMainWindow):
         self.signals.auto_start_scanning.connect(self.on_auto_start_scanning)
 
         # 🎟️ Señal de atleta llegando a meta → mostrar ticket
-        self.signals.athlete_finished.connect(self.on_athlete_finished_show_ticket)
+        #self.signals.athlete_finished.connect(self.on_athlete_finished_show_ticket)
 
         logger.info("✅ Señales conectadas")
     
@@ -298,6 +304,7 @@ class MainWindow(QMainWindow):
 
             if event:
                 logger.info(f"✅ Evento procesado exitosamente: {event}")
+                self._send_detection_to_backend(event, tag_id, antenna_port, roles)
             else:
                 logger.warning(f"⚠️  Tag {tag_id} detectado pero sin evento de carrera asociado")
                 logger.warning("   Posibles causas:")
@@ -404,7 +411,7 @@ class MainWindow(QMainWindow):
             position_gender = next((i+1 for i, r in enumerate(gender_results) if r.athlete.athlete_id == athlete.athlete_id), 0)
 
             # Posición por categoría
-            category = athlete.get_category() or "Sin categoría"
+            category = "Sin categoría"
             results_by_award = self.race_manager.get_results_by_award_category(distance.distance_id)
             category_results = results_by_award.get(category, [])
             position_category = next((i+1 for i, r in enumerate(category_results) if r.athlete.athlete_id == athlete.athlete_id), 0)
@@ -470,22 +477,36 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Manejar cierre de la aplicación"""
-        reply = QMessageBox.question(
-            self,
-            'Confirmar Salida',
-            '¿Está seguro que desea salir?\nSe perderán los datos no guardados.',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            # Desconectar scanner si está conectado
-            if self.scanner and hasattr(self.scanner, 'connected') and self.scanner.connected:
-                logger.info("Desconectando scanner...")
-                self.scanner.disconnect()
+        msg = QMessageBox(self)
+        msg.setWindowTitle('Confirmar Salida')
+        msg.setText('¿Qué desea hacer antes de salir?')
+        msg.setInformativeText('Los resultados no exportados podrían perderse.')
+        msg.setIcon(QMessageBox.Icon.Question)
+
+        btn_save = msg.addButton('Guardar y salir', QMessageBox.ButtonRole.AcceptRole)
+        btn_exit = msg.addButton('Salir sin guardar', QMessageBox.ButtonRole.DestructiveRole)
+        btn_cancel = msg.addButton('Cancelar', QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(btn_cancel)
+        msg.exec()
+
+        clicked = msg.clickedButton()
+        if clicked == btn_cancel:
+            event.ignore()
+        elif clicked == btn_save:
+            self._save_on_exit()
             event.accept()
         else:
-            event.ignore()
+            event.accept()
+
+    def _save_on_exit(self):
+        """Guardar estado al cerrar"""
+        try:
+            results_tab = self.tab_manager.get_tab('results')
+            if results_tab and hasattr(results_tab, 'export_results_csv'):
+                results_tab.export_results_csv(silent=True)
+                logger.info("✅ Resultados guardados al cerrar")
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo guardar al cerrar: {e}")
     
     # ========================================================================
     # Debug y utilidades
@@ -500,3 +521,50 @@ class MainWindow(QMainWindow):
             'antenna_summary': self.antenna_manager.get_summary(),
             'tab_count': self.tab_manager.get_tab_count()
         }
+    
+    # ========================================================================
+    # Configuración cloud y backend para integración
+    # ========================================================================
+
+    def _load_cloud_config(self):
+        try:
+            path = 'config/api_config.json'
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                cloud = data.get('cloud', {})
+                if cloud.get('api_url') and cloud.get('api_key'):
+                    return {
+                        'api_url': cloud['api_url'],   # ya tiene /api/v1
+                        'token': cloud['api_key'],
+                        'event_id': cloud.get('event_id', ''),
+                    }
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo cargar cloud config: {e}")
+        return None
+
+    def _send_detection_to_backend(self, event, tag_id, antenna_port, roles):
+        """Enviar detección al backend (no bloqueante)"""
+        if not self.cloud_config:
+            return
+
+        def _post():
+            try:
+                base_url = self.cloud_config['api_url'].rstrip('/').rstrip('/api/v1')
+                url = f"{self.cloud_config['api_url']}/timing/reads"
+                headers = {'Authorization': f"Bearer {self.cloud_config['token']}"}
+                payload = {
+                    'chip_id': tag_id,
+                    'antenna_id': str(antenna_port),
+                    'timestamp': event.timestamp.isoformat(),
+                    'reading_type': event.event_type.value,
+                }
+                r = requests.post(url, json=payload, headers=headers, timeout=5)
+                if r.status_code not in (200, 201):
+                    logger.warning(f"⚠️ Backend respondió {r.status_code}: {r.text[:100]}")
+                else:
+                    logger.info(f"☁️ Detección enviada al backend: {tag_id} → {event.event_type.value}")
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo enviar al backend: {e}")
+
+        threading.Thread(target=_post, daemon=True).start()

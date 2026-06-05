@@ -116,7 +116,7 @@ class AdvancedYR8900Scanner:
             return False
         
         try:
-            print(f"{Fore.CYAN}DEBUG: Cambiando a puerto {port}...")
+            #print(f"{Fore.CYAN}DEBUG: Cambiando a puerto {port}...")
             
             result = self.protocol.send_command(
                 CommandCodes.SET_WORK_ANTENNA,
@@ -125,7 +125,7 @@ class AdvancedYR8900Scanner:
             
             if result.get("valid"):
                 self.current_antenna = port
-                print(f"{Fore.GREEN}✓ Antena {port} activada")
+               # print(f"{Fore.GREEN}✓ Antena {port} activada")
                 return True
             else:
                 print(f"{Fore.RED}✗ Error activando antena {port}: {result.get('error')}")

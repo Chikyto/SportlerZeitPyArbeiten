@@ -2,9 +2,10 @@
 Tab de configuración unificado - Conexión + Antenas del Wizard
 """
 from PyQt6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox, 
+    QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QPushButton, QGroupBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QTextEdit, QCheckBox, QWidget,
+    QFileDialog,
 )
 from PyQt6.QtCore import pyqtSlot, Qt
 from PyQt6.QtGui import QColor
@@ -111,7 +112,59 @@ class ConfigurationTab(BaseTab):
         antennas_layout.addLayout(actions_layout)
         
         self.layout.addWidget(antennas_group)
-        
+
+        # === SECCIÓN 3: BACKEND CLOUD ===
+        cloud_group = QGroupBox("☁️ Conexión Backend Cloud (Sportler-Zeit)")
+        cloud_layout = QVBoxLayout(cloud_group)
+
+        # Fila de estado
+        status_layout = QHBoxLayout()
+        self.cloud_status_label = QLabel("⚪ Sin configurar")
+        self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        status_layout.addWidget(self.cloud_status_label)
+        status_layout.addStretch()
+
+        import_btn = QPushButton("📂 Importar config (.szconfig)")
+        import_btn.clicked.connect(self.import_szconfig)
+        import_btn.setStyleSheet("background-color: #2563eb; color: white; font-weight: bold; padding: 6px 12px;")
+        status_layout.addWidget(import_btn)
+
+        test_cloud_btn = QPushButton("🧪 Probar conexión")
+        test_cloud_btn.clicked.connect(self.test_cloud_connection)
+        test_cloud_btn.setMaximumWidth(140)
+        status_layout.addWidget(test_cloud_btn)
+
+        cloud_layout.addLayout(status_layout)
+
+        # Campos (read-only, se rellenan al importar)
+        fields_layout = QHBoxLayout()
+
+        fields_layout.addWidget(QLabel("URL:"))
+        self.cloud_url_input = QLineEdit()
+        self.cloud_url_input.setReadOnly(True)
+        self.cloud_url_input.setPlaceholderText("Se carga al importar el .szconfig")
+        self.cloud_url_input.setStyleSheet("color: #555;")
+        fields_layout.addWidget(self.cloud_url_input, 3)
+
+        fields_layout.addWidget(QLabel("Evento:"))
+        self.cloud_event_input = QLineEdit()
+        self.cloud_event_input.setReadOnly(True)
+        self.cloud_event_input.setMaximumWidth(160)
+        fields_layout.addWidget(self.cloud_event_input, 1)
+
+        fields_layout.addWidget(QLabel("Agente:"))
+        self.cloud_agent_input = QLineEdit()
+        self.cloud_agent_input.setReadOnly(True)
+        self.cloud_agent_input.setMaximumWidth(160)
+        fields_layout.addWidget(self.cloud_agent_input, 1)
+
+        cloud_layout.addLayout(fields_layout)
+
+        self.layout.addWidget(cloud_group)
+
+        # Cargar config cloud guardada (si existe)
+        self._load_cloud_config_from_file()
+
         # === LOG ===
         log_group = QGroupBox("📋 Log de Actividad")
         log_layout = QVBoxLayout(log_group)
@@ -505,6 +558,139 @@ class ConfigurationTab(BaseTab):
                 import traceback
                 traceback.print_exc()
     
+    def import_szconfig(self):
+        """Importar archivo .szconfig generado desde el front web"""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Importar configuración de timing",
+            "",
+            "Sportler-Zeit Config (*.szconfig);;JSON (*.json);;Todos los archivos (*)"
+        )
+        if not path:
+            return
+
+        try:
+            import json
+            with open(path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            required = ['api_url', 'event_id', 'token']
+            missing = [k for k in required if not config.get(k)]
+            if missing:
+                QMessageBox.warning(self, "Archivo inválido",
+                    f"El archivo no contiene los campos requeridos: {', '.join(missing)}")
+                return
+
+            # Guardar en timing_system_config.json
+            self._save_cloud_config(config)
+
+            # Actualizar UI
+            self._apply_cloud_config_to_ui(config)
+
+            self.log(f"✅ Config importada: {config['api_url']} | evento: {config['event_id']} | agente: {config.get('agent_name', '-')}")
+
+            QMessageBox.information(self, "Config importada",
+                f"Conexión configurada correctamente.\n\n"
+                f"URL: {config['api_url']}\n"
+                f"Evento: {config['event_id']}\n"
+                f"Agente: {config.get('agent_name', '-')}\n\n"
+                "Usá 'Probar conexión' para verificar.")
+
+        except Exception as e:
+            logger.error(f"Error importando .szconfig: {e}")
+            QMessageBox.critical(self, "Error", f"No se pudo leer el archivo:\n{e}")
+
+    def test_cloud_connection(self):
+        """Probar conexión con el backend"""
+        api_url = self.cloud_url_input.text().strip()
+        token = self._get_saved_token()
+
+        if not api_url or not token:
+            QMessageBox.warning(self, "Sin config", "Primero importá un archivo .szconfig.")
+            return
+
+        try:
+            import requests
+            headers = {'Authorization': f'Bearer {token}'}
+            # Usamos el health check del backend
+            base_url = api_url.rstrip('/').replace('/api/v1', '')
+            resp = requests.get(f"{base_url}/health", headers=headers, timeout=15)
+
+            if resp.status_code in (200, 404):
+                # 404 también es "backend respondió", puede que no tenga /health
+                self.cloud_status_label.setText("🟢 Conectado")
+                self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px; color: green;")
+                self.log(f"✅ Backend responde: {resp.status_code}")
+                QMessageBox.information(self, "Conexión OK", "El backend está accesible.")
+            else:
+                self.cloud_status_label.setText(f"🔴 Error {resp.status_code}")
+                self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px; color: red;")
+                self.log(f"⚠️ Backend retornó: {resp.status_code}")
+
+        except Exception as e:
+            self.cloud_status_label.setText("🔴 Sin conexión")
+            self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px; color: red;")
+            self.log(f"❌ Error de conexión: {e}")
+            QMessageBox.warning(self, "Sin conexión", f"No se pudo conectar al backend:\n{e}")
+
+    def _save_cloud_config(self, config: dict):
+        """Guardar config cloud en config/api_config.json"""
+        import json, os
+        config_path = 'config/api_config.json'
+        existing = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+
+        existing['cloud'] = {
+            'api_url': config['api_url'],
+            'event_id': config['event_id'],
+            'agent_name': config.get('agent_name', ''),
+            'api_key': config['token'],
+        }
+
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
+
+    def _load_cloud_config_from_file(self):
+        """Cargar cloud config guardado al iniciar"""
+        import json, os
+        try:
+            path = 'config/api_config.json'
+            if not os.path.exists(path):
+                return
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            cloud = data.get('cloud', {})
+            if cloud.get('api_url') and cloud.get('api_key'):
+                self._apply_cloud_config_to_ui(cloud)
+                self.cloud_status_label.setText("🟡 Configurado (sin verificar)")
+                self.cloud_status_label.setStyleSheet(
+                    "font-weight: bold; font-size: 13px; color: orange;")
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo cargar cloud config: {e}")
+
+    def _apply_cloud_config_to_ui(self, config: dict):
+        """Actualizar widgets con la config cloud"""
+        self.cloud_url_input.setText(config.get('api_url', ''))
+        self.cloud_event_input.setText(config.get('event_id', ''))
+        self.cloud_agent_input.setText(config.get('agent_name', ''))
+        self.cloud_status_label.setText("🟡 Configurado (sin verificar)")
+        self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #b45309;")
+
+    def _get_saved_token(self) -> str:
+        """Obtener token guardado de la config"""
+        import json, os
+        try:
+            with open('config/api_config.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return data.get('api_key', '')
+        except Exception:
+            return data.get('cloud', {}).get('api_key', '') or data.get('api_key', '')
+
     def get_timestamp(self):
         """Timestamp formateado"""
         return datetime.now().strftime('%H:%M:%S')

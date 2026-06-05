@@ -1257,6 +1257,30 @@ class ChipAssignmentWidget(QWidget):
                     "Verificá que el event_id en api_config.json sea correcto.")
                 return
 
+            # Preguntar si limpiar datos existentes
+            has_existing = any(self.race_manager.get_distance(d) for d in athletes_by_dist)
+            clear_first = False
+            if has_existing:
+                reply = QMessageBox.question(
+                    self,
+                    "Datos existentes",
+                    "Ya hay atletas cargados en el sistema.\n\n"
+                    "¿Querés limpiar los datos existentes antes de importar?\n\n"
+                    "• Sí → borra todo y reimporta desde cero\n"
+                    "• No → actualiza/agrega sin borrar",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
+                )
+                if reply == QMessageBox.StandardButton.Cancel:
+                    return
+                clear_first = (reply == QMessageBox.StandardButton.Yes)
+
+            if clear_first:
+                for dist_id in list(athletes_by_dist.keys()):
+                    existing = self.race_manager.get_distance(dist_id)
+                    if existing:
+                        existing.participants.clear()
+                        logger.info(f"🗑️ Distancia {dist_id} limpiada")
+
             # Reusar el mapeo de distancias del importador CSV
             distance_map = {
                 info['distance_id']: info
@@ -1305,6 +1329,26 @@ class ChipAssignmentWidget(QWidget):
                 f"• {len(athletes_by_dist)} distancias\n"
                 f"• {total} atletas\n\n"
                 f"Ahora podés asignar chips RFID a cada corredor.")
+            
+                        # Detectar chips duplicados en todo el sistema
+            chip_map = {}  # chip_id -> lista de (nombre, distancia)
+            for dist in self.race_manager.get_all_distances():
+                for a in dist.participants:
+                    if a.tag_id:
+                        chip_map.setdefault(a.tag_id, []).append((a.name, dist.name))
+            duplicates = {chip: owners for chip, owners in chip_map.items() if len(owners) > 1}
+
+            msg = f"✅ Importados desde Cloud Run:\n\n• {len(athletes_by_dist)} distancias\n• {total} atletas"
+            if duplicates:
+                msg += f"\n\n⚠️ CHIPS DUPLICADOS ({len(duplicates)}):\n"
+                for chip, owners in duplicates.items():
+                    owners_str = ", ".join(f"{n} ({d})" for n, d in owners)
+                    msg += f"  • Chip {chip}: {owners_str}\n"
+                msg += "\nCorregí las asignaciones antes de la carrera."
+                QMessageBox.warning(self, "Importación con advertencias", msg)
+            else:
+                QMessageBox.information(self, "Importación Exitosa", msg + "\n\nPodés asignar chips RFID a cada corredor.")
+
             logger.info(f"✅ Importación API: {total} atletas en {len(athletes_by_dist)} distancias")
 
         except Exception as e:
@@ -1401,8 +1445,46 @@ class ChipAssignmentWidget(QWidget):
                             break
 
                     if not found:
-                        not_found += 1
-                        errors.append(f"Atleta con dorsal {dorsal_num} no encontrado")
+                        # Si el CSV tiene columna Nombre, crear el atleta localmente
+                        nombre = row.get('Nombre', '').strip()
+                        distancia = row.get('Distancia', '').strip()
+
+                        if nombre:
+                            # Crear atleta desde CSV y agregarlo al race manager
+                            try:
+                                from src.core.race_tracking.models import Athlete
+                                import uuid
+
+                                new_athlete = Athlete(
+                                    bib_number=dorsal_num,
+                                    name=nombre,
+                                    tag_id=chip_id if chip_id else None,
+                                    distance_id=distancia or 'Desconocida',
+                                )
+
+                                # Buscar categoría por distancia o usar la primera
+                                target_category = None
+                                for cat in self.race_manager.get_all_categories():
+                                    if cat.name == distancia or cat.distance_name == distancia:
+                                        target_category = cat
+                                        break
+                                if target_category is None and self.race_manager.get_all_categories():
+                                    target_category = self.race_manager.get_all_categories()[0]
+
+                                if target_category:
+                                    target_category.participants.append(new_athlete)
+                                    updated += 1
+                                    logger.info(f"✚ Atleta {nombre} (#{dorsal_num}) creado desde CSV con chip {chip_id}")
+                                else:
+                                    not_found += 1
+                                    errors.append(f"Sin categoría disponible para dorsal {dorsal_num}")
+
+                            except Exception as e:
+                                not_found += 1
+                                errors.append(f"Error creando atleta dorsal {dorsal_num}: {e}")
+                        else:
+                            not_found += 1
+                            errors.append(f"Atleta con dorsal {dorsal_num} no encontrado")
 
             # Actualizar tabla
             self.refresh_athletes_table()
