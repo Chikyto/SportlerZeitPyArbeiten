@@ -162,14 +162,14 @@ class ConfigurationTab(BaseTab):
 
         # Fila de sincronización de atletas
         sync_layout = QHBoxLayout()
-        sync_info = QLabel("Subir atletas locales al backend para mostrar nombres en la página pública:")
+        sync_info = QLabel("Live tracking: los atletas deben estar registrados en la plataforma web.")
         sync_info.setStyleSheet("color: #555; font-size: 11px;")
         sync_layout.addWidget(sync_info)
         sync_layout.addStretch()
         self.sync_athletes_btn = QPushButton("☁️ Sincronizar atletas")
         self.sync_athletes_btn.clicked.connect(self.sync_athletes_to_backend)
-        self.sync_athletes_btn.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 6px 14px;")
-        self.sync_athletes_btn.setToolTip("Sube los atletas cargados localmente al backend para que aparezcan en el live tracking")
+        self.sync_athletes_btn.setStyleSheet("background-color: #6b7280; color: white; font-weight: bold; padding: 6px 14px;")
+        self.sync_athletes_btn.setToolTip("Requiere endpoint POST /api/events/{event_id}/athletes en el backend (pendiente de implementar)")
         sync_layout.addWidget(self.sync_athletes_btn)
         cloud_layout.addLayout(sync_layout)
 
@@ -705,45 +705,16 @@ class ConfigurationTab(BaseTab):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        # 5. POST al backend
-        try:
-            self.sync_athletes_btn.setEnabled(False)
-            self.sync_athletes_btn.setText("Subiendo...")
-
-            headers = {'Content-Type': 'application/json'}
-            if api_key:
-                headers['Authorization'] = f'Bearer {api_key}'
-
-            url = f"{api_url}/api/events/{event_id}/athletes"
-            resp = req.post(url, json={'athletes': athletes_payload}, headers=headers, timeout=30)
-
-            if resp.status_code in (200, 201, 204):
-                self.log(f"✅ {len(athletes_payload)} atletas sincronizados al backend")
-                QMessageBox.information(self, "Sincronización exitosa",
-                    f"✅ {len(athletes_payload)} atletas subidos correctamente.\n\n"
-                    "Los resultados en vivo mostrarán nombres y dorsales.")
-            else:
-                self.log(f"⚠️ Backend retornó {resp.status_code}: {resp.text[:200]}")
-                QMessageBox.warning(self, "Respuesta inesperada",
-                    f"El backend respondió con código {resp.status_code}.\n\n"
-                    f"Detalle: {resp.text[:300]}\n\n"
-                    "Los atletas pueden o no haberse guardado.")
-
-        except req.exceptions.ConnectionError:
-            QMessageBox.critical(self, "Sin conexión",
-                "No se pudo conectar al backend.\n\n"
-                "Verificá que el servicio esté disponible y la URL sea correcta.")
-            self.log("❌ Error de conexión al sincronizar atletas")
-        except req.exceptions.Timeout:
-            QMessageBox.critical(self, "Timeout",
-                "La conexión tardó demasiado.\n\nIntentá de nuevo.")
-            self.log("❌ Timeout al sincronizar atletas")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al sincronizar:\n{e}")
-            self.log(f"❌ Error sincronizando atletas: {e}")
-        finally:
-            self.sync_athletes_btn.setEnabled(True)
-            self.sync_athletes_btn.setText("☁️ Sincronizar atletas")
+        # 5. Informar que el endpoint no existe aún en el backend
+        QMessageBox.information(self, "Función pendiente",
+            f"Se encontraron {len(athletes_payload)} atletas listos para sincronizar.\n\n"
+            f"⚠️ El backend actual solo tiene GET /api/events/{{event_id}}/athletes\n"
+            f"(lectura para el hardware, no escritura desde timing).\n\n"
+            "Para habilitar esta función hay que agregar:\n"
+            "  POST /api/events/{event_id}/athletes\n\n"
+            "Por ahora, para que el live tracking muestre nombres,\n"
+            "los atletas deben estar registrados en la plataforma web.")
+        self.log(f"ℹ️ Sync pendiente: {len(athletes_payload)} atletas — falta endpoint en backend")
 
     def test_cloud_connection(self):
         """Probar conexión con el backend"""
