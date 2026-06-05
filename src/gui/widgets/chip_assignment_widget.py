@@ -1462,59 +1462,76 @@ class ChipAssignmentWidget(QWidget):
                             break
 
                     if not found:
-                        # Si el CSV tiene columna Nombre, crear el atleta localmente
-                        nombre = row.get('Nombre', '').strip()
+                        nombre    = row.get('Nombre', '').strip()
                         distancia = row.get('Distancia', '').strip()
 
-                        if nombre:
-                            # Crear atleta desde CSV y agregarlo al race manager
-                            try:
-                                from src.core.race_tracking.models import Athlete
-                                import uuid
-
-                                new_athlete = Athlete(
-                                    bib_number=dorsal_num,
-                                    name=nombre,
-                                    tag_id=chip_id if chip_id else None,
-                                    distance_id=distancia or 'Desconocida',
-                                )
-
-                                # Buscar categoría por distancia o usar la primera
-                                target_category = None
-                                for cat in self.race_manager.get_all_categories():
-                                    if cat.name == distancia or cat.distance_name == distancia:
-                                        target_category = cat
-                                        break
-                                if target_category is None and self.race_manager.get_all_categories():
-                                    target_category = self.race_manager.get_all_categories()[0]
-
-                                if target_category:
-                                    target_category.participants.append(new_athlete)
-                                    updated += 1
-                                    logger.info(f"✚ Atleta {nombre} (#{dorsal_num}) creado desde CSV con chip {chip_id}")
-                                else:
-                                    not_found += 1
-                                    errors.append(f"Sin categoría disponible para dorsal {dorsal_num}")
-
-                            except Exception as e:
-                                not_found += 1
-                                errors.append(f"Error creando atleta dorsal {dorsal_num}: {e}")
-                        else:
+                        if not nombre:
                             not_found += 1
-                            errors.append(f"Atleta con dorsal {dorsal_num} no encontrado")
+                            errors.append(f"Dorsal {dorsal_num}: no encontrado y sin columna Nombre para crear el atleta")
+                            continue
 
-            # Actualizar tabla
+                        try:
+                            from src.core.race_tracking.models import Athlete, RaceDistance
+                            from datetime import date
+
+                            dist_id = distancia.upper().replace(' ', '_') if distancia else 'GENERAL'
+
+                            # Buscar distancia existente o crearla
+                            target_dist = self.race_manager.get_distance(dist_id)
+                            if target_dist is None:
+                                meters = self._distance_meters(dist_id)
+                                target_dist = RaceDistance(
+                                    distance_id=dist_id,
+                                    name=distancia or 'General',
+                                    distance_meters=meters,
+                                    expected_checkpoints=0,
+                                )
+                                self.race_manager.add_distance(target_dist)
+                                logger.info(f"✚ Distancia creada automáticamente: {distancia}")
+
+                            # Parsear fecha de nacimiento si está disponible
+                            birth_date = None
+                            fecha_str = row.get('Fecha Nacimiento', '').strip()
+                            if fecha_str:
+                                for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y'):
+                                    try:
+                                        from datetime import datetime as _dt
+                                        birth_date = _dt.strptime(fecha_str, fmt).date()
+                                        break
+                                    except ValueError:
+                                        pass
+
+                            new_athlete = Athlete(
+                                bib_number=dorsal_num,
+                                name=nombre,
+                                tag_id=chip_id if chip_id else None,
+                                distance_id=dist_id,
+                                gender=row.get('Género', '').strip() or None,
+                                birth_date=birth_date,
+                            )
+                            target_dist.add_participant(new_athlete)
+                            updated += 1
+                            logger.info(f"✚ Atleta creado desde CSV: {nombre} (#{dorsal_num}) distancia={distancia} chip={chip_id}")
+
+                        except Exception as e:
+                            not_found += 1
+                            errors.append(f"Error creando atleta dorsal {dorsal_num}: {e}")
+
+            # Actualizar tabla y guardar
             self.refresh_athletes_table()
+            self.refresh_category_filter()
+            self.categories_imported.emit()
             self.update_stats()
+            self.auto_save_data()
 
             # Mostrar resultado
             msg = f"✅ Importación completada:\n\n"
-            msg += f"• Chips asignados: {updated}\n"
+            msg += f"• Atletas procesados: {updated}\n"
             if not_found > 0:
-                msg += f"• No encontrados: {not_found}\n"
+                msg += f"• Errores: {not_found}\n"
             if errors:
                 msg += f"\n⚠️ Advertencias:\n"
-                msg += '\n'.join(errors[:5])  # Mostrar solo las primeras 5
+                msg += '\n'.join(errors[:5])
                 if len(errors) > 5:
                     msg += f"\n... y {len(errors) - 5} más"
 
