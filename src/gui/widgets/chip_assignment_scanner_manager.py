@@ -18,22 +18,19 @@ class ChipAssignmentScannerManager(QObject):
     """Manages RFID scanners for chip assignment"""
 
     # Signals
-    scanner_mode_changed = pyqtSignal(str)  # "network" or "usb"
+    scanner_mode_changed = pyqtSignal(str)  # "network", "usb" or "local"
     scanner_connected = pyqtSignal(str)  # scanner type
     scanner_disconnected = pyqtSignal(str)
     scanning_started = pyqtSignal()
     scanning_stopped = pyqtSignal()
 
     def __init__(self, parent_widget):
-        """
-        Args:
-            parent_widget: Parent QWidget for dialogs
-        """
         super().__init__()
         self.parent = parent_widget
-        self.scanner_mode = "network"  # "network" or "usb"
+        self.scanner_mode = "network"  # "network", "usb" or "local"
         self.network_scanner = None
         self.usb_scanner = None
+        self.local_scanner = None
         self.scanning = False
 
     def set_network_scanner(self, scanner):
@@ -55,17 +52,22 @@ class ChipAssignmentScannerManager(QObject):
         logger.info(f"🔄 Modo de scanner cambiado a: {mode}")
 
         if mode == "usb":
-            # Connect USB scanner
             success = self.connect_usb_scanner()
             if not success:
-                # Revert to network mode
+                self.scanner_mode = "network"
+                self.scanner_mode_changed.emit("network")
+                return
+
+        elif mode == "local":
+            success = self.connect_local_scanner()
+            if not success:
                 self.scanner_mode = "network"
                 self.scanner_mode_changed.emit("network")
                 return
 
         elif mode == "network":
-            # Disconnect USB scanner if connected
             self.disconnect_usb_scanner()
+            self.disconnect_local_scanner()
 
         self.scanner_mode_changed.emit(mode)
 
@@ -139,18 +141,69 @@ class ChipAssignmentScannerManager(QObject):
         """Disconnect USB scanner"""
         if not self.usb_scanner:
             return
-
-        # Stop scanning if active
         if self.usb_scanner.scanning:
-            logger.info("🔴 Deteniendo escaneo USB antes de desconectar...")
             self.usb_scanner.stop_continuous_reading()
-
-        # Disconnect
         if self.usb_scanner.connected:
-            logger.info("🔌 Desconectando lector USB...")
             self.usb_scanner.disconnect()
-
         self.scanner_disconnected.emit("usb")
+
+    def connect_local_scanner(self) -> bool:
+        """Connect to local WebSocket reader service"""
+        try:
+            from src.core.local_reader_scanner import LocalReaderScanner
+            from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QSpinBox, QDialogButtonBox, QFormLayout
+
+            # Simple dialog to confirm host/port
+            dlg = QDialog(self.parent)
+            dlg.setWindowTitle("Lector Local — Configuración")
+            layout = QVBoxLayout(dlg)
+            layout.addWidget(QLabel("Conectar al servicio WebSocket del lector local:"))
+            form = QFormLayout()
+            host_input = QLineEdit("localhost")
+            port_input = QSpinBox()
+            port_input.setRange(1, 65535)
+            port_input.setValue(8765)
+            form.addRow("Host:", host_input)
+            form.addRow("Puerto WebSocket:", port_input)
+            layout.addLayout(form)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons.accepted.connect(dlg.accept)
+            buttons.rejected.connect(dlg.reject)
+            layout.addWidget(buttons)
+
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return False
+
+            scanner = LocalReaderScanner(host=host_input.text().strip(), port=port_input.value())
+            if not scanner.connect():
+                QMessageBox.warning(
+                    self.parent,
+                    "Sin conexión",
+                    f"No se pudo conectar a ws://{host_input.text()}:{port_input.value()}\n\n"
+                    "Verificá que el servicio lector local esté corriendo."
+                )
+                return False
+
+            self.local_scanner = scanner
+            self.scanner_connected.emit("local")
+            logger.info(f"✅ Lector local conectado en ws://{scanner.host}:{scanner.port}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Error conectando lector local: {e}")
+            QMessageBox.critical(self.parent, "Error", f"Error conectando lector local:\n{str(e)}")
+            return False
+
+    def disconnect_local_scanner(self):
+        """Disconnect local WebSocket scanner"""
+        if not self.local_scanner:
+            return
+        if self.local_scanner.scanning:
+            self.local_scanner.stop_continuous_reading()
+        if self.local_scanner.connected:
+            self.local_scanner.disconnect()
+        self.local_scanner = None
+        self.scanner_disconnected.emit("local")
 
     def start_scanning(self, athlete_name: str):
         """
@@ -160,39 +213,32 @@ class ChipAssignmentScannerManager(QObject):
             athlete_name: Name of athlete to assign chip to
         """
         self.scanning = True
-        scanner_type = "YR9011 USB" if self.scanner_mode == "usb" else "YR8900 Network"
+        logger.info(f"🔍 Escaneo activado para: {athlete_name} (modo: {self.scanner_mode})")
 
-        logger.info(f"🔍 Modo de escaneo activado para: {athlete_name}")
-        logger.info(f"   • Lector: {scanner_type}")
-        logger.info(f"   • Esperando detección de chip...")
-
-        # Start USB scanner if in USB mode
         if self.scanner_mode == "usb" and self.usb_scanner:
-            logger.info("🟢 Iniciando escaneo continuo USB...")
             self.usb_scanner.start_continuous_reading()
+        elif self.scanner_mode == "local" and self.local_scanner:
+            self.local_scanner.start_continuous_reading()
 
         self.scanning_started.emit()
 
     def stop_scanning(self):
         """Stop scanning mode"""
         self.scanning = False
-        logger.info("⏸️ Modo de escaneo desactivado")
-
-        # Stop USB scanner if active
         if self.scanner_mode == "usb" and self.usb_scanner:
-            logger.info("🔴 Deteniendo escaneo continuo USB...")
             self.usb_scanner.stop_continuous_reading()
-
+        elif self.scanner_mode == "local" and self.local_scanner:
+            self.local_scanner.stop_continuous_reading()
         self.scanning_stopped.emit()
 
     def is_scanner_available(self) -> bool:
         """Check if a scanner is available for current mode"""
         if self.scanner_mode == "network":
             return self.network_scanner is not None
-
         elif self.scanner_mode == "usb":
             return self.usb_scanner is not None and self.usb_scanner.connected
-
+        elif self.scanner_mode == "local":
+            return self.local_scanner is not None and self.local_scanner.connected
         return False
 
     def get_scanner_status(self) -> dict:
@@ -214,6 +260,16 @@ class ChipAssignmentScannerManager(QObject):
                 'scanning': self.usb_scanner.scanning if self.usb_scanner else False
             }
 
+        elif self.scanner_mode == "local":
+            return {
+                'mode': 'local',
+                'type': 'LocalReader',
+                'available': self.local_scanner is not None and self.local_scanner.connected,
+                'host': self.local_scanner.host if self.local_scanner else None,
+                'port': self.local_scanner.port if self.local_scanner else None,
+                'scanning': self.local_scanner.scanning if self.local_scanner else False
+            }
+
         return {}
 
     def cleanup(self):
@@ -223,3 +279,4 @@ class ChipAssignmentScannerManager(QObject):
                 self.usb_scanner.stop_continuous_reading()
             if self.usb_scanner.connected:
                 self.usb_scanner.disconnect()
+        self.disconnect_local_scanner()

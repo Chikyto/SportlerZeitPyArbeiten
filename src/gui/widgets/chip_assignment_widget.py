@@ -212,6 +212,16 @@ class ChipAssignmentWidget(QWidget):
         self.usb_status_label.setStyleSheet("color: #666; font-size: 11px; margin-left: 20px;")
         scanner_type_layout.addWidget(self.usb_status_label)
 
+        self.local_scanner_radio = QRadioButton("🌐 Lector Local (WebSocket)")
+        self.local_scanner_radio.setToolTip("Conecta a un servicio lector local en ws://localhost:8765")
+        self.local_scanner_radio.toggled.connect(lambda: self.set_scanner_mode("local"))
+        self.scanner_button_group.addButton(self.local_scanner_radio)
+        scanner_type_layout.addWidget(self.local_scanner_radio)
+
+        self.local_status_label = QLabel("⬤ No conectado")
+        self.local_status_label.setStyleSheet("color: #666; font-size: 11px; margin-left: 20px;")
+        scanner_type_layout.addWidget(self.local_status_label)
+
         assignment_layout.addWidget(scanner_type_group)
 
         # Botón de escaneo
@@ -336,24 +346,21 @@ class ChipAssignmentWidget(QWidget):
         return self.scanner_manager.scanner_mode if hasattr(self, 'scanner_manager') else "network"
 
     def set_scanner_mode(self, mode: str):
-        """
-        Cambiar modo de scanner
-
-        Args:
-            mode: "network" para YR8900, "usb" para YR9011
-        """
-        # Update scanner_manager mode
+        """Cambiar modo de scanner: 'network', 'usb' o 'local'"""
         self.scanner_manager.scanner_mode = mode
         logger.info(f"🔄 Modo de scanner cambiado a: {mode}")
 
         if mode == "usb":
-            # Connect USB scanner (handled by widget to connect signals properly)
             self.connect_usb_scanner()
+        elif mode == "local":
+            self.connect_local_scanner()
         elif mode == "network":
-            # Disconnect USB scanner
             self.scanner_manager.disconnect_usb_scanner()
+            self.scanner_manager.disconnect_local_scanner()
             self.usb_status_label.setText("📴 Lector USB no conectado")
             self.usb_status_label.setStyleSheet("")
+            self.local_status_label.setText("⬤ No conectado")
+            self.local_status_label.setStyleSheet("color: #666; font-size: 11px; margin-left: 20px;")
 
     def connect_usb_scanner(self):
         """Conectar lector USB YR9011 con diálogo de configuración"""
@@ -439,6 +446,66 @@ class ChipAssignmentWidget(QWidget):
         logger.error(f"❌ Error lector USB: {error_msg}")
         self.usb_status_label.setText(f"⚠️ {error_msg[:40]}...")
         self.usb_status_label.setStyleSheet("color: #f59e0b; font-size: 11px; margin-left: 20px;")
+
+    def connect_local_scanner(self):
+        """Conectar al servicio lector local WebSocket"""
+        from src.core.local_reader_scanner import LocalReaderScanner
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QSpinBox, QDialogButtonBox, QFormLayout
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Lector Local — Configuración")
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel("Conectar al servicio WebSocket del lector local:"))
+        form = QFormLayout()
+        host_input = QLineEdit("localhost")
+        port_input = QSpinBox()
+        port_input.setRange(1, 65535)
+        port_input.setValue(8765)
+        form.addRow("Host:", host_input)
+        form.addRow("Puerto WebSocket:", port_input)
+        layout.addLayout(form)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            self.network_scanner_radio.setChecked(True)
+            return
+
+        scanner = LocalReaderScanner(host=host_input.text().strip(), port=port_input.value())
+        if not scanner.connect():
+            QMessageBox.warning(
+                self, "Sin conexión",
+                f"No se pudo conectar a ws://{host_input.text()}:{port_input.value()}\n\n"
+                "Verificá que el servicio lector local esté corriendo."
+            )
+            self.network_scanner_radio.setChecked(True)
+            return
+
+        # Conectar señales
+        scanner.tag_detected.connect(self.on_chip_scanned)
+        scanner.error_occurred.connect(self.on_local_scanner_error)
+        scanner.status_changed.connect(self.on_local_reader_status)
+
+        self.scanner_manager.local_scanner = scanner
+        self.scanner_manager.scanner_mode = "local"
+        self.local_status_label.setText(f"✅ Conectado a ws://{scanner.host}:{scanner.port}")
+        self.local_status_label.setStyleSheet("color: #10b981; font-size: 11px; margin-left: 20px; font-weight: bold;")
+        logger.info(f"✅ Lector local conectado en ws://{scanner.host}:{scanner.port}")
+
+    def on_local_scanner_error(self, error_msg: str):
+        logger.error(f"❌ Error lector local: {error_msg}")
+        self.local_status_label.setText(f"⚠️ {error_msg[:40]}...")
+        self.local_status_label.setStyleSheet("color: #f59e0b; font-size: 11px; margin-left: 20px;")
+
+    def on_local_reader_status(self, ready: bool):
+        if ready:
+            self.local_status_label.setText("✅ Lector físico listo")
+            self.local_status_label.setStyleSheet("color: #10b981; font-size: 11px; margin-left: 20px; font-weight: bold;")
+        else:
+            self.local_status_label.setText("⚠️ Lector físico desconectado")
+            self.local_status_label.setStyleSheet("color: #f59e0b; font-size: 11px; margin-left: 20px;")
 
     def refresh_category_filter(self):
         """Actualizar combo de categorías"""
