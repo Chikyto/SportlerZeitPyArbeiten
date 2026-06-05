@@ -1346,13 +1346,8 @@ class ChipAssignmentWidget(QWidget):
             self.categories_imported.emit()
 
             total = sum(len(a) for a in athletes_by_dist.values())
-            QMessageBox.information(self, "Importación Exitosa",
-                f"✅ Importados desde Cloud Run:\n\n"
-                f"• {len(athletes_by_dist)} distancias\n"
-                f"• {total} atletas\n\n"
-                f"Ahora podés asignar chips RFID a cada corredor.")
-            
-                        # Detectar chips duplicados en todo el sistema
+
+            # Detectar chips duplicados en todo el sistema
             chip_map = {}  # chip_id -> lista de (nombre, distancia)
             for dist in self.race_manager.get_all_distances():
                 for a in dist.participants:
