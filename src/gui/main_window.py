@@ -308,7 +308,9 @@ class MainWindow(QMainWindow):
             # Resolver nombre y distancia del atleta para mostrar en tabla de detección
             athlete, distance = self.race_manager._find_athlete_by_tag(tag_id)
             if athlete and distance and self.signals:
-                self.signals.athlete_tag_resolved.emit(tag_id, athlete.name, distance.name)
+                self.signals.athlete_tag_resolved.emit(
+                    tag_id, athlete.name, distance.name, str(athlete.bib_number or '')
+                )
 
                 # Si fue un evento de llegada a meta, emitir notificación
                 if event and event.event_type == EventType.FINISH:

@@ -8,13 +8,14 @@ Responsabilidad única: UI y coordinación entre componentes
 Delegación: ScanThread para scanning, TagProcessor para lógica
 """
 
+from datetime import datetime
+
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QGroupBox, QMessageBox, QFrame, QSlider, QSpinBox
 )
-from PyQt6.QtCore import pyqtSlot, Qt
+from PyQt6.QtCore import pyqtSlot, Qt, QTimer
 from PyQt6.QtGui import QColor
-from PyQt6.QtCore import Qt
 import logging
 
 from .base_tab import BaseTab
@@ -43,8 +44,16 @@ class DetectionTab(BaseTab):
         self.antenna_roles = {}   # {port: [roles]}
         self.antenna_names = {}   # {port: name}
         self.detected_tags = set()
-        self.tag_rows = {}        # {tag_id: row_index} - mapeo de tags a filas
-        self.tag_data = {}        # {tag_id: {'start': bool, 'checkpoints': set, 'finish': bool, 'last_time': str, 'last_antenna': str}}
+        self.tag_rows = {}        # {tag_id: row_index}
+        # tag_data structure:
+        # {tag_id: {start_ts, start_dt, checkpoint_ts: {cp_num: str},
+        #           finish_ts, finish_dt, name, distance, bib}}
+        self.tag_data = {}
+
+        # Timer para actualizar tiempo acumulado en vivo
+        self._elapsed_timer = QTimer()
+        self._elapsed_timer.timeout.connect(self._update_elapsed_times)
+        self._elapsed_timer.start(1000)
 
         super().__init__(signals=signals, parent=parent)
     
@@ -137,19 +146,12 @@ class DetectionTab(BaseTab):
 
         # Tabla de detecciones (agrupada por participante)
         self.detections_table = QTableWidget()
-        self.detections_table.setColumnCount(7)
-        self.detections_table.setHorizontalHeaderLabels([
-            "Tag", "Nombre", "Distancia", "Largada", "Checkpoints", "Meta", "Última Lectura"
-        ])
         self.detections_table.setAlternatingRowColors(True)
-
-        # Asegurar que las barras de desplazamiento estén siempre disponibles
         self.detections_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.detections_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-
-        # Configurar ancho de columnas
         header = self.detections_table.horizontalHeader()
         header.setStretchLastSection(True)
+        self._rebuild_columns()  # Construir columnas iniciales (sin CPs)
         self.layout.addWidget(self.detections_table)
         
         # Panel de última llegada a meta
@@ -183,6 +185,60 @@ class DetectionTab(BaseTab):
         self.safe_connect('connection_status_changed', self.on_connection_status)
         self.safe_connect('athlete_tag_resolved', self.on_athlete_tag_resolved)
         self.safe_connect('athlete_finished', self.on_athlete_finished)
+
+    # ── Helpers de columnas dinámicas ──────────────────────────────────────
+
+    @property
+    def _checkpoint_ports(self) -> list:
+        """Puertos de antenas checkpoint, ordenados = CP1, CP2, ..."""
+        return sorted(p for p, roles in self.antenna_roles.items() if 'checkpoint' in roles)
+
+    def _n_cp(self) -> int:
+        return len(self._checkpoint_ports)
+
+    def _col_meta(self) -> int:
+        return 5 + self._n_cp()   # Tag(0) Dorsal(1) Nombre(2) Distancia(3) Largada(4) CP…
+
+    def _col_elapsed(self) -> int:
+        return 6 + self._n_cp()
+
+    def _port_to_cp_num(self, port: int):
+        """Puerto de antena → número de checkpoint (1-based), o None si no es CP."""
+        pts = self._checkpoint_ports
+        return pts.index(port) + 1 if port in pts else None
+
+    def _rebuild_columns(self):
+        """Reconstruir encabezados de tabla según antenas checkpoint configuradas."""
+        n_cp = self._n_cp()
+        cols = ["Tag", "Dorsal", "Nombre", "Distancia", "🟢 Largada"]
+        for i in range(1, n_cp + 1):
+            cols.append(f"🔵 CP{i}")
+        cols += ["🏁 Meta", "⏱ Acumulado"]
+        self.detections_table.setColumnCount(len(cols))
+        self.detections_table.setHorizontalHeaderLabels(cols)
+
+    def _update_elapsed_times(self):
+        """Actualizar columna Acumulado para atletas en carrera (cada segundo)."""
+        now = datetime.now()
+        elapsed_col = self._col_elapsed()
+        if elapsed_col >= self.detections_table.columnCount():
+            return
+        for tag_id, data in self.tag_data.items():
+            if tag_id not in self.tag_rows:
+                continue
+            if data['finish_dt'] or not data['start_dt']:
+                continue  # ya terminó o no arrancó
+            row = self.tag_rows[tag_id]
+            elapsed = now - data['start_dt']
+            secs = int(elapsed.total_seconds())
+            h, rem = divmod(secs, 3600)
+            m, s = divmod(rem, 60)
+            text = f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+            item = self.detections_table.item(row, elapsed_col)
+            if item:
+                item.setText(text)
+            else:
+                self.detections_table.setItem(row, elapsed_col, QTableWidgetItem(text))
     
     @pyqtSlot(bool, str)
     def on_connection_status(self, connected, message):
@@ -203,17 +259,20 @@ class DetectionTab(BaseTab):
         self.start_btn.setEnabled(True)
         self.log("✓ Scanner listo para detección")
     
-    @pyqtSlot(str, str, str)
-    def on_athlete_tag_resolved(self, tag_id: str, athlete_name: str, distance_name: str):
-        """Actualizar nombre y distancia en la tabla cuando el race_manager resuelve el atleta"""
+    @pyqtSlot(str, str, str, str)
+    def on_athlete_tag_resolved(self, tag_id: str, athlete_name: str,
+                                distance_name: str, bib: str):
+        """Actualizar nombre, distancia y dorsal en la tabla."""
         if tag_id in self.tag_data:
             self.tag_data[tag_id]['name'] = athlete_name
             self.tag_data[tag_id]['distance'] = distance_name
+            self.tag_data[tag_id]['bib'] = bib
 
         if tag_id in self.tag_rows:
             row = self.tag_rows[tag_id]
-            self.detections_table.setItem(row, 1, QTableWidgetItem(athlete_name))
-            self.detections_table.setItem(row, 2, QTableWidgetItem(distance_name))
+            self.detections_table.setItem(row, 1, QTableWidgetItem(bib))
+            self.detections_table.setItem(row, 2, QTableWidgetItem(athlete_name))
+            self.detections_table.setItem(row, 3, QTableWidgetItem(distance_name))
 
     @pyqtSlot(str, str, str)
     def on_athlete_finished(self, athlete_name: str, distance_name: str, formatted_time: str):
@@ -343,6 +402,9 @@ class DetectionTab(BaseTab):
         if self.is_scanning and self.scan_thread and self.scanner:
             self.scanner.available_antennas = sorted(self.antenna_roles.keys())
             logger.info(f"🔄 Scanner actualizado en caliente: {self.scanner.available_antennas}")
+
+        # Reconstruir columnas según nuevas antenas checkpoint
+        self._rebuild_columns()
 
 
 
@@ -500,46 +562,40 @@ class DetectionTab(BaseTab):
             logger.warning("⚠️  No hay objeto signals, no se puede emitir señal para RaceManager")
     
     def add_detection_to_table(self, processed: dict):
-        """
-        Agregar o actualizar detección en la tabla (vista agrupada por participante)
-
-        Args:
-            processed: Dict con información procesada del tag
-        """
+        """Agregar o actualizar detección en la tabla (agrupada por participante)."""
         tag_id = processed['tag_id']
+        roles = processed['roles']
+        port = processed['port']
+        ts_str = processed['timestamp']             # "HH:MM:SS.mmm"
+        ts_dt = processed.get('timestamp_obj')      # datetime o None
+        ts_display = ts_str[:8] if len(ts_str) >= 8 else ts_str  # "HH:MM:SS"
 
-        # Inicializar datos del tag si es la primera vez que lo vemos
+        # Inicializar datos del tag si es la primera vez
         if tag_id not in self.tag_data:
             self.tag_data[tag_id] = {
-                'start': False,
-                'checkpoints': set(),
-                'finish': False,
-                'last_time': '',
-                'last_antenna': '',
-                'name': 'N/A',
-                'distance': 'N/A'
+                'start_ts': None, 'start_dt': None,
+                'checkpoint_ts': {},   # {cp_num: "HH:MM:SS"}
+                'finish_ts': None, 'finish_dt': None,
+                'name': 'N/A', 'distance': 'N/A', 'bib': '-',
             }
 
-        # Actualizar datos según el rol detectado
-        roles = processed['roles']
-        if 'start' in roles:
-            self.tag_data[tag_id]['start'] = True
+        data = self.tag_data[tag_id]
+
+        # Registrar timestamps (solo primera detección de cada punto)
+        if 'start' in roles and data['start_ts'] is None:
+            data['start_ts'] = ts_display
+            data['start_dt'] = ts_dt
+
         if 'checkpoint' in roles:
-            # Determinar número de checkpoint basado en el nombre de antena
-            antenna_name = self.antenna_names.get(processed['port'], processed['antenna_name'])
-            self.tag_data[tag_id]['checkpoints'].add(antenna_name)
-        if 'finish' in roles:
-            self.tag_data[tag_id]['finish'] = True
+            cp_num = self._port_to_cp_num(port)
+            if cp_num is not None and cp_num not in data['checkpoint_ts']:
+                data['checkpoint_ts'][cp_num] = ts_display
 
-        # Actualizar última lectura
-        self.tag_data[tag_id]['last_time'] = processed['timestamp']
-        antenna_name = self.antenna_names.get(processed['port'], processed['antenna_name'])
-        self.tag_data[tag_id]['last_antenna'] = antenna_name
+        if 'finish' in roles and data['finish_ts'] is None:
+            data['finish_ts'] = ts_display
+            data['finish_dt'] = ts_dt
 
-        # Buscar nombre y distancia del participante desde race_manager
-        # (esto se puede mejorar conectando con signals, pero por ahora usamos valores por defecto)
-
-        # Si el tag ya tiene una fila, actualizarla; si no, crear una nueva
+        # Crear fila si no existe
         if tag_id in self.tag_rows:
             row = self.tag_rows[tag_id]
         else:
@@ -547,63 +603,73 @@ class DetectionTab(BaseTab):
             self.detections_table.insertRow(row)
             self.tag_rows[tag_id] = row
 
-        data = self.tag_data[tag_id]
+        n_cp = self._n_cp()
+        meta_col = self._col_meta()
+        elapsed_col = self._col_elapsed()
 
-        # Columna 0: Tag ID
+        # Col 0: Tag
         self.detections_table.setItem(row, 0, QTableWidgetItem(tag_id))
+        # Col 1: Dorsal
+        self.detections_table.setItem(row, 1, QTableWidgetItem(data['bib']))
+        # Col 2: Nombre
+        self.detections_table.setItem(row, 2, QTableWidgetItem(data['name']))
+        # Col 3: Distancia
+        self.detections_table.setItem(row, 3, QTableWidgetItem(data['distance']))
 
-        # Columna 1: Nombre (placeholder por ahora)
-        self.detections_table.setItem(row, 1, QTableWidgetItem(data['name']))
+        # Col 4: Largada
+        start_item = QTableWidgetItem(data['start_ts'] or '—')
+        if data['start_ts']:
+            start_item.setForeground(QColor(0, 150, 0))
+        self.detections_table.setItem(row, 4, start_item)
 
-        # Columna 2: Distancia (placeholder por ahora)
-        self.detections_table.setItem(row, 2, QTableWidgetItem(data['distance']))
+        # Col 5..4+n_cp: CPs
+        for i in range(1, n_cp + 1):
+            ts = data['checkpoint_ts'].get(i, '—')
+            item = QTableWidgetItem(ts)
+            if ts != '—':
+                item.setForeground(QColor(0, 100, 200))
+            self.detections_table.setItem(row, 4 + i, item)
 
-        # Columna 3: Largada
-        start_icon = "✓" if data['start'] else "-"
-        start_item = QTableWidgetItem(start_icon)
-        if data['start']:
-            start_item.setForeground(QColor(0, 150, 0))  # Verde
-        self.detections_table.setItem(row, 3, start_item)
+        # Col meta_col: Meta
+        finish_item = QTableWidgetItem(data['finish_ts'] or '—')
+        if data['finish_ts']:
+            finish_item.setForeground(QColor(200, 150, 0))
+        self.detections_table.setItem(row, meta_col, finish_item)
 
-        # Columna 4: Checkpoints
-        if data['checkpoints']:
-            checkpoints_text = ", ".join(sorted(data['checkpoints']))
-            cp_item = QTableWidgetItem(f"✓ {checkpoints_text}")
-            cp_item.setForeground(QColor(0, 100, 200))  # Azul
+        # Col elapsed_col: T. Acumulado
+        if data['finish_dt'] and data['start_dt']:
+            net = data['finish_dt'] - data['start_dt']
+            secs = int(net.total_seconds())
+            h, rem = divmod(secs, 3600)
+            m, s = divmod(rem, 60)
+            elapsed_text = f"{h:02d}:{m:02d}:{s:02d}"
+            elapsed_item = QTableWidgetItem(elapsed_text)
+            elapsed_item.setForeground(QColor(0, 180, 0))
+        elif data['start_dt']:
+            elapsed_item = QTableWidgetItem("00:00")
         else:
-            cp_item = QTableWidgetItem("-")
-        self.detections_table.setItem(row, 4, cp_item)
+            elapsed_item = QTableWidgetItem('—')
+        self.detections_table.setItem(row, elapsed_col, elapsed_item)
 
-        # Columna 5: Meta
-        finish_icon = "✓" if data['finish'] else "-"
-        finish_item = QTableWidgetItem(finish_icon)
-        if data['finish']:
-            finish_item.setForeground(QColor(200, 150, 0))  # Dorado
-        self.detections_table.setItem(row, 5, finish_item)
-
-        # Columna 6: Última Lectura
-        last_reading = f"{data['last_time']} ({data['last_antenna']})"
-        self.detections_table.setItem(row, 6, QTableWidgetItem(last_reading))
-
-        # Resaltar la fila completa con el color del último evento
+        # Color de fondo según rol
         if processed['color_code'] != 'none':
             rgb = self.tag_processor.get_color_rgb(processed['color_code'])
             color = QColor(*rgb)
-            color.setAlpha(100)  # Hacer el color más transparente
+            color.setAlpha(80)
+            for col in range(self.detections_table.columnCount()):
+                item = self.detections_table.item(row, col)
+                if item:
+                    item.setBackground(color)
 
-            for col in range(7):
-                if self.detections_table.item(row, col):
-                    self.detections_table.item(row, col).setBackground(color)
-
-        # Scroll para asegurar que la fila actualizada sea visible
         self.detections_table.scrollToItem(self.detections_table.item(row, 0))
     
     def update_statistics(self):
         """Actualizar estadísticas de detecciones"""
-        total_detections = self.detections_table.rowCount()
         unique_tags = len(self.detected_tags)
+        finished = sum(1 for d in self.tag_data.values() if d.get('finish_ts'))
+        running = sum(1 for d in self.tag_data.values() if d.get('start_ts') and not d.get('finish_ts'))
         self.stats_label.setText(
-            f"Detecciones: {total_detections} | Tags únicos: {unique_tags}"
+            f"Tags únicos: {unique_tags} | En carrera: {running} | Finalizados: {finished}"
         )
     
     def clear_detections(self):
@@ -620,6 +686,7 @@ class DetectionTab(BaseTab):
             self.detected_tags.clear()
             self.tag_rows.clear()
             self.tag_data.clear()
+            self._rebuild_columns()
             self.update_statistics()
             self.log("🗑️ Detecciones limpiadas")
     
