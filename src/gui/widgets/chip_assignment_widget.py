@@ -1439,7 +1439,7 @@ class ChipAssignmentWidget(QWidget):
                     dorsal = row.get('Dorsal', '').strip()
                     chip_id = row.get('Chip RFID', '').strip()
 
-                    if not dorsal or not chip_id:
+                    if not dorsal:
                         continue
 
                     try:
@@ -1463,10 +1463,12 @@ class ChipAssignmentWidget(QWidget):
                                     if chip_in_use:
                                         break
 
-                                if chip_in_use:
+                                if not chip_id:
+                                    # Sin chip en el CSV — atleta ya existe, nada que actualizar
+                                    updated += 1
+                                elif chip_in_use:
                                     errors.append(f"Chip {chip_id} ya asignado a otro atleta")
                                 else:
-                                    # Asignar chip
                                     athlete.tag_id = chip_id
                                     updated += 1
                                     logger.info(f"✓ Chip {chip_id} asignado a {athlete.name} (#{dorsal_num})")
