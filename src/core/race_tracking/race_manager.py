@@ -130,6 +130,14 @@ class RaceManager:
         logger.info(f"🗑️  Distancia eliminada: {distance.name}")
         return True
 
+    def clear_all(self) -> None:
+        """Eliminar todas las distancias, atletas y resultados (nueva sesión)"""
+        self.distances.clear()
+        self.results.clear()
+        self.detection_history.clear()
+        self.last_detections.clear()
+        logger.info("🗑️  RaceManager limpiado — nueva sesión")
+
     def get_distance(self, distance_id: str) -> Optional[RaceDistance]:
         """Obtener distancia por ID"""
         return self.distances.get(distance_id)

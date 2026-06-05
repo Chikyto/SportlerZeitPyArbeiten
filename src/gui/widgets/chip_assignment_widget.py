@@ -300,6 +300,12 @@ class ChipAssignmentWidget(QWidget):
         self.export_button.clicked.connect(self.save_assignments)
         bottom_buttons.addWidget(self.export_button)
 
+        self.clear_all_button = QPushButton("🗑️ Nueva Sesión")
+        self.clear_all_button.setToolTip("Borra todos los atletas y chips. Usá esto antes de un nuevo evento.")
+        self.clear_all_button.setStyleSheet("color: #dc2626;")
+        self.clear_all_button.clicked.connect(self.clear_all_data)
+        bottom_buttons.addWidget(self.clear_all_button)
+
         bottom_buttons.addStretch()
 
         layout.addLayout(bottom_buttons)
@@ -1155,6 +1161,24 @@ class ChipAssignmentWidget(QWidget):
             if not distances:
                 raise ValueError("No se pudieron crear distancias. Verifica la columna 'Distancia' en el CSV o si cancelaste todas las configuraciones.")
 
+            # Preguntar si limpiar datos existentes antes de agregar
+            if self.race_manager.get_all_distances():
+                reply = QMessageBox.question(
+                    self,
+                    "Datos existentes",
+                    "Ya hay atletas cargados en el sistema.\n\n"
+                    "¿Querés limpiar TODOS los datos antes de importar?\n\n"
+                    "• Sí → borra todo y reimporta desde cero (recomendado)\n"
+                    "• No → actualiza/agrega sin borrar",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
+                )
+                if reply == QMessageBox.StandardButton.Cancel:
+                    return
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.race_manager.clear_all()
+                    self.persistence.clear_data()
+                    logger.info("🗑️ Todos los datos limpiados antes de importar CSV")
+
             # Agregar a race_manager
             for distance in distances:
                 # Verificar si ya existe
@@ -1258,15 +1282,15 @@ class ChipAssignmentWidget(QWidget):
                 return
 
             # Preguntar si limpiar datos existentes
-            has_existing = any(self.race_manager.get_distance(d) for d in athletes_by_dist)
+            has_existing = bool(self.race_manager.get_all_distances())
             clear_first = False
             if has_existing:
                 reply = QMessageBox.question(
                     self,
                     "Datos existentes",
                     "Ya hay atletas cargados en el sistema.\n\n"
-                    "¿Querés limpiar los datos existentes antes de importar?\n\n"
-                    "• Sí → borra todo y reimporta desde cero\n"
+                    "¿Querés limpiar TODOS los datos antes de importar?\n\n"
+                    "• Sí → borra todo y reimporta desde cero (recomendado)\n"
                     "• No → actualiza/agrega sin borrar",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
                 )
@@ -1275,11 +1299,9 @@ class ChipAssignmentWidget(QWidget):
                 clear_first = (reply == QMessageBox.StandardButton.Yes)
 
             if clear_first:
-                for dist_id in list(athletes_by_dist.keys()):
-                    existing = self.race_manager.get_distance(dist_id)
-                    if existing:
-                        existing.participants.clear()
-                        logger.info(f"🗑️ Distancia {dist_id} limpiada")
+                self.race_manager.clear_all()
+                self.persistence.clear_data()
+                logger.info("🗑️ Todos los datos limpiados antes de importar")
 
             # Reusar el mapeo de distancias del importador CSV
             distance_map = {
@@ -1685,28 +1707,24 @@ class ChipAssignmentWidget(QWidget):
             else:
                 last_save_str = "desconocida"
 
-            reply = QMessageBox.question(
-                self,
-                "Datos Guardados Encontrados",
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Datos Guardados Encontrados")
+            msg_box.setText(
                 f"Se encontraron datos guardados de una sesión anterior.\n\n"
                 f"Última guardado: {last_save_str}\n\n"
-                f"¿Deseas cargar estos datos?\n\n"
-                f"Si seleccionas 'No', comenzarás con una sesión nueva vacía.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes
+                f"¿Qué querés hacer?"
             )
+            btn_load   = msg_box.addButton("Cargar datos",       QMessageBox.ButtonRole.YesRole)
+            btn_skip   = msg_box.addButton("Ignorar (sesión nueva)", QMessageBox.ButtonRole.NoRole)
+            btn_delete = msg_box.addButton("Borrar y empezar de cero", QMessageBox.ButtonRole.DestructiveRole)
+            msg_box.setDefaultButton(btn_skip)
+            msg_box.exec()
 
-            if reply == QMessageBox.StandardButton.Yes:
+            clicked = msg_box.clickedButton()
+            if clicked == btn_load:
                 success = self.persistence.load_race_data(self.race_manager)
-
                 if success:
                     logger.info("✅ Datos cargados exitosamente")
-                    QMessageBox.information(
-                        self,
-                        "Datos Cargados",
-                        "✅ Datos de la sesión anterior cargados exitosamente.\n\n"
-                        "Se restauraron todas las asignaciones de chips."
-                    )
                 else:
                     logger.error("❌ Error cargando datos guardados")
                     QMessageBox.warning(
@@ -1715,9 +1733,42 @@ class ChipAssignmentWidget(QWidget):
                         "No se pudieron cargar los datos guardados.\n\n"
                         "Comenzarás con una sesión nueva."
                     )
+            elif clicked == btn_delete:
+                self.persistence.clear_data()
+                logger.info("🗑️ Datos guardados eliminados por el usuario")
 
         except Exception as e:
             logger.error(f"❌ Error en auto-carga: {e}")
+
+    def clear_all_data(self):
+        """Limpiar todos los datos para comenzar una sesión nueva"""
+        if not self.race_manager:
+            return
+
+        n_distances = len(self.race_manager.get_all_distances())
+        n_athletes  = sum(len(d.participants) for d in self.race_manager.get_all_distances())
+
+        reply = QMessageBox.question(
+            self,
+            "Nueva Sesión — Confirmar",
+            f"Esto va a borrar TODOS los datos actuales:\n\n"
+            f"• {n_distances} distancias\n"
+            f"• {n_athletes} atletas con sus chips asignados\n"
+            f"• Datos guardados en disco\n\n"
+            f"Esta acción no se puede deshacer.\n\n"
+            f"¿Continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.race_manager.clear_all()
+            self.persistence.clear_data()
+            self.refresh_athletes_table()
+            self.refresh_category_filter()
+            self.update_stats()
+            logger.info("🗑️ Sesión limpiada por el usuario")
+            QMessageBox.information(self, "Sesión nueva", "✅ Datos borrados. Sistema listo para un nuevo evento.")
 
     def manual_save_data(self):
         """Guardar datos manualmente (con confirmación)"""
