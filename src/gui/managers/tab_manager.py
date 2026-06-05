@@ -94,8 +94,8 @@ class TabManager:
 
         try:
             self.create_configuration_tab()       # 1º: Configurar hardware
-            self.create_event_config_tab()        # 2º: Crear evento
-            self.create_chip_assignment_tab()     # 3º: Asignar chips
+            self.create_chip_assignment_tab()     # 2º: Cargar atletas
+            self.create_event_config_tab()        # 3º: Crear evento / iniciar carrera
             self.create_award_categories_tab()    # 4º: Categorías de premiación
             self.create_race_monitoring_tab()     # 5º: Correr carreras
             self.create_detection_tab()           # 6º: Debugging/historial
