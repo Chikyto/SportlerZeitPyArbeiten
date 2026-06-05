@@ -597,18 +597,24 @@ class DetectionTab(BaseTab):
         data = self.tag_data[tag_id]
 
         # Registrar timestamps (solo primera detección de cada punto)
-        if 'start' in roles and data['start_ts'] is None:
+        already_started  = data['start_ts'] is not None
+        already_finished = data['finish_ts'] is not None
+
+        if not already_started and 'start' in roles:
+            # Primera detección: registrar largada, ignorar los demás roles
             data['start_ts'] = ts_display
             data['start_dt'] = ts_dt
 
-        if 'checkpoint' in roles:
-            cp_num = self._port_to_cp_num(port)
-            if cp_num is not None and cp_num not in data['checkpoint_ts']:
-                data['checkpoint_ts'][cp_num] = ts_display
+        elif already_started and not already_finished:
+            # Atleta en carrera: checkpoint o meta (no re-largada)
+            if 'checkpoint' in roles:
+                cp_num = self._port_to_cp_num(port)
+                if cp_num is not None and cp_num not in data['checkpoint_ts']:
+                    data['checkpoint_ts'][cp_num] = ts_display
 
-        if 'finish' in roles and data['finish_ts'] is None:
-            data['finish_ts'] = ts_display
-            data['finish_dt'] = ts_dt
+            if 'finish' in roles:
+                data['finish_ts'] = ts_display
+                data['finish_dt'] = ts_dt
 
         # Crear fila si no existe
         if tag_id in self.tag_rows:
