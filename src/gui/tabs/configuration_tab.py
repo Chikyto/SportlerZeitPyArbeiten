@@ -114,10 +114,10 @@ class ConfigurationTab(BaseTab):
         self.layout.addWidget(antennas_group)
 
         # === SECCIÓN 3: BACKEND CLOUD ===
-        cloud_group = QGroupBox("☁️ Conexión Backend Cloud (Sportler-Zeit)")
+        cloud_group = QGroupBox("☁️ Resultados Públicos / Backend Cloud")
         cloud_layout = QVBoxLayout(cloud_group)
 
-        # Fila de estado
+        # Fila de estado + acciones
         status_layout = QHBoxLayout()
         self.cloud_status_label = QLabel("⚪ Sin configurar")
         self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px;")
@@ -159,6 +159,19 @@ class ConfigurationTab(BaseTab):
         fields_layout.addWidget(self.cloud_agent_input, 1)
 
         cloud_layout.addLayout(fields_layout)
+
+        # Fila de sincronización de atletas
+        sync_layout = QHBoxLayout()
+        sync_info = QLabel("Subir atletas locales al backend para mostrar nombres en la página pública:")
+        sync_info.setStyleSheet("color: #555; font-size: 11px;")
+        sync_layout.addWidget(sync_info)
+        sync_layout.addStretch()
+        self.sync_athletes_btn = QPushButton("☁️ Sincronizar atletas")
+        self.sync_athletes_btn.clicked.connect(self.sync_athletes_to_backend)
+        self.sync_athletes_btn.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 6px 14px;")
+        self.sync_athletes_btn.setToolTip("Sube los atletas cargados localmente al backend para que aparezcan en el live tracking")
+        sync_layout.addWidget(self.sync_athletes_btn)
+        cloud_layout.addLayout(sync_layout)
 
         self.layout.addWidget(cloud_group)
 
@@ -613,6 +626,124 @@ class ConfigurationTab(BaseTab):
         except Exception as e:
             logger.error(f"Error importando .szconfig: {e}")
             QMessageBox.critical(self, "Error", f"No se pudo leer el archivo:\n{e}")
+
+    def sync_athletes_to_backend(self):
+        """Subir atletas locales al backend para el live tracking"""
+        import json, os, requests as req
+
+        # 1. Leer config
+        config_path = 'config/api_config.json'
+        if not os.path.exists(config_path):
+            QMessageBox.warning(self, "Sin configuración",
+                "No hay configuración de backend.\n\n"
+                "Importá un archivo .szconfig primero.")
+            return
+
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo leer api_config.json:\n{e}")
+            return
+
+        api_url  = cfg.get('api_url', '').rstrip('/')
+        api_key  = cfg.get('api_key', '')
+        event_id = cfg.get('event_id', '')
+
+        if not api_url or not event_id:
+            QMessageBox.warning(self, "Configuración incompleta",
+                "Falta api_url o event_id en api_config.json.\n\n"
+                "Importá un archivo .szconfig válido.")
+            return
+
+        # 2. Obtener atletas del race_manager (via main_window)
+        from PyQt6.QtWidgets import QApplication
+        main_window = None
+        for w in QApplication.topLevelWidgets():
+            if hasattr(w, 'race_manager'):
+                main_window = w
+                break
+
+        if not main_window or not main_window.race_manager:
+            QMessageBox.warning(self, "Sin datos", "No hay atletas cargados en el sistema.")
+            return
+
+        race_manager = main_window.race_manager
+        all_distances = race_manager.get_all_distances()
+        if not all_distances:
+            QMessageBox.warning(self, "Sin atletas",
+                "No hay atletas cargados.\n\nImportá atletas primero desde CSV o Web.")
+            return
+
+        # 3. Serializar atletas
+        athletes_payload = []
+        for dist in all_distances:
+            for athlete in dist.participants:
+                athletes_payload.append({
+                    'bib_number':  athlete.bib_number,
+                    'name':        athlete.name,
+                    'distance_id': dist.distance_id,
+                    'distance':    dist.name,
+                    'gender':      athlete.gender or '',
+                    'birth_date':  athlete.birth_date.isoformat() if athlete.birth_date else '',
+                    'chip_id':     athlete.tag_id or '',
+                    'team':        athlete.team or '',
+                })
+
+        if not athletes_payload:
+            QMessageBox.warning(self, "Sin atletas", "No hay atletas para sincronizar.")
+            return
+
+        # 4. Confirmar
+        reply = QMessageBox.question(self, "Sincronizar atletas",
+            f"Se van a subir {len(athletes_payload)} atletas al backend.\n\n"
+            f"URL: {api_url}\nEvento: {event_id}\n\n"
+            f"¿Continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes)
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # 5. POST al backend
+        try:
+            self.sync_athletes_btn.setEnabled(False)
+            self.sync_athletes_btn.setText("Subiendo...")
+
+            headers = {'Content-Type': 'application/json'}
+            if api_key:
+                headers['Authorization'] = f'Bearer {api_key}'
+
+            url = f"{api_url}/api/events/{event_id}/athletes"
+            resp = req.post(url, json={'athletes': athletes_payload}, headers=headers, timeout=30)
+
+            if resp.status_code in (200, 201, 204):
+                self.log(f"✅ {len(athletes_payload)} atletas sincronizados al backend")
+                QMessageBox.information(self, "Sincronización exitosa",
+                    f"✅ {len(athletes_payload)} atletas subidos correctamente.\n\n"
+                    "Los resultados en vivo mostrarán nombres y dorsales.")
+            else:
+                self.log(f"⚠️ Backend retornó {resp.status_code}: {resp.text[:200]}")
+                QMessageBox.warning(self, "Respuesta inesperada",
+                    f"El backend respondió con código {resp.status_code}.\n\n"
+                    f"Detalle: {resp.text[:300]}\n\n"
+                    "Los atletas pueden o no haberse guardado.")
+
+        except req.exceptions.ConnectionError:
+            QMessageBox.critical(self, "Sin conexión",
+                "No se pudo conectar al backend.\n\n"
+                "Verificá que el servicio esté disponible y la URL sea correcta.")
+            self.log("❌ Error de conexión al sincronizar atletas")
+        except req.exceptions.Timeout:
+            QMessageBox.critical(self, "Timeout",
+                "La conexión tardó demasiado.\n\nIntentá de nuevo.")
+            self.log("❌ Timeout al sincronizar atletas")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al sincronizar:\n{e}")
+            self.log(f"❌ Error sincronizando atletas: {e}")
+        finally:
+            self.sync_athletes_btn.setEnabled(True)
+            self.sync_athletes_btn.setText("☁️ Sincronizar atletas")
 
     def test_cloud_connection(self):
         """Probar conexión con el backend"""
