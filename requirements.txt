@@ -20,7 +20,10 @@ python-dateutil==2.8.2
 dataclasses-json==0.6.3
 
 # Generación de PDFs - OBLIGATORIO para exportar resultados
-reportlab==4.0.9
+reportlab>=4.0.9
+
+# WebSocket client - OBLIGATORIO para lector local (chip-assigner)
+websockets>=12.0
 
 # ===================================================
 # DEPENDENCIAS DEL SISTEMA (built-in con Python)
