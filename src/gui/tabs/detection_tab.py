@@ -559,6 +559,31 @@ class DetectionTab(BaseTab):
         else:
             logger.warning("⚠️  No hay objeto signals, no se puede emitir señal para RaceManager")
     
+    def _min_finish_seconds_for_tag(self, tag_id: str) -> float:
+        """Misma fórmula que race_manager._determine_event_type para consistencia visual."""
+        if not self.race_manager:
+            return 5.0
+        try:
+            norm = format(int(tag_id, 16), 'X').upper()
+        except (ValueError, TypeError):
+            norm = tag_id.upper()
+        for dist in self.race_manager.get_all_distances():
+            for a in dist.participants:
+                try:
+                    ns = format(int(a.tag_id, 16), 'X').upper() if a.tag_id else ''
+                except (ValueError, TypeError):
+                    ns = (a.tag_id or '').upper()
+                if ns == norm:
+                    m = dist.distance_meters
+                    if m < 800:
+                        ref = 12.0
+                    elif m < 3000:
+                        ref = 8.0
+                    else:
+                        ref = 6.0
+                    return max(5.0, m / ref)
+        return 5.0
+
     def _tag_in_running_distance(self, tag_id: str) -> bool:
         """True si el chip pertenece a una distancia en curso (o no hay race_manager)."""
         if not self.race_manager:
@@ -622,8 +647,21 @@ class DetectionTab(BaseTab):
                     data['checkpoint_ts'][cp_num] = ts_display
 
             if 'finish' in roles:
-                data['finish_ts'] = ts_display
-                data['finish_dt'] = ts_dt
+                # Aplicar la misma ventana que race_manager para consistencia visual
+                if ts_dt and data['start_dt']:
+                    elapsed = (ts_dt - data['start_dt']).total_seconds()
+                    min_secs = self._min_finish_seconds_for_tag(tag_id)
+                    if elapsed < min_secs:
+                        logger.info(
+                            f"⏱ Detección tab: Meta de {tag_id} ignorada — "
+                            f"{elapsed:.1f}s < mínimo {min_secs:.0f}s"
+                        )
+                    else:
+                        data['finish_ts'] = ts_display
+                        data['finish_dt'] = ts_dt
+                else:
+                    data['finish_ts'] = ts_display
+                    data['finish_dt'] = ts_dt
 
         # Crear fila si no existe
         if tag_id in self.tag_rows:
