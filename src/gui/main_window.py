@@ -532,10 +532,11 @@ class MainWindow(QMainWindow):
             if os.path.exists(path):
                 with open(path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                cloud = data.get('cloud', {})
+                # Soporta estructura plana {api_url, api_key, event_id} o anidada {cloud: {...}}
+                cloud = data.get('cloud', data)
                 if cloud.get('api_url') and cloud.get('api_key'):
                     return {
-                        'api_url': cloud['api_url'],   # ya tiene /api/v1
+                        'api_url': cloud['api_url'],
                         'token': cloud['api_key'],
                         'event_id': cloud.get('event_id', ''),
                     }
