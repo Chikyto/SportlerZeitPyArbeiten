@@ -547,6 +547,7 @@ class MainWindow(QMainWindow):
     def _send_detection_to_backend(self, event, tag_id, antenna_port, roles):
         """Enviar detección al backend (no bloqueante)"""
         if not self.cloud_config:
+            logger.debug("☁️ Sin cloud config — detección no enviada")
             return
 
         def _post():
@@ -555,6 +556,8 @@ class MainWindow(QMainWindow):
                 base_url = self.cloud_config['api_url'].rstrip('/').removesuffix('/api/v1')
                 event_id = self.cloud_config.get('event_id', '')
                 url = f"{base_url}/api/events/{event_id}/detection"
+                logger.info(f"☁️ Enviando detección → {url}")
+                logger.info(f"   event_type={event.event_type.value} tag={tag_id} bib={getattr(event.athlete, 'bib_number', None) if getattr(event, 'athlete', None) else None}")
                 headers = {'Authorization': f"Bearer {self.cloud_config['token']}"}
                 payload = {
                     'tag_id': tag_id,
@@ -568,10 +571,10 @@ class MainWindow(QMainWindow):
                 }
                 r = requests.post(url, json=payload, headers=headers, timeout=5)
                 if r.status_code not in (200, 201):
-                    logger.warning(f"⚠️ Backend respondió {r.status_code}: {r.text[:100]}")
+                    logger.warning(f"⚠️ Backend respondió {r.status_code}: {r.text[:200]}")
                 else:
-                    logger.info(f"☁️ Detección enviada: {tag_id} → {event.event_type.value}")
+                    logger.info(f"☁️ Detección enviada OK: {tag_id} → {event.event_type.value}")
             except Exception as e:
-                logger.warning(f"⚠️ No se pudo enviar al backend: {e}")
+                logger.warning(f"⚠️ No se pudo enviar al backend: {type(e).__name__}: {e}")
 
         threading.Thread(target=_post, daemon=True).start()
