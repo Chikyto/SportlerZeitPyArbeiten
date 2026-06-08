@@ -582,7 +582,7 @@ class RaceManager:
         for distance in all_distances:
             for participant in distance.participants:
                 if participant.tag_id:
-                    logger.debug(f"     - '{participant.tag_id}' → {participant.name}")
+                    logger.warning(f"     - '{participant.tag_id}' → {participant.name}")
                     chip_count += 1
         logger.warning(f"   Total de chips asignados: {chip_count}")
 

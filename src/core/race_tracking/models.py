@@ -304,8 +304,21 @@ class RaceDistance:
         Returns:
             Athlete si se encuentra, None si no
         """
+        # Normalizar ambos lados para tolerar diferencias de leading zeros
+        # Ej: lector devuelve '818', chip almacenado como '0818' → ambos → '818'
+        try:
+            normalized_search = format(int(tag_id, 16), 'X').upper()
+        except (ValueError, TypeError):
+            normalized_search = (tag_id or '').upper()
+
         for athlete in self.participants:
-            if athlete.tag_id == tag_id:
+            if not athlete.tag_id:
+                continue
+            try:
+                normalized_stored = format(int(athlete.tag_id, 16), 'X').upper()
+            except (ValueError, TypeError):
+                normalized_stored = athlete.tag_id.upper()
+            if normalized_stored == normalized_search:
                 return athlete
         return None
     
