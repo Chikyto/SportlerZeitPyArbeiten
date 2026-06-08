@@ -550,20 +550,26 @@ class MainWindow(QMainWindow):
 
         def _post():
             try:
-                base_url = self.cloud_config['api_url'].rstrip('/').rstrip('/api/v1')
-                url = f"{self.cloud_config['api_url']}/timing/reads"
+                # api_url puede terminar en /api/v1 — quitarlo para usar ruta propia
+                base_url = self.cloud_config['api_url'].rstrip('/').removesuffix('/api/v1')
+                event_id = self.cloud_config.get('event_id', '')
+                url = f"{base_url}/api/events/{event_id}/detection"
                 headers = {'Authorization': f"Bearer {self.cloud_config['token']}"}
                 payload = {
-                    'chip_id': tag_id,
-                    'antenna_id': str(antenna_port),
+                    'tag_id': tag_id,
                     'timestamp': event.timestamp.isoformat(),
-                    'reading_type': event.event_type.value,
+                    'antenna_port': antenna_port,
+                    'event_type': event.event_type.value,
+                    'checkpoint_number': getattr(event, 'checkpoint_number', None),
+                    'category_id': getattr(event, 'distance_id', None),
+                    'athlete_name': event.athlete.name if getattr(event, 'athlete', None) else None,
+                    'bib_number': event.athlete.bib_number if getattr(event, 'athlete', None) else None,
                 }
                 r = requests.post(url, json=payload, headers=headers, timeout=5)
                 if r.status_code not in (200, 201):
                     logger.warning(f"⚠️ Backend respondió {r.status_code}: {r.text[:100]}")
                 else:
-                    logger.info(f"☁️ Detección enviada al backend: {tag_id} → {event.event_type.value}")
+                    logger.info(f"☁️ Detección enviada: {tag_id} → {event.event_type.value}")
             except Exception as e:
                 logger.warning(f"⚠️ No se pudo enviar al backend: {e}")
 
