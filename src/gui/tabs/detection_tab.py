@@ -559,40 +559,6 @@ class DetectionTab(BaseTab):
         else:
             logger.warning("⚠️  No hay objeto signals, no se puede emitir señal para RaceManager")
     
-    def _min_finish_seconds(self, tag_id: str) -> float:
-        """
-        Ventana de tiempo mínima (segundos) para aceptar un paso por Meta.
-
-        Basado en distancia del atleta con velocidad máxima de referencia 10 m/s
-        (más rápido que cualquier atleta real en distancias de campo).
-        Mínimo absoluto de 30s para absorber dobles lecturas en antenas contiguas.
-        """
-        MIN_ABSOLUTE = 30.0      # segundos — debounce mínimo siempre
-        MAX_SPEED_M_S = 10.0     # m/s — velocidad máxima de referencia
-
-        if not self.race_manager:
-            return MIN_ABSOLUTE
-
-        try:
-            norm_search = format(int(tag_id, 16), 'X').upper()
-        except (ValueError, TypeError):
-            norm_search = tag_id.upper()
-
-        try:
-            for dist in self.race_manager.get_all_distances():
-                for a in dist.participants:
-                    try:
-                        norm_stored = format(int(a.tag_id, 16), 'X').upper() if a.tag_id else ''
-                    except (ValueError, TypeError):
-                        norm_stored = (a.tag_id or '').upper()
-                    if norm_stored == norm_search:
-                        physics_min = dist.distance_meters / MAX_SPEED_M_S
-                        return max(MIN_ABSOLUTE, physics_min)
-        except Exception:
-            pass
-
-        return MIN_ABSOLUTE
-
     def _tag_in_running_distance(self, tag_id: str) -> bool:
         """True si el chip pertenece a una distancia en curso (o no hay race_manager)."""
         if not self.race_manager:
@@ -655,19 +621,7 @@ class DetectionTab(BaseTab):
                 if cp_num is not None and cp_num not in data['checkpoint_ts']:
                     data['checkpoint_ts'][cp_num] = ts_display
 
-            if 'finish' in roles and ts_dt and data['start_dt']:
-                elapsed_secs = (ts_dt - data['start_dt']).total_seconds()
-                min_secs = self._min_finish_seconds(tag_id)
-                if elapsed_secs >= min_secs:
-                    data['finish_ts'] = ts_display
-                    data['finish_dt'] = ts_dt
-                else:
-                    logger.info(
-                        f"⏱ Chip {tag_id}: meta ignorada — solo {elapsed_secs:.1f}s desde largada "
-                        f"(mínimo {min_secs}s para esta distancia)"
-                    )
-            elif 'finish' in roles:
-                # Sin timestamps exactos, registrar igual
+            if 'finish' in roles:
                 data['finish_ts'] = ts_display
                 data['finish_dt'] = ts_dt
 
