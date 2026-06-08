@@ -618,7 +618,14 @@ class RaceManager:
                 if result.start_time:
                     from datetime import datetime
                     elapsed = (datetime.now() - result.start_time).total_seconds()
-                    min_seconds = max(30.0, distance.distance_meters / 6.0)
+                    m = distance.distance_meters
+                    if m < 800:
+                        ref_speed = 12.0   # sprints: ~43 km/h
+                    elif m < 3000:
+                        ref_speed = 8.0    # medio fondo: ~29 km/h
+                    else:
+                        ref_speed = 6.0    # fondo: ~22 km/h
+                    min_seconds = max(5.0, m / ref_speed)
                     if elapsed < min_seconds:
                         logger.warning(
                             f"⏱️ FINISH ignorado para {athlete.name}: "
