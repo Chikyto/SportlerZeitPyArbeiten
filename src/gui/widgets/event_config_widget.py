@@ -497,6 +497,7 @@ class EventConfigWidget(QWidget):
             self.refresh_categories_table()
             self.update_active_categories_label()
             self.category_finished.emit(category_id)
+            self._finalize_results_on_backend()
 
     def start_all_categories(self):
         """Iniciar todas las distancias que no estén corriendo o finalizadas"""
@@ -827,6 +828,46 @@ class EventConfigWidget(QWidget):
 
         except Exception as e:
             logger.warning(f"⚠️ _reset_live_reads error: {e}")
+
+    def _finalize_results_on_backend(self):
+        """Llamar a POST /api/v1/timing/events/{id}/finalize al cerrar una distancia."""
+        import json, os, threading, requests
+        try:
+            path = 'config/api_config.json'
+            if not os.path.exists(path):
+                return
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            cloud = data.get('cloud', data)
+            api_url  = cloud.get('api_url', '').rstrip('/').removesuffix('/api/v1')
+            api_key  = cloud.get('api_key', '')
+            event_id = cloud.get('event_id', '')
+            if not api_url or not api_key or not event_id:
+                return
+
+            def _post():
+                try:
+                    url = f"{api_url}/api/v1/timing/events/{event_id}/finalize"
+                    headers = {
+                        'Authorization': f"Bearer {api_key}",
+                        'Content-Type': 'application/json',
+                    }
+                    r = requests.post(url, json={}, headers=headers, timeout=10)
+                    if r.status_code == 200:
+                        d = r.json()
+                        logger.info(
+                            f"☁️ Finalización OK — {d.get('finalized',0)} atletas escritos, "
+                            f"{d.get('skipped',0)} sin tiempo, distancias: {d.get('distances',[])}"
+                        )
+                    else:
+                        logger.warning(f"⚠️ Finalize respondió {r.status_code}: {r.text[:150]}")
+                except Exception as e:
+                    logger.warning(f"⚠️ No se pudo finalizar en backend: {e}")
+
+            threading.Thread(target=_post, daemon=True).start()
+
+        except Exception as e:
+            logger.warning(f"⚠️ _finalize_results_on_backend error: {e}")
 
 # Dialog para agregar/editar distancias
 class CategoryDialog(QDialog):
