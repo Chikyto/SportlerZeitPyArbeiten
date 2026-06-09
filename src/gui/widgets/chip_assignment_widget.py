@@ -1558,9 +1558,16 @@ class ChipAssignmentWidget(QWidget):
                         errors.append(f"Dorsal inválido: {dorsal}")
                         continue
 
-                    # Buscar atleta por dorsal
+                    nombre    = row.get('Nombre', '').strip()
+                    distancia = row.get('Distancia', '').strip()
+                    dist_id_csv = distancia.upper().replace(' ', '_') if distancia else None
+
+                    # Buscar atleta por dorsal — priorizar la distancia del CSV si está disponible
                     found = False
                     for category in self.race_manager.get_all_categories():
+                        # Si el CSV tiene distancia, solo buscar en esa distancia
+                        if dist_id_csv and category.distance_id != dist_id_csv:
+                            continue
                         for athlete in category.participants:
                             if athlete.bib_number == dorsal_num:
                                 # Verificar que el chip no esté usado
@@ -1589,8 +1596,6 @@ class ChipAssignmentWidget(QWidget):
                             break
 
                     if not found:
-                        nombre    = row.get('Nombre', '').strip()
-                        distancia = row.get('Distancia', '').strip()
 
                         if not nombre:
                             not_found += 1
@@ -1601,7 +1606,7 @@ class ChipAssignmentWidget(QWidget):
                             from src.core.race_tracking.models import Athlete, RaceDistance
                             from datetime import date
 
-                            dist_id = distancia.upper().replace(' ', '_') if distancia else 'GENERAL'
+                            dist_id = dist_id_csv or 'GENERAL'
 
                             # Buscar distancia existente o crearla
                             target_dist = self.race_manager.get_distance(dist_id)
