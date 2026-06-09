@@ -1469,6 +1469,15 @@ class ChipAssignmentWidget(QWidget):
 
             logger.info(f"✅ Importación API: {total} atletas en {len(athletes_by_dist)} distancias")
 
+        except ValueError as e:
+            if "distance_meters" in str(e):
+                QMessageBox.warning(self, "Sin distancias configuradas",
+                    "Los atletas importados no tienen distancia asignada en la plataforma web.\n\n"
+                    "Usá 'Importar desde CSV' para cargar atletas con sus distancias, "
+                    "o configurá las distancias en el evento web antes de importar.")
+            else:
+                QMessageBox.critical(self, "Error", f"Error importando desde API:\n{str(e)}")
+            logger.error(f"❌ Error importando desde API: {e}")
         except Exception as e:
             QMessageBox.critical(self, "Error",
                 f"Error importando desde API:\n{str(e)}\n\n"
