@@ -505,7 +505,8 @@ class EventConfigWidget(QWidget):
                 (AthleteStatus.RUNNING, AthleteStatus.NOT_STARTED)
             ]
             if pending:
-                dlg = PendingAthletesDialog(pending, self)
+                results_map = self.race_manager.results.get(category_id, {})
+                dlg = PendingAthletesDialog(pending, results_map, self)
                 if dlg.exec() == QDialog.DialogCode.Rejected:
                     return  # usuario canceló
                 # Aplicar estados elegidos
@@ -894,9 +895,14 @@ class EventConfigWidget(QWidget):
 class PendingAthletesDialog(QDialog):
     """Muestra atletas sin terminar al cerrar una distancia y permite asignar DNF/DNS/DSQ."""
 
-    def __init__(self, pending_athletes, parent=None):
+    def __init__(self, pending_athletes, results_map, parent=None):
+        """
+        pending_athletes: lista de Athlete
+        results_map: dict {athlete_id: AthleteResult} para verificar start_time
+        """
         super().__init__(parent)
         self.pending_athletes = pending_athletes
+        self.results_map = results_map
         self.setWindowTitle("Atletas sin finalizar")
         self.setMinimumWidth(520)
         self._build_ui()
@@ -921,9 +927,15 @@ class PendingAthletesDialog(QDialog):
             self.table.setItem(row, 0, QTableWidgetItem(str(athlete.bib_number)))
             self.table.setItem(row, 1, QTableWidgetItem(athlete.name))
             combo = QComboBox()
-            combo.addItem("DNF — No terminó",  AthleteStatus.DNF)
-            combo.addItem("DNS — No largó",    AthleteStatus.DNS)
+            result = self.results_map.get(athlete.athlete_id)
+            already_started = result and result.start_time is not None
+            combo.addItem("DNF — No terminó", AthleteStatus.DNF)
+            if not already_started:
+                combo.addItem("DNS — No largó", AthleteStatus.DNS)
             combo.addItem("DSQ — Descalificado", AthleteStatus.DSQ)
+            # Si largó, DNF es el default lógico; si no, DNS
+            if not already_started:
+                combo.setCurrentIndex(1)  # DNS
             self.table.setCellWidget(row, 2, combo)
             self._combos[athlete.athlete_id] = combo
 
