@@ -484,12 +484,14 @@ class RaceMonitoringWidget(QWidget):
             # ========== 1. GENERALES POR GÉNERO (SIN CATEGORÍA DE EDAD) ==========
             results_by_gender = self.race_manager.get_results_by_gender(race_category_id, only_finished=True)
 
-            for gender_key in ["M", "F"]:
+            gender_label_map = {"M": "General Masculino", "F": "General Femenino", "X": "General No Binario", "O": "General Otro"}
+            present_genders = [g for g in ["M", "F", "X", "O"] if results_by_gender.get(g)]
+            for gender_key in present_genders:
                 gender_results = results_by_gender.get(gender_key, [])
                 if not gender_results:
                     continue
 
-                gender_name = "General Masculino" if gender_key == "M" else "General Femenino"
+                gender_name = gender_label_map.get(gender_key, f"General {gender_key}")
 
                 # Crear grupo para general
                 group = QGroupBox(f"🏆 {gender_name}")
