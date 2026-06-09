@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                             QLabel, QGroupBox, QLineEdit, QTableWidget,
                             QTableWidgetItem, QHeaderView, QTimeEdit, QSpinBox,
-                            QTextEdit, QComboBox, QMessageBox, QGridLayout, QDialog)
+                            QTextEdit, QComboBox, QMessageBox, QGridLayout, QDialog,
+                            QDialogButtonBox, QAbstractItemView)
 from PyQt6.QtCore import pyqtSignal, QTime, Qt
 from PyQt6.QtGui import QFont, QColor
 from datetime import datetime, time
@@ -493,6 +494,26 @@ class EventConfigWidget(QWidget):
 
         category_id = self.categories_table.item(current_row, 0).text()
 
+        # Verificar si hay atletas sin terminar y pedir estado
+        distance = self.race_manager.get_distance(category_id)
+        if distance:
+            from src.core.race_tracking.models import AthleteStatus
+            pending = [
+                a for a in distance.participants
+                if self.race_manager.results.get(category_id, {}).get(a.athlete_id) and
+                self.race_manager.results[category_id][a.athlete_id].status in
+                (AthleteStatus.RUNNING, AthleteStatus.NOT_STARTED)
+            ]
+            if pending:
+                dlg = PendingAthletesDialog(pending, self)
+                if dlg.exec() == QDialog.DialogCode.Rejected:
+                    return  # usuario canceló
+                # Aplicar estados elegidos
+                for athlete_id, status in dlg.get_statuses().items():
+                    result = self.race_manager.results[category_id].get(athlete_id)
+                    if result:
+                        result.status = status
+
         if self.race_manager.finish_category(category_id):
             self.refresh_categories_table()
             self.update_active_categories_label()
@@ -868,6 +889,62 @@ class EventConfigWidget(QWidget):
 
         except Exception as e:
             logger.warning(f"⚠️ _finalize_results_on_backend error: {e}")
+
+# Dialog para atletas pendientes al finalizar distancia
+class PendingAthletesDialog(QDialog):
+    """Muestra atletas sin terminar al cerrar una distancia y permite asignar DNF/DNS/DSQ."""
+
+    def __init__(self, pending_athletes, parent=None):
+        super().__init__(parent)
+        self.pending_athletes = pending_athletes
+        self.setWindowTitle("Atletas sin finalizar")
+        self.setMinimumWidth(520)
+        self._build_ui()
+
+    def _build_ui(self):
+        from src.core.race_tracking.models import AthleteStatus
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel(
+            f"<b>{len(self.pending_athletes)} atleta(s) no llegaron a meta.</b><br>"
+            "Asigná un estado a cada uno antes de cerrar la distancia:"
+        ))
+
+        self.table = QTableWidget(len(self.pending_athletes), 3)
+        self.table.setHorizontalHeaderLabels(["Dorsal", "Nombre", "Estado"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+
+        self._combos = {}
+        for row, athlete in enumerate(self.pending_athletes):
+            self.table.setItem(row, 0, QTableWidgetItem(str(athlete.bib_number)))
+            self.table.setItem(row, 1, QTableWidgetItem(athlete.name))
+            combo = QComboBox()
+            combo.addItem("DNF — No terminó",  AthleteStatus.DNF)
+            combo.addItem("DNS — No largó",    AthleteStatus.DNS)
+            combo.addItem("DSQ — Descalificado", AthleteStatus.DSQ)
+            self.table.setCellWidget(row, 2, combo)
+            self._combos[athlete.athlete_id] = combo
+
+        layout.addWidget(self.table)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Cerrar distancia")
+        btns.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+    def get_statuses(self) -> dict:
+        """Retorna {athlete_id: AthleteStatus} con el estado elegido para cada atleta."""
+        return {
+            athlete_id: combo.currentData()
+            for athlete_id, combo in self._combos.items()
+        }
+
 
 # Dialog para agregar/editar distancias
 class CategoryDialog(QDialog):
