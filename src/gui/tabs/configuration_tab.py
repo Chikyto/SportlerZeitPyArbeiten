@@ -646,9 +646,11 @@ class ConfigurationTab(BaseTab):
             QMessageBox.critical(self, "Error", f"No se pudo leer api_config.json:\n{e}")
             return
 
-        api_url  = cfg.get('api_url', '').rstrip('/')
-        api_key  = cfg.get('api_key', '')
-        event_id = cfg.get('event_id', '')
+        # Soporta estructura plana {api_url,...} o anidada {cloud: {...}} (szconfig importado)
+        cloud = cfg.get('cloud', cfg)
+        api_url  = cloud.get('api_url', '').rstrip('/')
+        api_key  = cloud.get('api_key', '')
+        event_id = cloud.get('event_id', '')
 
         if not api_url or not event_id:
             QMessageBox.warning(self, "Configuración incompleta",
