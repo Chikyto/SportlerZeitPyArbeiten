@@ -204,15 +204,20 @@ class ConfigurationTab(BaseTab):
         self.port_input.setValue(conn.get('port', 4001))
         
         # Cargar antenas DEL WIZARD (no crear 8 filas vacías)
-        antennas = self.wizard_config.get('antennas', {})
-        antennas = {str(k): v for k, v in antennas.items()}
+        raw = self.wizard_config.get('antennas', {})
+        # Filtrar solo claves que son puertos numéricos válidos
+        antennas = {}
+        for k, v in raw.items():
+            try:
+                antennas[str(int(k))] = v
+            except (ValueError, TypeError):
+                pass
 
         if not antennas:
             self.log("⚠️ No hay antenas configuradas")
             self.antennas_table.setRowCount(0)
             return
-        
-        # ⭐ CAMBIO CLAVE: Crear solo las filas de antenas que EXISTEN en el config
+
         antenna_ports = sorted([int(p) for p in antennas.keys()])
         self.antennas_table.setRowCount(len(antenna_ports))
         

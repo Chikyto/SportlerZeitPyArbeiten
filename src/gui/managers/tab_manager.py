@@ -228,12 +228,17 @@ class TabManager:
         logger.info("🔄 Aplicando configuración a todos los tabs")
         logger.info("=" * 80)
         
-        antennas_config = config.get('antennas', {})
-        
-        # Debug
-        logger.info(f"📦 Configuración a aplicar:")
-        logger.info(f"   Keys: {list(antennas_config.keys())}")
-        logger.info(f"   Tipos: {[type(k).__name__ for k in antennas_config.keys()]}")
+        raw_antennas = config.get('antennas', {})
+
+        # Normalizar: solo claves convertibles a int (descartar claves string no numéricas)
+        antennas_config = {}
+        for k, v in raw_antennas.items():
+            try:
+                antennas_config[int(k)] = v
+            except (ValueError, TypeError):
+                logger.warning(f"⚠️  Clave de antena ignorada (no es puerto): {k!r}")
+
+        logger.info(f"📦 Antenas normalizadas: {list(antennas_config.keys())}")
         
         # 1. Aplicar a DetectionTab
         self._apply_to_detection_tab(antennas_config)
