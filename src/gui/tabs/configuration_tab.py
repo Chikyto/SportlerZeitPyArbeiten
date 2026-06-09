@@ -648,7 +648,7 @@ class ConfigurationTab(BaseTab):
 
         # Soporta estructura plana {api_url,...} o anidada {cloud: {...}} (szconfig importado)
         cloud = cfg.get('cloud', cfg)
-        api_url  = cloud.get('api_url', '').rstrip('/')
+        api_url  = cloud.get('api_url', '').rstrip('/').removesuffix('/api/v1')
         api_key  = cloud.get('api_key', '')
         event_id = cloud.get('event_id', '')
 
