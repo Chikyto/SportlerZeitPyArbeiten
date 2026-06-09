@@ -814,6 +814,7 @@ class EventConfigWidget(QWidget):
                 try:
                     url = f"{base}/api/v1/timing/events/{event_id}/reads/reset"
                     headers = {'Authorization': f"Bearer {api_key}"}
+                    logger.info(f"☁️ Live reset → {url} (token: {api_key[:20]}...)")
                     r = requests.post(url, json={'distance_id': distance_id}, headers=headers, timeout=5)
                     if r.status_code in (200, 201, 204):
                         logger.info(f"☁️ Live reset OK para distancia {distance_id}")
