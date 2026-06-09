@@ -477,6 +477,7 @@ class EventConfigWidget(QWidget):
             self.refresh_categories_table()
             self.update_active_categories_label()
             self.category_started.emit(category_id)
+            self._reset_live_reads(category_id)
 
             # 🔥 AUTO-INICIAR ESCANEO: Emitir señal para que DetectionTab inicie automáticamente
             if self.signals:
@@ -790,6 +791,41 @@ class EventConfigWidget(QWidget):
                 self.refresh_participants_table(distance)
 
         logger.info("✅ EventConfigWidget refrescado desde otra solapa")
+
+    def _reset_live_reads(self, distance_id: str):
+        """Llamar al backend para limpiar las lecturas del live al iniciar una distancia."""
+        import json, os, threading, requests
+        try:
+            path = 'config/api_config.json'
+            if not os.path.exists(path):
+                return
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            cloud = data.get('cloud', data)
+            api_url = cloud.get('api_url', '').rstrip('/')
+            api_key = cloud.get('api_key', '')
+            event_id = cloud.get('event_id', '')
+            if not api_url or not api_key or not event_id:
+                return
+
+            base = api_url.removesuffix('/api/v1')
+
+            def _post():
+                try:
+                    url = f"{base}/api/v1/timing/events/{event_id}/reads/reset"
+                    headers = {'Authorization': f"Bearer {api_key}"}
+                    r = requests.post(url, json={'distance_id': distance_id}, headers=headers, timeout=5)
+                    if r.status_code in (200, 201, 204):
+                        logger.info(f"☁️ Live reset OK para distancia {distance_id}")
+                    else:
+                        logger.warning(f"⚠️ Live reset respondió {r.status_code}: {r.text[:100]}")
+                except Exception as e:
+                    logger.warning(f"⚠️ No se pudo resetear live: {e}")
+
+            threading.Thread(target=_post, daemon=True).start()
+
+        except Exception as e:
+            logger.warning(f"⚠️ _reset_live_reads error: {e}")
 
 # Dialog para agregar/editar distancias
 class CategoryDialog(QDialog):
