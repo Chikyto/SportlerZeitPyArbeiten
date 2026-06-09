@@ -357,6 +357,16 @@ class AwardCategoriesWidget(QWidget):
                 ("F_50-54", "Femenino 50-54", "F", 50, 54),
                 ("F_55-59", "Femenino 55-59", "F", 55, 59),
                 ("F_60+", "Femenino 60+", "F", 60, None),
+                ("X_Sub19", "No Binario Sub-19", "X", 0, 18),
+                ("X_20-24", "No Binario 20-24", "X", 20, 24),
+                ("X_25-29", "No Binario 25-29", "X", 25, 29),
+                ("X_30-34", "No Binario 30-34", "X", 30, 34),
+                ("X_35-39", "No Binario 35-39", "X", 35, 39),
+                ("X_40-44", "No Binario 40-44", "X", 40, 44),
+                ("X_45-49", "No Binario 45-49", "X", 45, 49),
+                ("X_50-54", "No Binario 50-54", "X", 50, 54),
+                ("X_55-59", "No Binario 55-59", "X", 55, 59),
+                ("X_60+", "No Binario 60+", "X", 60, None),
             ]
             for cat_id, name, gender, min_age, max_age in categories_5y:
                 cat = AwardCategory(
@@ -384,6 +394,12 @@ class AwardCategoriesWidget(QWidget):
                 ("F_40-49", "Femenino 40-49", "F", 40, 49),
                 ("F_50-59", "Femenino 50-59", "F", 50, 59),
                 ("F_60+", "Femenino 60+", "F", 60, None),
+                ("X_Sub19", "No Binario Sub-19", "X", 0, 18),
+                ("X_20-29", "No Binario 20-29", "X", 20, 29),
+                ("X_30-39", "No Binario 30-39", "X", 30, 39),
+                ("X_40-49", "No Binario 40-49", "X", 40, 49),
+                ("X_50-59", "No Binario 50-59", "X", 50, 59),
+                ("X_60+", "No Binario 60+", "X", 60, None),
             ]
             for cat_id, name, gender, min_age, max_age in categories_10y:
                 cat = AwardCategory(

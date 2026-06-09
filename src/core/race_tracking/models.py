@@ -721,8 +721,8 @@ def create_iaaf_award_categories() -> List[AwardCategory]:
         ("55+", "Master E", 55, None),
     ]
 
-    # Crear para Masculino y Femenino
-    for gender_code, gender_name in [("M", "Masculino"), ("F", "Femenino")]:
+    # Crear para Masculino, Femenino y No Binario
+    for gender_code, gender_name in [("M", "Masculino"), ("F", "Femenino"), ("X", "No Binario")]:
         for age_code, age_name, min_age, max_age in age_ranges:
             cat_id = f"{gender_code}{age_code}"
             cat_name = f"{gender_name} {age_name}"
