@@ -315,14 +315,15 @@ class MainWindow(QMainWindow):
                 return
             
             # Configurar antenas habilitadas
-            antennas_config = self.wizard_config.get('antennas', {})
-            self.antenna_manager = AntennaManager(antennas_config)
+            # AntennaManager espera la config COMPLETA (con sección
+            # 'antennas'), no el sub-dict de antenas: pasarle el sub-dict
+            # lo dejaba sin antenas ("0 antenas activas") y le inyectaba
+            # una clave espuria 'antennas' a la config por referencia.
+            self.antenna_manager = AntennaManager(self.wizard_config)
             enabled_ports = self.antenna_manager.get_enabled_antennas()
             logger.info(f"📡 Antenas habilitadas: {enabled_ports}")
             self.scanner.available_antennas = enabled_ports
-            logger.info(f"📡 Antenas habilitadas: {enabled_ports}")
-            self.scanner.available_antennas = enabled_ports
-      
+
             # Configurar potencia si está en config
             power = self.wizard_config.get('power_dbm')
             if power:
