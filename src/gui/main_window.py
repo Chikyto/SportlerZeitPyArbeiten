@@ -12,12 +12,11 @@ import logging
 import threading
 import json
 import os
-import threading
 import requests
 
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QTabWidget, QLabel, QMessageBox)
-from PyQt6.QtCore import pyqtSlot
+from PyQt6.QtCore import pyqtSlot, QTimer
 from src.utils.signals import AppSignals
 from ..core.advanced_scanner import AdvancedYR8900Scanner
 from ..core.race_tracking.race_manager import RaceManager
@@ -130,10 +129,17 @@ class MainWindow(QMainWindow):
             self.race_manager.attach_persistence(persistence)
             self.race_persistence = persistence
 
+            # Worker que envía al backend lo encolado en sync_outbox
+            # (reintenta automáticamente si se corta internet)
+            from ..core.cloud_sync_worker import CloudSyncWorker
+            self.sync_worker = CloudSyncWorker(persistence)
+            self.sync_worker.start()
+
         except Exception as e:
             # La persistencia nunca debe impedir que arranque la app
             logger.error(f"❌ No se pudo activar persistencia local: {e}", exc_info=True)
             self.race_persistence = None
+            self.sync_worker = None
 
     def _normalize_config(self, config):
         """
@@ -199,9 +205,19 @@ class MainWindow(QMainWindow):
         self.tab_widget = QTabWidget()
         layout.addWidget(self.tab_widget)
         
-        # Barra de estado
+        # Barra de estado (mensaje general + indicador de sincronización)
+        status_bar = QHBoxLayout()
         self.status_label = QLabel("Aplicación iniciada")
-        layout.addWidget(self.status_label)
+        status_bar.addWidget(self.status_label)
+        status_bar.addStretch()
+        self.sync_status_label = QLabel("")
+        status_bar.addWidget(self.sync_status_label)
+        layout.addLayout(status_bar)
+
+        # Refrescar el indicador de envíos pendientes al backend
+        self.sync_status_timer = QTimer(self)
+        self.sync_status_timer.timeout.connect(self.update_sync_status)
+        self.sync_status_timer.start(5000)
         
         # Crear tabs usando TabManager
         self.tab_manager = TabManager(
@@ -214,7 +230,26 @@ class MainWindow(QMainWindow):
         self.tab_manager.create_all_tabs()
         
         logger.info("✅ UI principal configurada")
-    
+
+    def update_sync_status(self):
+        """Actualizar indicador de envíos pendientes al backend"""
+        persistence = getattr(self, 'race_persistence', None)
+        if not persistence:
+            self.sync_status_label.setText("")
+            return
+
+        pending = persistence.pending_sync_count()
+        if pending > 0:
+            self.sync_status_label.setText(
+                f"☁️ {pending} envío(s) pendiente(s) — reintentando..."
+            )
+            self.sync_status_label.setStyleSheet("color: #f0a500; font-weight: bold;")
+        elif self.cloud_config:
+            self.sync_status_label.setText("☁️ Sincronizado")
+            self.sync_status_label.setStyleSheet("color: #10b981;")
+        else:
+            self.sync_status_label.setText("")
+
     def setup_scanner(self):
         """Configurar scanner con datos del wizard"""
         if not self.wizard_config:
@@ -573,8 +608,10 @@ class MainWindow(QMainWindow):
             event.accept()
 
     def _close_persistence(self):
-        """Guardar estado final y cerrar el journal de detecciones"""
+        """Guardar estado final, detener sincronización y cerrar la base"""
         try:
+            if getattr(self, 'sync_worker', None):
+                self.sync_worker.stop()
             if getattr(self, 'race_persistence', None):
                 self.race_manager.save_now()
                 self.race_persistence.close()
@@ -628,30 +665,49 @@ class MainWindow(QMainWindow):
         return None
 
     def _send_detection_to_backend(self, event, tag_id, antenna_port, roles):
-        """Enviar detección al backend (no bloqueante)"""
+        """
+        Enviar detección al backend con cola persistente (store-and-forward).
+
+        La detección se encola en la base local ANTES de intentar enviarla.
+        Si hay internet sale enseguida; si no, queda pendiente y el
+        CloudSyncWorker la reenvía automáticamente al volver la conexión
+        (incluso tras reiniciar la aplicación).
+        """
         if not self.cloud_config:
             logger.debug("☁️ Sin cloud config — detección no enviada")
             return
 
+        # api_url puede terminar en /api/v1 — quitarlo para usar ruta propia
+        base_url = self.cloud_config['api_url'].rstrip('/').removesuffix('/api/v1')
+        event_id = self.cloud_config.get('event_id', '')
+        url = f"{base_url}/api/events/{event_id}/detection"
+        headers = {'Authorization': f"Bearer {self.cloud_config['token']}"}
+        payload = {
+            'tag_id': tag_id,
+            'timestamp': event.timestamp.isoformat(),
+            'antenna_port': antenna_port,
+            'event_type': event.event_type.value,
+            'checkpoint_number': getattr(event, 'checkpoint_number', None),
+            'category_id': getattr(event, 'distance_id', None),
+            'athlete_name': event.athlete.name if getattr(event, 'athlete', None) else None,
+            'bib_number': event.athlete.bib_number if getattr(event, 'athlete', None) else None,
+        }
+
+        persistence = getattr(self, 'race_persistence', None)
+        worker = getattr(self, 'sync_worker', None)
+
+        if persistence and worker:
+            row_id = persistence.enqueue_sync('detection', url, payload, headers)
+            logger.info(
+                f"☁️ Detección encolada (id={row_id}): "
+                f"{tag_id} → {event.event_type.value}"
+            )
+            worker.notify()  # intento de envío inmediato
+            return
+
+        # Fallback sin persistencia: envío directo como antes
         def _post():
             try:
-                # api_url puede terminar en /api/v1 — quitarlo para usar ruta propia
-                base_url = self.cloud_config['api_url'].rstrip('/').removesuffix('/api/v1')
-                event_id = self.cloud_config.get('event_id', '')
-                url = f"{base_url}/api/events/{event_id}/detection"
-                logger.info(f"☁️ Enviando detección → {url}")
-                logger.info(f"   event_type={event.event_type.value} tag={tag_id} bib={getattr(event.athlete, 'bib_number', None) if getattr(event, 'athlete', None) else None}")
-                headers = {'Authorization': f"Bearer {self.cloud_config['token']}"}
-                payload = {
-                    'tag_id': tag_id,
-                    'timestamp': event.timestamp.isoformat(),
-                    'antenna_port': antenna_port,
-                    'event_type': event.event_type.value,
-                    'checkpoint_number': getattr(event, 'checkpoint_number', None),
-                    'category_id': getattr(event, 'distance_id', None),
-                    'athlete_name': event.athlete.name if getattr(event, 'athlete', None) else None,
-                    'bib_number': event.athlete.bib_number if getattr(event, 'athlete', None) else None,
-                }
                 r = requests.post(url, json=payload, headers=headers, timeout=5)
                 if r.status_code not in (200, 201):
                     logger.warning(f"⚠️ Backend respondió {r.status_code}: {r.text[:200]}")

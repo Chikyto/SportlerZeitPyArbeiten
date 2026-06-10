@@ -840,15 +840,22 @@ class EventConfigWidget(QWidget):
                 return
 
             body = {'distance_id': distance_id} if distance_id else {}
+            url = f"{api_url}/api/v1/timing/events/{event_id}/reads/reset"
+            headers = {
+                'Authorization': f"Bearer {api_key}",
+                'Content-Type': 'application/json',
+            }
+            label = distance_id or 'TODAS'
+
+            # Encolar en la cola persistente si está disponible:
+            # mantiene el orden con las detecciones y se reintenta
+            # automáticamente si no hay conexión.
+            if self._enqueue_backend_call('reset_live', url, body, headers):
+                logger.info(f"☁️ Live reset encolado (distancia={label})")
+                return
 
             def _post():
                 try:
-                    url = f"{api_url}/api/v1/timing/events/{event_id}/reads/reset"
-                    headers = {
-                        'Authorization': f"Bearer {api_key}",
-                        'Content-Type': 'application/json',
-                    }
-                    label = distance_id or 'TODAS'
                     logger.info(f"☁️ Live reset → {url} distancia={label}")
                     r = requests.post(url, json=body, headers=headers, timeout=5)
                     if r.status_code in (200, 201, 204):
@@ -862,6 +869,30 @@ class EventConfigWidget(QWidget):
 
         except Exception as e:
             logger.warning(f"⚠️ _reset_live_reads error: {e}")
+
+    def _enqueue_backend_call(self, kind: str, url: str, body: dict,
+                              headers: dict) -> bool:
+        """
+        Encolar una llamada al backend en la cola persistente (sync_outbox).
+
+        Returns:
+            bool: True si se encoló, False si no hay persistencia
+                  disponible (el llamador debe usar envío directo)
+        """
+        persistence = getattr(self.race_manager, 'persistence', None) if self.race_manager else None
+        if not persistence:
+            return False
+
+        row_id = persistence.enqueue_sync(kind, url, body, headers)
+        if row_id is None:
+            return False
+
+        # Despertar al worker para que intente enviar ya mismo
+        main_window = self.window()
+        worker = getattr(main_window, 'sync_worker', None)
+        if worker:
+            worker.notify()
+        return True
 
     def _finalize_results_on_backend(self):
         """Llamar a POST /api/v1/timing/events/{id}/finalize al cerrar una distancia."""
@@ -879,13 +910,20 @@ class EventConfigWidget(QWidget):
             if not api_url or not api_key or not event_id:
                 return
 
+            url = f"{api_url}/api/v1/timing/events/{event_id}/finalize"
+            headers = {
+                'Authorization': f"Bearer {api_key}",
+                'Content-Type': 'application/json',
+            }
+
+            # Encolar en la cola persistente: si no hay internet al
+            # finalizar la distancia, se envía al volver la conexión.
+            if self._enqueue_backend_call('finalize', url, {}, headers):
+                logger.info("☁️ Finalización encolada")
+                return
+
             def _post():
                 try:
-                    url = f"{api_url}/api/v1/timing/events/{event_id}/finalize"
-                    headers = {
-                        'Authorization': f"Bearer {api_key}",
-                        'Content-Type': 'application/json',
-                    }
                     r = requests.post(url, json={}, headers=headers, timeout=10)
                     if r.status_code == 200:
                         d = r.json()

@@ -114,6 +114,18 @@ CREATE TABLE IF NOT EXISTS award_categories (
     is_iaaf           INTEGER,
     description       TEXT
 );
+CREATE TABLE IF NOT EXISTS sync_outbox (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL,
+    url        TEXT NOT NULL,
+    headers    TEXT,
+    payload    TEXT,
+    status     TEXT NOT NULL DEFAULT 'pending',
+    attempts   INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    sent_at    TEXT
+);
 """
 
 _TABLES = [
@@ -596,6 +608,110 @@ class RaceStatePersistence:
 
         except Exception as e:
             logger.error(f"❌ Error escribiendo journal de detecciones: {e}")
+
+    # ========================================================================
+    # COLA DE SINCRONIZACIÓN CON EL BACKEND (outbox)
+    # ========================================================================
+    # Todo envío al backend se encola acá ANTES de intentar mandarlo.
+    # Solo se marca 'sent' cuando el servidor confirmó. Si se corta
+    # internet, queda 'pending' y el CloudSyncWorker lo reintenta al
+    # restablecerse la conexión, respetando el orden original.
+    # Nota: esta tabla NO se borra en save_state() (no está en _TABLES).
+
+    def enqueue_sync(self, kind: str, url: str, payload: dict,
+                     headers: Optional[dict] = None) -> Optional[int]:
+        """
+        Encolar un envío al backend.
+
+        Args:
+            kind: Tipo de envío ('detection', 'reset_live', 'finalize')
+            url: URL completa del endpoint
+            payload: Cuerpo JSON del POST
+            headers: Headers HTTP (incluye Authorization)
+
+        Returns:
+            id de la fila encolada, o None si falló
+        """
+        try:
+            with self._lock, self._conn:
+                cur = self._conn.execute(
+                    "INSERT INTO sync_outbox (kind, url, headers, payload,"
+                    " status, attempts, created_at) VALUES (?,?,?,?,'pending',0,?)",
+                    (kind, url,
+                     json.dumps(headers or {}),
+                     json.dumps(payload, ensure_ascii=False),
+                     _dt(datetime.now()))
+                )
+                return cur.lastrowid
+        except Exception as e:
+            logger.error(f"❌ Error encolando envío al backend: {e}", exc_info=True)
+            return None
+
+    def get_pending_sync(self, limit: int = 200) -> list:
+        """Obtener envíos pendientes en orden de creación"""
+        try:
+            with self._lock:
+                rows = self._conn.execute(
+                    "SELECT id, kind, url, headers, payload, attempts"
+                    " FROM sync_outbox WHERE status='pending'"
+                    " ORDER BY id LIMIT ?", (limit,)
+                ).fetchall()
+            return [
+                {
+                    'id': r[0],
+                    'kind': r[1],
+                    'url': r[2],
+                    'headers': json.loads(r[3]) if r[3] else {},
+                    'payload': json.loads(r[4]) if r[4] else {},
+                    'attempts': r[5],
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            logger.error(f"❌ Error leyendo cola de sincronización: {e}")
+            return []
+
+    def mark_sync_sent(self, row_id: int) -> None:
+        """Marcar un envío como confirmado por el servidor"""
+        try:
+            with self._lock, self._conn:
+                self._conn.execute(
+                    "UPDATE sync_outbox SET status='sent', sent_at=?,"
+                    " last_error=NULL WHERE id=?",
+                    (_dt(datetime.now()), row_id)
+                )
+        except Exception as e:
+            logger.error(f"❌ Error marcando envío como enviado: {e}")
+
+    def mark_sync_failed(self, row_id: int, error: str,
+                         dead: bool = False) -> None:
+        """
+        Registrar un intento fallido.
+
+        Args:
+            dead: True para errores permanentes (ej: HTTP 422) que no
+                  tiene sentido reintentar y bloquearían la cola.
+        """
+        try:
+            with self._lock, self._conn:
+                self._conn.execute(
+                    "UPDATE sync_outbox SET attempts=attempts+1, last_error=?,"
+                    " status=CASE WHEN ? THEN 'dead' ELSE status END WHERE id=?",
+                    (error[:500], 1 if dead else 0, row_id)
+                )
+        except Exception as e:
+            logger.error(f"❌ Error marcando envío fallido: {e}")
+
+    def pending_sync_count(self) -> int:
+        """Cantidad de envíos pendientes (para indicador en UI)"""
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT COUNT(*) FROM sync_outbox WHERE status='pending'"
+                ).fetchone()
+            return row[0] if row else 0
+        except Exception:
+            return 0
 
     def close(self):
         """Cerrar base y journal (al salir de la aplicación)"""

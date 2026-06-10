@@ -250,8 +250,98 @@ def test_legacy_json_migration(tmpdir):
     persistence2.close()
 
 
+def test_sync_outbox(tmpdir):
+    """Cola de envíos al backend: corte de internet → reintento → orden"""
+    import http.server
+    import socketserver
+    import threading
+
+    from src.core.cloud_sync_worker import CloudSyncWorker
+
+    received = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(length) or b'{}')
+            received.append((self.path, body))
+            if self.path.endswith('/rechazado'):
+                self.send_response(422)  # error permanente
+            else:
+                self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{}')
+
+        def log_message(self, *args):
+            pass
+
+    # Reservar un puerto libre SIN dejarlo escuchando: la fase "sin
+    # internet" debe dar conexión rechazada, no encolar en el backlog.
+    import socket
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    base = f"http://127.0.0.1:{port}"
+
+    persistence = RaceStatePersistence(data_dir=tmpdir)
+    worker = CloudSyncWorker(persistence, request_timeout=2)
+
+    # ====== Internet cortado (el servidor todavía no atiende) ======
+    headers = {'Authorization': 'Bearer test'}
+    persistence.enqueue_sync('detection', f"{base}/detection", {'bib': 1}, headers)
+    persistence.enqueue_sync('detection', f"{base}/detection", {'bib': 2}, headers)
+    persistence.enqueue_sync('finalize', f"{base}/finalize", {}, headers)
+
+    sent, remaining = worker.flush()
+    assert sent == 0 and remaining == 3, "Sin conexión deben quedar 3 pendientes"
+    print("✅ Sin conexión: 3 envíos quedan en cola (nada se pierde)")
+
+    # La cola sobrevive a un save_state completo (no está en _TABLES)
+    manager = RaceManager()
+    build_race(manager)
+    manager.attach_persistence(persistence)
+    manager.save_now()
+    assert persistence.pending_sync_count() == 3, "save_state no debe borrar la cola"
+    print("✅ La cola sobrevive a save_state")
+
+    # La cola sobrevive a un reinicio de la app
+    persistence.close()
+    persistence = RaceStatePersistence(data_dir=tmpdir)
+    worker = CloudSyncWorker(persistence, request_timeout=2)
+    assert persistence.pending_sync_count() == 3, "La cola no sobrevivió al reinicio"
+    print("✅ La cola sobrevive al reinicio de la aplicación")
+
+    # ====== Vuelve internet ======
+    socketserver.TCPServer.allow_reuse_address = True
+    server = socketserver.TCPServer(("127.0.0.1", port), Handler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    try:
+        sent, remaining = worker.flush()
+        assert sent == 3 and remaining == 0, f"Esperaba 3 enviados, fue {sent}/{remaining}"
+        # Orden respetado: bib 1, bib 2, finalize
+        assert received[0][1] == {'bib': 1}
+        assert received[1][1] == {'bib': 2}
+        assert received[2][0].endswith('/finalize')
+        print("✅ Al volver la conexión se reenvió todo, en orden")
+
+        # ====== Error permanente (HTTP 422) no bloquea la cola ======
+        persistence.enqueue_sync('detection', f"{base}/rechazado", {'bib': 99}, headers)
+        persistence.enqueue_sync('detection', f"{base}/detection", {'bib': 3}, headers)
+        sent, remaining = worker.flush()
+        assert sent == 1 and remaining == 0, "El 422 debe descartarse y el siguiente enviarse"
+        assert received[-1][1] == {'bib': 3}
+        print("✅ Un error permanente (422) se descarta sin bloquear la cola")
+
+    finally:
+        server.shutdown()
+        server.server_close()
+        persistence.close()
+
+
 def main():
-    for test_fn in (test_power_cut_cycle, test_legacy_json_migration):
+    for test_fn in (test_power_cut_cycle, test_legacy_json_migration, test_sync_outbox):
         tmpdir = tempfile.mkdtemp(prefix="race_persist_test_")
         print(f"\n--- {test_fn.__name__} ({tmpdir}) ---")
         try:
