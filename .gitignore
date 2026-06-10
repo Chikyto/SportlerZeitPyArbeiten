@@ -22,3 +22,6 @@ Thumbs.db
 data/*.json
 data/*.bak
 data/*.jsonl
+data/*.db
+data/*.db-wal
+data/*.db-shm

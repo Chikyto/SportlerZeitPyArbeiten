@@ -119,7 +119,7 @@ class MainWindow(QMainWindow):
                                 None,
                                 "Error de Restauración",
                                 "No se pudo restaurar el estado anterior.\n"
-                                "El archivo queda en data/race_state.json para revisión manual."
+                                "Los datos quedan en data/race_event.db para revisión manual."
                             )
                     else:
                         persistence.archive()

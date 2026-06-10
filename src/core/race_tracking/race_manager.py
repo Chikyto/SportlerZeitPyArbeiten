@@ -522,9 +522,10 @@ class RaceManager:
             # 8. Actualizar clasificación
             self._update_classification(distance.distance_id)
 
-            # 9. Persistir estado (largadas, checkpoints y llegadas
-            #    sobreviven a un corte de energía)
-            self.save_now()
+            # 9. Persistir la detección (incremental: solo el evento y los
+            #    resultados de esta distancia — sobrevive a cortes de energía)
+            if self.persistence:
+                self.persistence.record_detection(self, distance.distance_id, event)
 
             logger.info("=" * 80)
             logger.info(f"✅✅✅ EVENTO PROCESADO EXITOSAMENTE ✅✅✅")
