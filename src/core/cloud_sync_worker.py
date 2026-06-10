@@ -37,13 +37,20 @@ class CloudSyncWorker:
     """
 
     # Errores del servidor que no tiene sentido reintentar
-    DEAD_STATUS_CODES = {400, 404, 405, 409, 410, 422}
+    DEAD_STATUS_CODES = {400, 401, 403, 404, 405, 409, 410, 422}
 
     def __init__(self, persistence, interval_seconds: float = 10.0,
-                 request_timeout: float = 10.0):
+                 request_timeout: float = 10.0,
+                 max_http_failures: int = 20):
         self.persistence = persistence
         self.interval_seconds = interval_seconds
         self.request_timeout = request_timeout
+        # Tope de reintentos para items que el SERVIDOR rechaza con error
+        # (5xx/429). Sin tope, un item envenenado se reenviaría infinitas
+        # veces (inflando contadores del backend) y bloquearía la cola.
+        # Los errores de RED (sin conexión) no consumen este tope: nunca
+        # se descarta nada por estar offline.
+        self.max_http_failures = max_http_failures
 
         self._stop = threading.Event()
         self._wake = threading.Event()
@@ -102,6 +109,8 @@ class CloudSyncWorker:
 
         logger.info(f"☁️ Sincronizando: {len(pending_rows)} envío(s) pendiente(s)")
 
+        network_down = False
+
         for row in pending_rows:
             if self._stop.is_set():
                 break
@@ -112,48 +121,48 @@ class CloudSyncWorker:
                     headers=row['headers'],
                     timeout=self.request_timeout,
                 )
-
-                if 200 <= r.status_code < 300:
-                    self.persistence.mark_sync_sent(row['id'])
-                    sent += 1
-                    logger.info(f"☁️ Enviado OK [{row['kind']}] id={row['id']}")
-                elif r.status_code in self.DEAD_STATUS_CODES:
-                    # Error permanente: no bloquear la cola reintentando
-                    self.persistence.mark_sync_failed(
-                        row['id'],
-                        f"HTTP {r.status_code}: {r.text[:200]}",
-                        dead=True,
-                    )
-                    logger.warning(
-                        f"⚠️ Envío [{row['kind']}] id={row['id']} descartado "
-                        f"(HTTP {r.status_code}): {r.text[:150]}"
-                    )
-                else:
-                    # Error transitorio del servidor (5xx, 429...):
-                    # reintentar más tarde, sin saltear los siguientes.
-                    # El servidor respondió → hay conexión.
-                    self.last_flush_ok = True
-                    self.persistence.mark_sync_failed(
-                        row['id'], f"HTTP {r.status_code}: {r.text[:200]}"
-                    )
-                    logger.warning(
-                        f"⚠️ Backend respondió {r.status_code} para id={row['id']}, "
-                        f"se reintenta en el próximo ciclo"
-                    )
-                    break
-
             except requests.RequestException as e:
-                # Sin conexión: queda todo pendiente para el próximo ciclo
+                # Sin conexión: queda TODO pendiente para el próximo ciclo.
+                # No seguir con los demás (también van a fallar) y no
+                # descartar nunca por errores de red.
                 self.persistence.mark_sync_failed(row['id'], f"{type(e).__name__}: {e}")
-                self.last_flush_ok = False
+                network_down = True
                 logger.info(
                     f"☁️ Sin conexión ({type(e).__name__}) — "
                     f"los envíos quedan en cola y se reintentan automáticamente"
                 )
                 break
-        else:
-            # El ciclo terminó sin errores de red
-            self.last_flush_ok = True
+
+            if 200 <= r.status_code < 300:
+                self.persistence.mark_sync_sent(row['id'])
+                sent += 1
+                logger.info(f"☁️ Enviado OK [{row['kind']}] id={row['id']}")
+                continue
+
+            # El servidor respondió con error. Importante: NO bloquear la
+            # cola (los demás envíos siguen saliendo) y NO reintentar sin
+            # límite — cada reintento puede duplicar lecturas en el backend.
+            attempts = row['attempts'] + 1
+            dead = (r.status_code in self.DEAD_STATUS_CODES
+                    or attempts >= self.max_http_failures)
+            self.persistence.mark_sync_failed(
+                row['id'],
+                f"HTTP {r.status_code}: {r.text[:200]}",
+                dead=dead,
+            )
+            if dead:
+                logger.warning(
+                    f"⚠️ Envío [{row['kind']}] id={row['id']} DESCARTADO tras "
+                    f"{attempts} intento(s) (HTTP {r.status_code}): {r.text[:150]} "
+                    f"— queda registrado en sync_outbox para diagnóstico"
+                )
+            else:
+                logger.warning(
+                    f"⚠️ Backend respondió {r.status_code} para id={row['id']} "
+                    f"(intento {attempts}/{self.max_http_failures}), se reintentará"
+                )
+
+        self.last_flush_ok = not network_down
 
         remaining = self.persistence.pending_sync_count()
         if sent:

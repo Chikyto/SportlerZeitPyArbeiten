@@ -267,6 +267,8 @@ def test_sync_outbox(tmpdir):
             received.append((self.path, body))
             if self.path.endswith('/rechazado'):
                 self.send_response(422)  # error permanente
+            elif self.path.endswith('/inestable'):
+                self.send_response(500)  # error del servidor, siempre
             else:
                 self.send_response(200)
             self.end_headers()
@@ -335,6 +337,30 @@ def test_sync_outbox(tmpdir):
         assert sent == 1 and remaining == 0, "El 422 debe descartarse y el siguiente enviarse"
         assert received[-1][1] == {'bib': 3}
         print("✅ Un error permanente (422) se descarta sin bloquear la cola")
+
+        # ====== Item envenenado (500 persistente) ======
+        # No debe bloquear la cola (el siguiente se envía igual) y tras
+        # max_http_failures intentos se descarta — sin reenvíos infinitos
+        # que dupliquen lecturas en el backend.
+        worker.max_http_failures = 3
+        persistence.enqueue_sync('detection', f"{base}/inestable", {'bib': 66}, headers)
+        persistence.enqueue_sync('detection', f"{base}/detection", {'bib': 4}, headers)
+
+        sent, remaining = worker.flush()
+        assert sent == 1, "El item con 500 no debe bloquear al siguiente"
+        assert received[-1][1] == {'bib': 4}
+        assert remaining == 1, "El item con 500 sigue pendiente (intento 1)"
+
+        worker.flush()  # intento 2
+        sent, remaining = worker.flush()  # intento 3 → descartado
+        assert remaining == 0, "Tras el tope de intentos debe quedar descartado"
+
+        inestable_posts = [b for _, b in received if b == {'bib': 66}]
+        assert len(inestable_posts) == 3, (
+            f"Debe haber exactamente 3 intentos del item envenenado, "
+            f"hubo {len(inestable_posts)}"
+        )
+        print("✅ Un 500 persistente no bloquea la cola y se descarta tras el tope de intentos")
 
     finally:
         server.shutdown()

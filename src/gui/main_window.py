@@ -706,6 +706,10 @@ class MainWindow(QMainWindow):
         url = f"{base_url}/api/events/{event_id}/detection"
         headers = {'Authorization': f"Bearer {self.cloud_config['token']}"}
         payload = {
+            # ID único del evento: permite al backend deduplicar si un
+            # reintento llega después de un timeout (el envío original
+            # pudo haberse procesado igual)
+            'event_id': event.event_id,
             'tag_id': tag_id,
             'timestamp': event.timestamp.isoformat(),
             'antenna_port': antenna_port,
