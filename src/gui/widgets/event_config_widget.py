@@ -522,7 +522,20 @@ class EventConfigWidget(QWidget):
             self.refresh_categories_table()
             self.update_active_categories_label()
             self.category_finished.emit(category_id)
-            self._finalize_results_on_backend()
+
+            # El finalize del backend es GLOBAL: marca DNF a todo atleta
+            # sin llegada y cierra el live completo. Solo llamarlo cuando
+            # no quede ninguna distancia en curso — si no, cerrar 5K
+            # mataría a los que siguen corriendo 15K/25K.
+            still_running = self.race_manager.get_active_distances()
+            if still_running:
+                names = ', '.join(d.name for d in still_running)
+                logger.info(
+                    f"⏸ Finalize en backend diferido — aún en curso: {names}"
+                )
+            else:
+                logger.info("🏁 Última distancia cerrada — finalizando evento en backend")
+                self._finalize_results_on_backend()
 
     def start_all_categories(self):
         """Iniciar todas las distancias que no estén corriendo o finalizadas"""
