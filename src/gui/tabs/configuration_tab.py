@@ -41,7 +41,12 @@ class ConfigurationTab(BaseTab):
         # === SECCIÓN 1: CONEXIÓN ===
         conn_group = QGroupBox("🔌 Conexión del Lector YR8900")
         conn_layout = QHBoxLayout(conn_group)
-        
+
+        # Estado de conexión del lector (mismo estilo que el del backend)
+        self.reader_status_label = QLabel("⚪ Sin conexión")
+        self.reader_status_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        conn_layout.addWidget(self.reader_status_label)
+
         conn_layout.addWidget(QLabel("Host:"))
         self.host_input = QLineEdit()
         self.host_input.setReadOnly(True)
@@ -66,8 +71,16 @@ class ConfigurationTab(BaseTab):
         test_btn.clicked.connect(self.test_connection)
         test_btn.setMaximumWidth(80)
         conn_layout.addWidget(test_btn)
-        
+
         self.layout.addWidget(conn_group)
+
+        # Refrescar el estado del lector periódicamente (el scanner se
+        # conecta/asigna después de crear este tab)
+        from PyQt6.QtCore import QTimer
+        self.reader_status_timer = QTimer(self)
+        self.reader_status_timer.timeout.connect(self.update_reader_status)
+        self.reader_status_timer.start(3000)
+        QTimer.singleShot(0, self.update_reader_status)
         
         # === SECCIÓN 2: ANTENAS (Simple, solo checkboxes) ===
         antennas_group = QGroupBox("📡 Configuración de Antenas")
@@ -433,18 +446,32 @@ class ConfigurationTab(BaseTab):
         except Exception as e:
             self.log(f"❌ Error guardando: {e}")
     
+    def update_reader_status(self):
+        """Actualizar indicador de conexión con el lector YR8900"""
+        connected = bool(self.scanner and getattr(self.scanner, 'connected', False))
+        if connected:
+            self.reader_status_label.setText("🟢 Conectado")
+            self.reader_status_label.setStyleSheet(
+                "font-weight: bold; font-size: 13px; color: green;")
+        else:
+            self.reader_status_label.setText("🔴 Desconectado")
+            self.reader_status_label.setStyleSheet(
+                "font-weight: bold; font-size: 13px; color: red;")
+
     def test_connection(self):
         """Test de conexión"""
         if not self.scanner:
             self.log("❌ Scanner no disponible")
+            self.update_reader_status()
             return
-        
+
         self.log("🧪 Probando conexión...")
         if hasattr(self.scanner, 'test_original_command'):
             if self.scanner.test_original_command():
                 self.log("✅ Test exitoso")
             else:
                 self.log("❌ Test falló")
+        self.update_reader_status()
     
     def rescan_antennas(self):
         """Re-escanear antenas físicas"""
