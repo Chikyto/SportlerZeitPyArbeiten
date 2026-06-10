@@ -574,6 +574,7 @@ class EventConfigWidget(QWidget):
 
         # 🔥 AUTO-INICIAR ESCANEO: Emitir señal para que DetectionTab inicie automáticamente
         if started_count > 0 and self.signals:
+            self._reset_live_reads()   # reset global — todas las distancias
             logger.info("🚀 Emitiendo señal auto_start_scanning para iniciar detección automáticamente")
             self.signals.auto_start_scanning.emit()
 
@@ -815,8 +816,12 @@ class EventConfigWidget(QWidget):
 
         logger.info("✅ EventConfigWidget refrescado desde otra solapa")
 
-    def _reset_live_reads(self, distance_id: str):
-        """Llamar al backend para limpiar las lecturas del live al iniciar una distancia."""
+    def _reset_live_reads(self, distance_id: str = None):
+        """
+        Llamar al backend para limpiar lecturas del live al iniciar.
+        distance_id=None → reset global (todas las distancias), body vacío.
+        distance_id=str  → reset solo esa distancia.
+        """
         import json, os, threading, requests
         try:
             path = 'config/api_config.json'
@@ -825,24 +830,29 @@ class EventConfigWidget(QWidget):
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             cloud = data.get('cloud', data)
-            api_url = cloud.get('api_url', '').rstrip('/')
-            api_key = cloud.get('api_key', '')
+            api_url = cloud.get('api_url', '').rstrip('/').removesuffix('/api/v1')
+            # El szconfig guarda el token como 'api_key' (mapeado por _save_cloud_config)
+            api_key = cloud.get('api_key', '') or cloud.get('token', '')
             event_id = cloud.get('event_id', '')
             if not api_url or not api_key or not event_id:
                 return
 
-            base = api_url.removesuffix('/api/v1')
+            body = {'distance_id': distance_id} if distance_id else {}
 
             def _post():
                 try:
-                    url = f"{base}/api/v1/timing/events/{event_id}/reads/reset"
-                    headers = {'Authorization': f"Bearer {api_key}"}
-                    logger.info(f"☁️ Live reset → {url} (token: {api_key[:20]}...)")
-                    r = requests.post(url, json={'distance_id': distance_id}, headers=headers, timeout=5)
+                    url = f"{api_url}/api/v1/timing/events/{event_id}/reads/reset"
+                    headers = {
+                        'Authorization': f"Bearer {api_key}",
+                        'Content-Type': 'application/json',
+                    }
+                    label = distance_id or 'TODAS'
+                    logger.info(f"☁️ Live reset → {url} distancia={label}")
+                    r = requests.post(url, json=body, headers=headers, timeout=5)
                     if r.status_code in (200, 201, 204):
-                        logger.info(f"☁️ Live reset OK para distancia {distance_id}")
+                        logger.info(f"☁️ Live reset OK ({label})")
                     else:
-                        logger.warning(f"⚠️ Live reset respondió {r.status_code}: {r.text[:100]}")
+                        logger.warning(f"⚠️ Live reset respondió {r.status_code}: {r.text[:150]}")
                 except Exception as e:
                     logger.warning(f"⚠️ No se pudo resetear live: {e}")
 
