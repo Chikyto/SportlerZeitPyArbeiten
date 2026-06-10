@@ -47,6 +47,7 @@ class MainWindow(QMainWindow):
         self.wizard_config = self._normalize_config(wizard_config)
         self.antenna_manager = AntennaManager(self.wizard_config)
         self.race_manager = RaceManager()  # Sistema de timing de carreras
+        self._setup_race_persistence()     # Persistencia local ante cortes de energía
         self.cloud_config = self._load_cloud_config()
         self.signals = AppSignals()
         self.scanner = None
@@ -62,7 +63,78 @@ class MainWindow(QMainWindow):
         self.connect_signals()    # 4. Conectar señales
 
         logger.info("✅ MainWindow inicializado correctamente")
-    
+
+    def _setup_race_persistence(self):
+        """
+        Activar persistencia local del estado de carrera.
+
+        Si existe un snapshot de una sesión anterior (ej: corte de energía,
+        cierre inesperado), ofrece restaurarlo antes de crear la UI.
+        """
+        try:
+            from ..core.race_tracking.persistence import RaceStatePersistence
+
+            persistence = RaceStatePersistence()
+
+            if persistence.has_saved_state():
+                summary = persistence.get_state_summary()
+                if summary and summary['athletes'] > 0:
+                    saved_at = summary.get('saved_at') or 'desconocido'
+                    try:
+                        from datetime import datetime as _dt_cls
+                        saved_at = _dt_cls.fromisoformat(saved_at).strftime('%d/%m/%Y %H:%M:%S')
+                    except (ValueError, TypeError):
+                        pass
+
+                    running_info = ""
+                    if summary['distances_running']:
+                        running_info = (
+                            f"\n⚠️ Distancias EN CURSO al momento del guardado: "
+                            f"{', '.join(summary['distances_running'])}"
+                        )
+
+                    reply = QMessageBox.question(
+                        None,
+                        "Sesión Anterior Encontrada",
+                        f"Se encontró el estado de una sesión anterior "
+                        f"(¿corte de energía o cierre inesperado?).\n\n"
+                        f"📅 Guardado: {saved_at}\n"
+                        f"📏 Distancias: {summary['distances']}\n"
+                        f"👥 Atletas: {summary['athletes']}\n"
+                        f"🏃 En carrera: {summary['running']}\n"
+                        f"🏁 Finalizados: {summary['finished']}"
+                        f"{running_info}\n\n"
+                        f"¿Desea RESTAURAR ese estado?\n\n"
+                        f"(Si elige No, el estado anterior queda archivado "
+                        f"en data/ como respaldo)",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.Yes
+                    )
+
+                    if reply == QMessageBox.StandardButton.Yes:
+                        if persistence.restore_into(self.race_manager):
+                            logger.info("♻️ Estado de sesión anterior restaurado")
+                        else:
+                            QMessageBox.warning(
+                                None,
+                                "Error de Restauración",
+                                "No se pudo restaurar el estado anterior.\n"
+                                "El archivo queda en data/race_state.json para revisión manual."
+                            )
+                    else:
+                        persistence.archive()
+                else:
+                    # Snapshot vacío o ilegible — archivar para no preguntar de nuevo
+                    persistence.archive()
+
+            self.race_manager.attach_persistence(persistence)
+            self.race_persistence = persistence
+
+        except Exception as e:
+            # La persistencia nunca debe impedir que arranque la app
+            logger.error(f"❌ No se pudo activar persistencia local: {e}", exc_info=True)
+            self.race_persistence = None
+
     def _normalize_config(self, config):
         """
         Normalizar configuración para asegurar tipos correctos
@@ -494,9 +566,20 @@ class MainWindow(QMainWindow):
             event.ignore()
         elif clicked == btn_save:
             self._save_on_exit()
+            self._close_persistence()
             event.accept()
         else:
+            self._close_persistence()
             event.accept()
+
+    def _close_persistence(self):
+        """Guardar estado final y cerrar el journal de detecciones"""
+        try:
+            if getattr(self, 'race_persistence', None):
+                self.race_manager.save_now()
+                self.race_persistence.close()
+        except Exception as e:
+            logger.warning(f"⚠️ Error cerrando persistencia: {e}")
 
     def _save_on_exit(self):
         """Guardar estado al cerrar"""

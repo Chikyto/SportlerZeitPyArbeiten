@@ -1197,6 +1197,7 @@ class ChipAssignmentWidget(QWidget):
         if reply == QMessageBox.StandardButton.Yes:
             self.selected_athlete.tag_id = ""
             self.refresh_athletes_table()
+            self.auto_save_data()
             logger.info(f"🗑️ Asignación limpiada para {self.selected_athlete.name}")
 
     def import_from_web(self):
@@ -1442,6 +1443,7 @@ class ChipAssignmentWidget(QWidget):
                     )
                     self.race_manager.add_distance(distance)
 
+            self.race_manager.save_now()  # persistir atletas/chips importados
             self.refresh_athletes_table()
             self.refresh_category_filter()
             self.categories_imported.emit()
@@ -1819,6 +1821,9 @@ class ChipAssignmentWidget(QWidget):
             if not self.race_manager:
                 return
 
+            # Actualizar también el snapshot completo del estado de carrera
+            self.race_manager.save_now()
+
             success = self.persistence.save_race_data(self.race_manager)
 
             if success:
@@ -1838,6 +1843,13 @@ class ChipAssignmentWidget(QWidget):
         """Cargar datos guardados automáticamente al iniciar"""
         try:
             if not self.race_manager:
+                return
+
+            # Si el estado completo de carrera ya fue restaurado al iniciar
+            # (snapshot de race_state.json), no ofrecer la carga parcial
+            # de atletas/chips: ya están incluidos en el snapshot.
+            if self.race_manager.get_all_distances():
+                logger.info("ℹ️  Estado ya restaurado al iniciar — se omite carga de race_data.json")
                 return
 
             if not self.persistence.has_saved_data():
@@ -1926,6 +1938,7 @@ class ChipAssignmentWidget(QWidget):
                 QMessageBox.warning(self, "Error", "No hay datos para guardar")
                 return
 
+            self.race_manager.save_now()
             success = self.persistence.save_race_data(self.race_manager)
 
             if success:

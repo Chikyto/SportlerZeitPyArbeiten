@@ -21,3 +21,4 @@ Thumbs.db
 # Local race data
 data/*.json
 data/*.bak
+data/*.jsonl

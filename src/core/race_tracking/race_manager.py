@@ -55,6 +55,9 @@ class RaceManager:
         self.results: Dict[str, Dict[str, AthleteResult]] = {}  # {distance_id: {athlete_id: result}}
         self.detection_history: List[DetectionEvent] = []
 
+        # Persistencia local (se adjunta con attach_persistence)
+        self.persistence = None
+
         # Categorías de premiación (por género/edad)
         self.award_categories: Dict[str, AwardCategory] = {}
 
@@ -72,7 +75,33 @@ class RaceManager:
             logger.info(f"📋 {len(self.award_categories)} categorías de premiación IAAF cargadas")
 
         logger.info("🏁 RaceManager inicializado")
-    
+
+    # ========================================================================
+    # PERSISTENCIA LOCAL
+    # ========================================================================
+
+    def attach_persistence(self, persistence) -> None:
+        """
+        Adjuntar persistencia local (RaceStatePersistence).
+
+        A partir de este momento, cada mutación de estado (largada,
+        detección, llegada, DNF, reset, etc.) se guarda en disco.
+        """
+        self.persistence = persistence
+        logger.info("💾 Persistencia local de estado activada")
+
+    def save_now(self) -> None:
+        """
+        Guardar el estado actual en disco inmediatamente.
+
+        Llamar después de mutar estado por fuera del RaceManager
+        (ej: asignación de chips, DNF/DNS/DSQ desde la UI).
+        Nunca lanza excepciones: un fallo de guardado no debe
+        interrumpir el cronometraje.
+        """
+        if self.persistence:
+            self.persistence.save_state(self)
+
     # ========================================================================
     # GESTIÓN DE DISTANCIAS
     # ========================================================================
@@ -102,6 +131,7 @@ class RaceManager:
             )
 
         logger.info(f"✅ Distancia agregada: {distance.name} ({len(distance)} atletas)")
+        self.save_now()
         return True
     
     def remove_distance(self, distance_id: str) -> bool:
@@ -128,6 +158,7 @@ class RaceManager:
             del self.results[distance_id]
 
         logger.info(f"🗑️  Distancia eliminada: {distance.name}")
+        self.save_now()
         return True
 
     def clear_all(self) -> None:
@@ -137,6 +168,7 @@ class RaceManager:
         self.detection_history.clear()
         self.last_detections.clear()
         logger.info("🗑️  RaceManager limpiado — nueva sesión")
+        self.save_now()
 
     def get_distance(self, distance_id: str) -> Optional[RaceDistance]:
         """Obtener distancia por ID"""
@@ -175,6 +207,7 @@ class RaceManager:
 
         self.award_categories[award_category.award_category_id] = award_category
         logger.info(f"✅ Categoría de premiación agregada: {award_category.name}")
+        self.save_now()
         return True
 
     def remove_award_category(self, award_category_id: str) -> bool:
@@ -199,6 +232,7 @@ class RaceManager:
 
         del self.award_categories[award_category_id]
         logger.info(f"🗑️  Categoría de premiación eliminada: {award_cat.name}")
+        self.save_now()
         return True
 
     def get_award_category(self, award_category_id: str) -> Optional[AwardCategory]:
@@ -234,6 +268,7 @@ class RaceManager:
             self.award_categories[award_cat.award_category_id] = award_cat
 
         logger.info(f"🔄 Categorías de premiación reseteadas a IAAF ({len(self.award_categories)} categorías)")
+        self.save_now()
 
     # ========================================================================
     # CONTROL DE CARRERA
@@ -283,6 +318,7 @@ class RaceManager:
         logger.info(f"🚀 Distancia iniciada: {distance.name}")
         logger.info(f"   📊 Participantes: {total_participants} | Chips: {chips_assigned} asignados, {chips_pending} pendientes")
 
+        self.save_now()
         return True
     
     def pause_distance(self, distance_id: str) -> bool:
@@ -296,6 +332,7 @@ class RaceManager:
 
         distance.status = RaceStatus.PAUSED
         logger.info(f"⏸️  Distancia pausada: {distance.name}")
+        self.save_now()
         return True
 
     def resume_distance(self, distance_id: str) -> bool:
@@ -309,6 +346,7 @@ class RaceManager:
 
         distance.status = RaceStatus.RUNNING
         logger.info(f"▶️  Distancia reanudada: {distance.name}")
+        self.save_now()
         return True
 
     def finish_distance(self, distance_id: str) -> bool:
@@ -335,6 +373,7 @@ class RaceManager:
         self._update_classification(distance_id)
 
         logger.info(f"🏁 Distancia finalizada: {distance.name}")
+        self.save_now()
         return True
     
     # ========================================================================
@@ -375,6 +414,12 @@ class RaceManager:
         logger.info(f"   Timestamp: {timestamp}")
         logger.info(f"   Roles: {roles}")
         logger.info("=" * 80)
+
+        # Registrar la lectura cruda en el journal ANTES de procesarla:
+        # aunque se rechace (anti-duplicados, etc.) o la app se corte,
+        # queda registro en disco para reconstruir la carrera.
+        if self.persistence:
+            self.persistence.log_detection(tag_id, timestamp, antenna_port, roles)
 
         # 1. Identificar al atleta y su distancia
         logger.info("🔍 PASO 1: Buscando atleta asociado al chip...")
@@ -476,6 +521,10 @@ class RaceManager:
 
             # 8. Actualizar clasificación
             self._update_classification(distance.distance_id)
+
+            # 9. Persistir estado (largadas, checkpoints y llegadas
+            #    sobreviven a un corte de energía)
+            self.save_now()
 
             logger.info("=" * 80)
             logger.info(f"✅✅✅ EVENTO PROCESADO EXITOSAMENTE ✅✅✅")
@@ -965,6 +1014,7 @@ class RaceManager:
         distance.end_time = None
 
         logger.info(f"🔄 Distancia reseteada: {distance.name}")
+        self.save_now()
         return True
 
     def __repr__(self) -> str:

@@ -514,6 +514,7 @@ class EventConfigWidget(QWidget):
                     result = self.race_manager.results[category_id].get(athlete_id)
                     if result:
                         result.status = status
+                self.race_manager.save_now()  # persistir DNF/DNS/DSQ
 
         if self.race_manager.finish_category(category_id):
             self.refresh_categories_table()
@@ -615,6 +616,7 @@ class EventConfigWidget(QWidget):
 
             # Agregar a distancia
             distance.add_participant(athlete)
+            self.race_manager.save_now()  # persistir nuevo participante
 
             self.chip_id_input.clear()
             self.participant_name_input.clear()
