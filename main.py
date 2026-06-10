@@ -7,9 +7,13 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 from src.gui.wizard.auto_wizard import AutoConfigurationWizard  # 🔥 Cambiado a AutoWizard
 from src.gui.main_window import MainWindow
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+from src.utils.logger import setup_logging
+
+# Consola: solo WARNING/ERROR (los problemas se ven enseguida).
+# Detalle completo en timing_system.log con rotación (5MB × 5).
+# Con --verbose la consola muestra todo (para diagnóstico).
+setup_logging(
+    console_level=logging.DEBUG if '--verbose' in sys.argv else logging.WARNING
 )
 logger = logging.getLogger(__name__)
 

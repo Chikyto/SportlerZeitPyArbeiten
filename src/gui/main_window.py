@@ -369,10 +369,7 @@ class MainWindow(QMainWindow):
                 }
         """
         try:
-            logger.info("=" * 80)
-            logger.info("🏁 MainWindow: SEÑAL tag_detected RECIBIDA")
-            logger.info(f"   Tag data: {tag_data}")
-            logger.info("=" * 80)
+            logger.debug(f"🏁 Señal tag_detected recibida: {tag_data}")
 
             # Extraer datos necesarios
             tag_id = tag_data.get('tag_id')
@@ -387,19 +384,11 @@ class MainWindow(QMainWindow):
                 timestamp = tag_data.get('timestamp')  # Fallback a timestamp string
             roles = tag_data.get('roles', [])
 
-            logger.info(f"📊 Datos extraídos:")
-            logger.info(f"   tag_id: {tag_id}")
-            logger.info(f"   antenna_port: {antenna_port}")
-            logger.info(f"   timestamp: {timestamp}")
-            logger.info(f"   roles: {roles}")
-
             # Validar datos mínimos
             if not tag_id or not antenna_port or not timestamp:
                 logger.warning(f"⚠️  Detección incompleta: {tag_data}")
                 logger.warning(f"   tag_id={tag_id}, antenna_port={antenna_port}, timestamp={timestamp}")
                 return
-
-            logger.info("📤 Enviando a RaceManager.process_detection()...")
 
             # Procesar con RaceManager
             event = self.race_manager.process_detection(
@@ -410,14 +399,11 @@ class MainWindow(QMainWindow):
             )
 
             if event:
-                logger.info(f"✅ Evento procesado exitosamente: {event}")
                 self._send_detection_to_backend(event, tag_id, antenna_port, roles)
             else:
-                logger.warning(f"⚠️  Tag {tag_id} detectado pero sin evento de carrera asociado")
-                logger.warning("   Posibles causas:")
-                logger.warning("   - Chip no asociado a ningún atleta")
-                logger.warning("   - Distancia no está en estado RUNNING")
-                logger.warning("   - Rol de antena no coincide con estado del atleta")
+                # El motivo específico del rechazo ya lo registró
+                # process_detection como warning
+                logger.debug(f"⚠️  Tag {tag_id} detectado sin evento de carrera asociado")
 
             # Resolver nombre y distancia del atleta para mostrar en tabla de detección
             athlete, distance = self.race_manager._find_athlete_by_tag(tag_id)

@@ -407,13 +407,10 @@ class RaceManager:
             ...     roles=['start']
             ... )
         """
-        logger.info("=" * 80)
-        logger.info(f"🔄 RaceManager.process_detection() INICIADO")
-        logger.info(f"   Tag ID: {tag_id}")
-        logger.info(f"   Puerto: {antenna_port}")
-        logger.info(f"   Timestamp: {timestamp}")
-        logger.info(f"   Roles: {roles}")
-        logger.info("=" * 80)
+        logger.debug(
+            f"🔄 process_detection: tag={tag_id} puerto={antenna_port} "
+            f"roles={roles} ts={timestamp}"
+        )
 
         # Registrar la lectura cruda en el journal ANTES de procesarla:
         # aunque se rechace (anti-duplicados, etc.) o la app se corte,
@@ -422,75 +419,55 @@ class RaceManager:
             self.persistence.log_detection(tag_id, timestamp, antenna_port, roles)
 
         # 1. Identificar al atleta y su distancia
-        logger.info("🔍 PASO 1: Buscando atleta asociado al chip...")
         athlete, distance = self._find_athlete_by_tag(tag_id)
 
         if not athlete:
-            logger.warning("=" * 80)
-            logger.warning(f"❌ DETECCIÓN RECHAZADA: Tag {tag_id} NO asociado a ningún atleta")
-            logger.warning("   SOLUCIÓN: Asignar chip en tab 'Asignación de Chips'")
-            logger.warning("=" * 80)
+            logger.warning(
+                f"❌ Detección rechazada: tag {tag_id} sin atleta asociado "
+                f"(asignar chip en tab 'Asignación de Chips')"
+            )
             return None
 
         if not distance:
-            logger.warning("=" * 80)
-            logger.warning(f"❌ DETECCIÓN RECHAZADA: Atleta {athlete.name} sin distancia activa")
-            logger.warning("=" * 80)
+            logger.warning(f"❌ Detección rechazada: {athlete.name} sin distancia activa")
             return None
 
-        logger.info(f"✅ Atleta encontrado: {athlete.name}")
-        logger.info(f"   Distancia: {distance.name}")
-        logger.info(f"   Estado distancia: {distance.status}")
+        logger.debug(f"   Atleta: {athlete.name} | Distancia: {distance.name} ({distance.status})")
 
         # Solo procesar si la distancia está corriendo
         if distance.status != RaceStatus.RUNNING:
-            logger.warning("=" * 80)
-            logger.warning(f"❌ DETECCIÓN RECHAZADA: Distancia '{distance.name}' no está RUNNING")
-            logger.warning(f"   Estado actual: {distance.status}")
-            logger.warning("   SOLUCIÓN: Iniciar distancia desde tab 'Configuración de Evento'")
-            logger.warning("=" * 80)
+            logger.warning(
+                f"❌ Detección rechazada: {athlete.name} — distancia '{distance.name}' "
+                f"no está en curso (estado: {distance.status.value})"
+            )
             return None
-
-        logger.info("✅ Distancia está RUNNING, continuando...")
 
         # 2. Validar períodos de latencia (anti-duplicados)
-        logger.info("🔍 PASO 2: Validando timing (anti-duplicados)...")
         if not self._validate_detection_timing(athlete, antenna_port, timestamp, roles):
-            logger.warning(f"⚠️  Detección ignorada por anti-duplicados")
+            logger.debug(f"⏱️  Detección ignorada por anti-duplicados: {athlete.name}")
             return None
-        logger.info("✅ Validación de timing OK")
 
-        logger.info("🔍 PASO 3: Determinando tipo de evento...")
-        logger.info(f"   Roles de antena: {roles}")
+        # 3. Determinar tipo de evento
 
         # Inicializar resultado si el atleta fue agregado después de crear la distancia
         if athlete.athlete_id not in self.results.get(distance.distance_id, {}):
-            logger.warning(f"⚠️  Atleta {athlete.name} sin resultado inicializado — inicializando ahora")
+            logger.debug(f"⚠️  Atleta {athlete.name} sin resultado inicializado — inicializando ahora")
             self.results.setdefault(distance.distance_id, {})[athlete.athlete_id] = AthleteResult(
                 athlete=athlete,
                 distance_id=distance.distance_id
             )
 
-        logger.info(f"   Estado actual atleta: {self.results[distance.distance_id][athlete.athlete_id].status}")
-
         event_type, checkpoint_num = self._determine_event_type(roles, athlete, distance)
 
         if not event_type:
-            logger.warning("=" * 80)
-            logger.warning(f"❌ DETECCIÓN RECHAZADA: No se pudo determinar tipo de evento")
-            logger.warning(f"   Roles de antena: {roles}")
-            logger.warning(f"   Estado atleta: {self.results[distance.distance_id][athlete.athlete_id].status}")
-            logger.warning("   CAUSA: Rol de antena no coincide con estado del atleta")
-            logger.warning("   Ejemplos:")
-            logger.warning("     - Atleta ya largó pero antena es 'start' solamente")
-            logger.warning("     - Atleta no ha largado pero antena es 'finish' o 'checkpoint'")
-            logger.warning("=" * 80)
+            logger.warning(
+                f"❌ Detección rechazada: {athlete.name} — rol de antena {roles} "
+                f"no coincide con estado del atleta "
+                f"({self.results[distance.distance_id][athlete.athlete_id].status.value})"
+            )
             return None
 
-        logger.info(f"✅ Tipo de evento determinado: {event_type}")
-
         # 4. Crear evento de detección
-        logger.info("🔍 PASO 4: Creando evento de detección...")
         event = DetectionEvent(
             tag_id=tag_id,
             timestamp=timestamp,
@@ -500,18 +477,12 @@ class RaceManager:
             athlete=athlete,
             distance_id=distance.distance_id
         )
-        logger.info(f"✅ Evento creado: {event_type} para {athlete.name}")
 
         # 5. Registrar en resultado del atleta
-        logger.info("🔍 PASO 5: Registrando evento en resultado del atleta...")
         result = self.results[distance.distance_id][athlete.athlete_id]
-        logger.info(f"   Estado antes: {result.status}")
         success = self._record_event_in_result(result, event)
 
         if success:
-            logger.info(f"   Estado después: {result.status}")
-            logger.info("✅ Evento registrado exitosamente")
-
             # 6. Actualizar tracking de última detección
             detection_key = (athlete.athlete_id, antenna_port)
             self.last_detections[detection_key] = timestamp
@@ -527,17 +498,11 @@ class RaceManager:
             if self.persistence:
                 self.persistence.record_detection(self, distance.distance_id, event)
 
-            logger.info("=" * 80)
-            logger.info(f"✅✅✅ EVENTO PROCESADO EXITOSAMENTE ✅✅✅")
-            logger.info(f"   Atleta: {athlete.name}")
-            logger.info(f"   Evento: {event_type}")
-            logger.info(f"   Nuevo estado: {result.status}")
-            logger.info("=" * 80)
             return event
         else:
-            logger.error("=" * 80)
-            logger.error(f"❌ ERROR: No se pudo registrar evento en resultado")
-            logger.error("=" * 80)
+            logger.error(
+                f"❌ No se pudo registrar evento {event_type} para {athlete.name}"
+            )
 
         return None
 
@@ -603,21 +568,19 @@ class RaceManager:
         Returns:
             Tuple (Athlete, RaceDistance) o (None, None) si no se encuentra
         """
-        logger.info(f"🔍 Buscando atleta con chip: '{tag_id}' (len={len(tag_id)})")
+        logger.debug(f"🔍 Buscando atleta con chip: '{tag_id}'")
 
         # Buscar primero en distancias corriendo
         active_distances = self.get_active_distances()
-        logger.debug(f"   Buscando en {len(active_distances)} distancia(s) activa(s)")
 
         for distance in active_distances:
             athlete = distance.get_participant_by_tag(tag_id)
             if athlete:
-                logger.info(f"✅ MATCH encontrado: {athlete.name} (#{athlete.bib_number}) en {distance.name}")
+                logger.debug(f"   MATCH: {athlete.name} (#{athlete.bib_number}) en {distance.name}")
                 return athlete, distance
 
         # Si no está en activas, buscar en todas
         all_distances = list(self.distances.values())
-        logger.debug(f"   No encontrado en activas, buscando en {len(all_distances)} distancia(s) total(es)")
 
         for distance in all_distances:
             athlete = distance.get_participant_by_tag(tag_id)
@@ -626,15 +589,14 @@ class RaceManager:
                 return athlete, distance
 
         # No encontrado - registrar chips disponibles para debugging
-        logger.warning(f"❌ NO MATCH para chip '{tag_id}'")
-        logger.warning("   Chips registrados en base de datos:")
+        # (el rechazo se reporta como warning en process_detection)
         chip_count = 0
         for distance in all_distances:
             for participant in distance.participants:
                 if participant.tag_id:
-                    logger.warning(f"     - '{participant.tag_id}' → {participant.name}")
+                    logger.debug(f"     - '{participant.tag_id}' → {participant.name}")
                     chip_count += 1
-        logger.warning(f"   Total de chips asignados: {chip_count}")
+        logger.debug(f"❌ NO MATCH para chip '{tag_id}' ({chip_count} chips asignados)")
 
         return None, None
     

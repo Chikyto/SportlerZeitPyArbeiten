@@ -4,10 +4,60 @@ Sistema de logging centralizado para el sistema de cronometraje
 
 import logging
 import sys
+from logging.handlers import RotatingFileHandler
 from typing import Optional
 
 # Cache de loggers
 _loggers = {}
+
+
+def setup_logging(console_level: int = logging.WARNING,
+                  file_level: int = logging.INFO,
+                  log_file: str = "timing_system.log",
+                  max_bytes: int = 5 * 1024 * 1024,
+                  backup_count: int = 5) -> None:
+    """
+    Configurar el logging de toda la aplicación.
+
+    Filosofía:
+    - Consola: solo WARNING y ERROR → los problemas se ven de inmediato,
+      sin perderse entre miles de líneas de detalle.
+    - Archivo con rotación: todo el detalle (INFO/DEBUG) queda en
+      timing_system.log, acotado a max_bytes × (backup_count + 1)
+      para que nunca crezca infinito.
+
+    Args:
+        console_level: Nivel mínimo para la consola (WARNING por defecto;
+                       usar logging.INFO/DEBUG con --verbose)
+        file_level: Nivel mínimo para el archivo
+        log_file: Ruta del archivo de log
+        max_bytes: Tamaño máximo de cada archivo antes de rotar
+        backup_count: Cantidad de archivos rotados a conservar
+    """
+    root = logging.getLogger()
+    root.setLevel(min(console_level, file_level))
+    root.handlers.clear()
+
+    fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+    file_handler = RotatingFileHandler(
+        log_file, maxBytes=max_bytes, backupCount=backup_count,
+        encoding='utf-8'
+    )
+    file_handler.setLevel(file_level)
+    file_handler.setFormatter(logging.Formatter(fmt))
+    root.addHandler(file_handler)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(console_level)
+    console_handler.setFormatter(ColoredFormatter(fmt))
+    root.addHandler(console_handler)
+
+    root.info(
+        f"Logging configurado: consola={logging.getLevelName(console_level)}, "
+        f"archivo={log_file} ({logging.getLevelName(file_level)}, "
+        f"rotación {max_bytes // (1024 * 1024)}MB × {backup_count})"
+    )
 
 def get_logger(name: str) -> logging.Logger:
     """
