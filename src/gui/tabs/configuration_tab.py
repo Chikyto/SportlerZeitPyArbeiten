@@ -11,6 +11,7 @@ from PyQt6.QtCore import pyqtSlot, Qt
 from PyQt6.QtGui import QColor
 from datetime import datetime
 from .base_tab import BaseTab
+import json
 import logging
 
 logger = logging.getLogger(__name__)

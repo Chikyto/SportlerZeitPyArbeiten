@@ -4,6 +4,9 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
 from PyQt6.QtCore import pyqtSignal, QTimer, Qt
 from PyQt6.QtGui import QFont, QColor
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RaceMonitoringWidget(QWidget):
     """Widget para monitoreo de carreras en tiempo real"""
