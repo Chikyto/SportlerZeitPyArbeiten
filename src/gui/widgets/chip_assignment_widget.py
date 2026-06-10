@@ -856,14 +856,14 @@ class ChipAssignmentWidget(QWidget):
             logger.warning("⚠️  Tag detectado pero sin ID válido")
             return
 
-        # LOGGING DETALLADO para debugging
-        logger.info(f"📡 Tag detectado: {chip_id}")
-        logger.info(f"   • Modo escaneo activo: {self.scan_mode}")
-        logger.info(f"   • Atleta seleccionado: {self.selected_athlete.name if self.selected_athlete else 'Ninguno'}")
+        logger.debug(f"📡 Tag detectado: {chip_id} (modo escaneo: {self.scan_mode}, "
+                     f"atleta: {self.selected_athlete.name if self.selected_athlete else 'Ninguno'})")
 
         # Solo procesar si estamos en modo escaneo y hay atleta seleccionado
         if not self.scan_mode:
-            logger.warning(f"⚠️  Chip {chip_id} ignorado: Modo escaneo NO activo. Haz click en '📡 Escanear Chip' primero.")
+            # Durante una carrera TODAS las lecturas pasan por acá además
+            # del cronometraje: ignorarlas en silencio (solo aviso visual)
+            logger.debug(f"Chip {chip_id} ignorado: modo escaneo no activo")
             # Mostrar notificación visual AMARILLA (útil para ver qué chips hay sin asignar)
             self.scan_status_label.setText(f"⚠️ Chip detectado ({chip_id}) pero modo escaneo NO activo")
             self.scan_status_label.setStyleSheet("color: #f59e0b; font-weight: bold; font-size: 13px;")

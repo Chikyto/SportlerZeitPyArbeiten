@@ -319,25 +319,26 @@ class RaceMonitoringWidget(QWidget):
         import logging
         logger = logging.getLogger(__name__)
 
-        logger.info("🔄 Actualizando splits...")
+        logger.debug("🔄 Actualizando splits...")
 
         if not self.race_manager:
-            logger.warning("  ⚠️  No hay race_manager")
             return
 
         # Obtener distancia seleccionada
         selected_text = self.splits_category_combo.currentText()
 
-        if selected_text == "Selecciona una distancia":
+        if not selected_text or selected_text == "Selecciona una distancia":
             return
 
         # Extraer distance_id
         distance_id = selected_text.split(" - ")[0]
+        if not distance_id:
+            return
 
         # Obtener distancia
         distance = self.race_manager.get_distance(distance_id)
         if not distance:
-            logger.warning(f"  ⚠️  Distancia {distance_id} no encontrada")
+            logger.debug(f"  Distancia {distance_id!r} no encontrada")
             return
 
         # Verificar si hay checkpoints
@@ -444,17 +445,16 @@ class RaceMonitoringWidget(QWidget):
         for i in range(len(columns)):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
 
-        logger.info(f"✅ Splits actualizados: {len(results)} atletas, {num_checkpoints} checkpoints")
+        logger.debug(f"✅ Splits actualizados: {len(results)} atletas, {num_checkpoints} checkpoints")
 
     def refresh_podiums(self):
         """Actualizar visualización de podios"""
         import logging
         logger = logging.getLogger(__name__)
 
-        logger.info("🔄 Actualizando podios...")
+        logger.debug("🔄 Actualizando podios...")
 
         if not self.race_manager:
-            logger.warning("  ⚠️  No hay race_manager")
             return
 
         # Limpiar layout actual
@@ -465,7 +465,7 @@ class RaceMonitoringWidget(QWidget):
 
         # Obtener categoría seleccionada
         selected_text = self.podiums_category_combo.currentText()
-        logger.info(f"  Distancia seleccionada: {selected_text}")
+        logger.debug(f"  Distancia seleccionada: {selected_text}")
 
         if selected_text == "Selecciona una distancia":
             info_label = QLabel("Selecciona una distancia para ver los podios clasificados por categoría de premiación.")
@@ -478,11 +478,10 @@ class RaceMonitoringWidget(QWidget):
 
         # Obtener top_n
         top_n = int(self.podium_top_n_combo.currentText())
-        logger.info(f"  Top N: {top_n}")
 
         # Obtener podios
         try:
-            logger.info(f"  Obteniendo podios para {race_category_id}...")
+            logger.debug(f"  Obteniendo podios para {race_category_id} (top {top_n})...")
 
             # ========== 1. GENERALES POR GÉNERO (SIN CATEGORÍA DE EDAD) ==========
             results_by_gender = self.race_manager.get_results_by_gender(race_category_id, only_finished=True)
@@ -582,7 +581,7 @@ class RaceMonitoringWidget(QWidget):
 
             # ========== 2. CATEGORÍAS DE EDAD (IAAF, etc) ==========
             podiums = self.race_manager.get_podium_by_award_category(race_category_id, top_n=top_n)
-            logger.info(f"  Podios obtenidos: {len(podiums)} categorías")
+            logger.debug(f"  Podios obtenidos: {len(podiums)} categorías")
 
             if not podiums and not results_by_gender.get("M") and not results_by_gender.get("F"):
                 no_data_label = QLabel("No hay resultados finalizados aún.")

@@ -642,7 +642,7 @@ class EventConfigWidget(QWidget):
         logger.info(f"🔍 EventConfigWidget.refresh_categories_table() - Distancias obtenidas: {len(distances)}")
 
         if not distances:
-            logger.warning("⚠️  No hay distancias para mostrar en EventConfigWidget")
+            logger.debug("No hay distancias para mostrar en EventConfigWidget (aún sin datos)")
             return
 
         for distance in distances:
