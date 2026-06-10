@@ -50,6 +50,8 @@ class EventConfigWidget(QWidget):
         # Refrescar tabla para mostrar distancias existentes (cargadas desde CSV o JSON)
         self.refresh_categories_table()
         self.refresh_category_combo()
+        # Reflejar distancias en curso de una sesión restaurada
+        self.update_active_categories_label()
         
     def setup_ui(self):
         """Configurar interfaz del widget"""

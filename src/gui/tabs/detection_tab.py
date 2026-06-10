@@ -54,7 +54,11 @@ class DetectionTab(BaseTab):
         self._elapsed_timer.start(1000)
 
         super().__init__(signals=signals, parent=parent)
-    
+
+        # Si hay una sesión restaurada (corte de luz / reinicio),
+        # reconstruir la tabla con los atletas que ya largaron
+        self.repopulate_from_race_manager()
+
     def setup_ui(self):
         """Configurar interfaz de usuario"""
         
@@ -214,6 +218,113 @@ class DetectionTab(BaseTab):
         cols += ["🏁 Meta", "⏱ Acumulado"]
         self.detections_table.setColumnCount(len(cols))
         self.detections_table.setHorizontalHeaderLabels(cols)
+
+        # Re-renderizar filas existentes: si cambió la cantidad de
+        # checkpoints, las columnas Meta/Acumulado se corren de lugar
+        for tag_id in list(self.tag_rows.keys()):
+            if tag_id in self.tag_data:
+                self._render_tag_row(tag_id)
+
+    def repopulate_from_race_manager(self):
+        """
+        Reconstruir la tabla desde el estado del RaceManager.
+
+        Tras restaurar una sesión (corte de luz, reinicio de la app),
+        los atletas que ya habían largado vuelven a verse con su hora
+        de largada, checkpoints, meta y el tiempo acumulado corriendo.
+        """
+        if not self.race_manager:
+            return
+        try:
+            restored = 0
+            for distance in self.race_manager.get_all_distances():
+                results = self.race_manager.results.get(distance.distance_id, {})
+                for result in results.values():
+                    if not result.start_time:
+                        continue  # nunca largó: nada que mostrar
+
+                    athlete = result.athlete
+                    raw_tag = athlete.tag_id or f"BIB{athlete.bib_number}"
+                    # Misma normalización que el pipeline de detección
+                    # (ej: '081D' → '81D') para no duplicar filas cuando
+                    # lleguen lecturas nuevas del mismo chip
+                    try:
+                        tag_id = format(int(raw_tag, 16), 'X').upper()
+                    except (ValueError, TypeError):
+                        tag_id = raw_tag.upper()
+
+                    self.tag_data[tag_id] = {
+                        'start_ts': result.start_time.strftime('%H:%M:%S'),
+                        'start_dt': result.start_time,
+                        'checkpoint_ts': {
+                            cp: ts.strftime('%H:%M:%S')
+                            for cp, ts in result.checkpoint_times.items() if ts
+                        },
+                        'finish_ts': result.finish_time.strftime('%H:%M:%S') if result.finish_time else None,
+                        'finish_dt': result.finish_time,
+                        'name': athlete.name,
+                        'distance': distance.name,
+                        'bib': str(athlete.bib_number or '-'),
+                    }
+                    self._render_tag_row(tag_id)
+                    restored += 1
+
+            if restored:
+                logger.info(f"♻️ Tabla de detección reconstruida: {restored} atleta(s) con largada")
+        except Exception as e:
+            logger.error(f"❌ Error reconstruyendo tabla de detección: {e}", exc_info=True)
+
+    def _render_tag_row(self, tag_id: str):
+        """Crear/actualizar la fila de un tag a partir de tag_data."""
+        data = self.tag_data[tag_id]
+        if tag_id in self.tag_rows:
+            row = self.tag_rows[tag_id]
+        else:
+            row = self.detections_table.rowCount()
+            self.detections_table.insertRow(row)
+            self.tag_rows[tag_id] = row
+
+        n_cp = self._n_cp()
+        meta_col = self._col_meta()
+        elapsed_col = self._col_elapsed()
+
+        self.detections_table.setItem(row, 0, QTableWidgetItem(tag_id))
+        self.detections_table.setItem(row, 1, QTableWidgetItem(data['bib']))
+        self.detections_table.setItem(row, 2, QTableWidgetItem(data['name']))
+        self.detections_table.setItem(row, 3, QTableWidgetItem(data['distance']))
+
+        start_item = QTableWidgetItem(data['start_ts'] or '—')
+        if data['start_ts']:
+            start_item.setForeground(QColor(0, 150, 0))
+        self.detections_table.setItem(row, 4, start_item)
+
+        for i in range(1, n_cp + 1):
+            ts = data['checkpoint_ts'].get(i, '—')
+            item = QTableWidgetItem(ts)
+            if ts != '—':
+                item.setForeground(QColor(0, 100, 200))
+            self.detections_table.setItem(row, 4 + i, item)
+
+        if meta_col < self.detections_table.columnCount():
+            finish_item = QTableWidgetItem(data['finish_ts'] or '—')
+            if data['finish_ts']:
+                finish_item.setForeground(QColor(200, 150, 0))
+            self.detections_table.setItem(row, meta_col, finish_item)
+
+        if elapsed_col < self.detections_table.columnCount():
+            if data['finish_dt'] and data['start_dt']:
+                net = data['finish_dt'] - data['start_dt']
+                secs = int(net.total_seconds())
+                h, rem = divmod(secs, 3600)
+                m, s = divmod(rem, 60)
+                elapsed_item = QTableWidgetItem(f"{h:02d}:{m:02d}:{s:02d}")
+                elapsed_item.setForeground(QColor(0, 180, 0))
+            elif data['start_dt']:
+                # El timer de 1s lo actualiza enseguida
+                elapsed_item = QTableWidgetItem("…")
+            else:
+                elapsed_item = QTableWidgetItem('—')
+            self.detections_table.setItem(row, elapsed_col, elapsed_item)
 
     def _update_elapsed_times(self):
         """Actualizar columna Acumulado para atletas en carrera (cada segundo)."""
