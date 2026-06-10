@@ -205,19 +205,34 @@ class MainWindow(QMainWindow):
         self.tab_widget = QTabWidget()
         layout.addWidget(self.tab_widget)
         
-        # Barra de estado (mensaje general + indicador de sincronización)
+        # Barra de estado: mensaje general + badges de Lector y Backend
         status_bar = QHBoxLayout()
         self.status_label = QLabel("Aplicación iniciada")
         status_bar.addWidget(self.status_label)
         status_bar.addStretch()
+
+        badge_style = (
+            "QLabel {{ background: {bg}; color: {fg}; font-weight: bold;"
+            " padding: 3px 10px; border-radius: 9px; }}"
+        )
+        self._badge_styles = {
+            'green':  badge_style.format(bg="#d1fae5", fg="#065f46"),
+            'orange': badge_style.format(bg="#fef3c7", fg="#92400e"),
+            'red':    badge_style.format(bg="#fee2e2", fg="#991b1b"),
+            'gray':   badge_style.format(bg="#e5e7eb", fg="#4b5563"),
+        }
+
+        self.reader_status_label = QLabel("")
+        status_bar.addWidget(self.reader_status_label)
         self.sync_status_label = QLabel("")
         status_bar.addWidget(self.sync_status_label)
         layout.addLayout(status_bar)
 
-        # Refrescar el indicador de envíos pendientes al backend
+        # Refrescar los indicadores de estado periódicamente
         self.sync_status_timer = QTimer(self)
-        self.sync_status_timer.timeout.connect(self.update_sync_status)
-        self.sync_status_timer.start(5000)
+        self.sync_status_timer.timeout.connect(self.update_status_indicators)
+        self.sync_status_timer.start(3000)
+        QTimer.singleShot(0, self.update_status_indicators)
         
         # Crear tabs usando TabManager
         self.tab_manager = TabManager(
@@ -231,24 +246,46 @@ class MainWindow(QMainWindow):
         
         logger.info("✅ UI principal configurada")
 
-    def update_sync_status(self):
-        """Actualizar indicador de envíos pendientes al backend"""
+    def update_status_indicators(self):
+        """Actualizar badges de Lector y Backend en la barra de estado"""
+        # --- Lector RFID ---
+        reader_connected = bool(self.scanner and getattr(self.scanner, 'connected', False))
+        if reader_connected:
+            self.reader_status_label.setText("📡 Lector: Conectado")
+            self.reader_status_label.setStyleSheet(self._badge_styles['green'])
+        else:
+            self.reader_status_label.setText("📡 Lector: Desconectado")
+            self.reader_status_label.setStyleSheet(self._badge_styles['red'])
+
+        # --- Backend / sincronización ---
         persistence = getattr(self, 'race_persistence', None)
+        worker = getattr(self, 'sync_worker', None)
+
+        if not self.cloud_config:
+            self.sync_status_label.setText("☁️ Backend: sin configurar")
+            self.sync_status_label.setStyleSheet(self._badge_styles['gray'])
+            return
         if not persistence:
-            self.sync_status_label.setText("")
+            self.sync_status_label.setText("☁️ Backend: envío directo (sin cola)")
+            self.sync_status_label.setStyleSheet(self._badge_styles['gray'])
             return
 
         pending = persistence.pending_sync_count()
-        if pending > 0:
+        offline = worker is not None and worker.last_flush_ok is False
+
+        if pending > 0 and offline:
             self.sync_status_label.setText(
-                f"☁️ {pending} envío(s) pendiente(s) — reintentando..."
+                f"☁️ Backend: SIN CONEXIÓN — {pending} en cola"
             )
-            self.sync_status_label.setStyleSheet("color: #f0a500; font-weight: bold;")
-        elif self.cloud_config:
-            self.sync_status_label.setText("☁️ Sincronizado")
-            self.sync_status_label.setStyleSheet("color: #10b981;")
+            self.sync_status_label.setStyleSheet(self._badge_styles['red'])
+        elif pending > 0:
+            self.sync_status_label.setText(
+                f"☁️ Backend: enviando... {pending} pendiente(s)"
+            )
+            self.sync_status_label.setStyleSheet(self._badge_styles['orange'])
         else:
-            self.sync_status_label.setText("")
+            self.sync_status_label.setText("☁️ Backend: sincronizado")
+            self.sync_status_label.setStyleSheet(self._badge_styles['green'])
 
     def setup_scanner(self):
         """Configurar scanner con datos del wizard"""

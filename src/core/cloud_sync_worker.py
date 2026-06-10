@@ -49,6 +49,10 @@ class CloudSyncWorker:
         self._wake = threading.Event()
         self._thread = None
 
+        # Resultado del último intento de envío (para indicador en UI):
+        # None = aún sin intentos | True = conexión OK | False = sin conexión
+        self.last_flush_ok = None
+
     def start(self):
         """Iniciar el hilo de envío"""
         if self._thread and self._thread.is_alive():
@@ -126,7 +130,9 @@ class CloudSyncWorker:
                     )
                 else:
                     # Error transitorio del servidor (5xx, 429...):
-                    # reintentar más tarde, sin saltear los siguientes
+                    # reintentar más tarde, sin saltear los siguientes.
+                    # El servidor respondió → hay conexión.
+                    self.last_flush_ok = True
                     self.persistence.mark_sync_failed(
                         row['id'], f"HTTP {r.status_code}: {r.text[:200]}"
                     )
@@ -139,11 +145,15 @@ class CloudSyncWorker:
             except requests.RequestException as e:
                 # Sin conexión: queda todo pendiente para el próximo ciclo
                 self.persistence.mark_sync_failed(row['id'], f"{type(e).__name__}: {e}")
+                self.last_flush_ok = False
                 logger.info(
                     f"☁️ Sin conexión ({type(e).__name__}) — "
                     f"los envíos quedan en cola y se reintentan automáticamente"
                 )
                 break
+        else:
+            # El ciclo terminó sin errores de red
+            self.last_flush_ok = True
 
         remaining = self.persistence.pending_sync_count()
         if sent:

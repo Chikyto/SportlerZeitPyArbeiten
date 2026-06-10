@@ -295,6 +295,7 @@ def test_sync_outbox(tmpdir):
 
     sent, remaining = worker.flush()
     assert sent == 0 and remaining == 3, "Sin conexión deben quedar 3 pendientes"
+    assert worker.last_flush_ok is False, "Debe reportar sin conexión para la UI"
     print("✅ Sin conexión: 3 envíos quedan en cola (nada se pierde)")
 
     # La cola sobrevive a un save_state completo (no está en _TABLES)
@@ -324,6 +325,7 @@ def test_sync_outbox(tmpdir):
         assert received[0][1] == {'bib': 1}
         assert received[1][1] == {'bib': 2}
         assert received[2][0].endswith('/finalize')
+        assert worker.last_flush_ok is True, "Debe reportar conexión OK para la UI"
         print("✅ Al volver la conexión se reenvió todo, en orden")
 
         # ====== Error permanente (HTTP 422) no bloquea la cola ======
