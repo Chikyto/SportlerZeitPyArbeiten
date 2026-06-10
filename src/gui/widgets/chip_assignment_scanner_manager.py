@@ -4,7 +4,7 @@
 Scanner Manager for Chip Assignment
 src/gui/widgets/chip_assignment_scanner_manager.py
 
-Manages network (YR8900) and USB (YR9011) scanners.
+Manages USB (YR9011) and local WebSocket scanners for chip assignment.
 """
 
 from PyQt6.QtWidgets import QMessageBox
@@ -18,7 +18,7 @@ class ChipAssignmentScannerManager(QObject):
     """Manages RFID scanners for chip assignment"""
 
     # Signals
-    scanner_mode_changed = pyqtSignal(str)  # "network", "usb" or "local"
+    scanner_mode_changed = pyqtSignal(str)  # "none", "usb" or "local"
     scanner_connected = pyqtSignal(str)  # scanner type
     scanner_disconnected = pyqtSignal(str)
     scanning_started = pyqtSignal()
@@ -27,23 +27,21 @@ class ChipAssignmentScannerManager(QObject):
     def __init__(self, parent_widget):
         super().__init__()
         self.parent = parent_widget
-        self.scanner_mode = "network"  # "network", "usb" or "local"
-        self.network_scanner = None
+        # Lectores para asignación de chips: USB (YR9011) o local
+        # (WebSocket). Las antenas de competencia (YR8900) NO se usan
+        # acá: sus lecturas son de carrera, no de asignación.
+        self.scanner_mode = "none"  # "none", "usb" or "local"
         self.usb_scanner = None
         self.local_scanner = None
         self.scanning = False
 
-    def set_network_scanner(self, scanner):
-        """Set YR8900 network scanner"""
-        self.network_scanner = scanner
-        logger.info("🌐 Network scanner configurado")
-
     def set_scanner_mode(self, mode: str):
         """
-        Switch between network and USB scanner
+        Switch between USB and local scanner
 
         Args:
-            mode: "network" for YR8900, "usb" for YR9011
+            mode: "usb" for YR9011, "local" for WebSocket reader,
+                  "none" for manual-only assignment
         """
         if mode == self.scanner_mode:
             return
@@ -54,18 +52,18 @@ class ChipAssignmentScannerManager(QObject):
         if mode == "usb":
             success = self.connect_usb_scanner()
             if not success:
-                self.scanner_mode = "network"
-                self.scanner_mode_changed.emit("network")
+                self.scanner_mode = "none"
+                self.scanner_mode_changed.emit("none")
                 return
 
         elif mode == "local":
             success = self.connect_local_scanner()
             if not success:
-                self.scanner_mode = "network"
-                self.scanner_mode_changed.emit("network")
+                self.scanner_mode = "none"
+                self.scanner_mode_changed.emit("none")
                 return
 
-        elif mode == "network":
+        elif mode == "none":
             self.disconnect_usb_scanner()
             self.disconnect_local_scanner()
 
@@ -233,9 +231,7 @@ class ChipAssignmentScannerManager(QObject):
 
     def is_scanner_available(self) -> bool:
         """Check if a scanner is available for current mode"""
-        if self.scanner_mode == "network":
-            return self.network_scanner is not None
-        elif self.scanner_mode == "usb":
+        if self.scanner_mode == "usb":
             return self.usb_scanner is not None and self.usb_scanner.connected
         elif self.scanner_mode == "local":
             return self.local_scanner is not None and self.local_scanner.connected
@@ -243,15 +239,7 @@ class ChipAssignmentScannerManager(QObject):
 
     def get_scanner_status(self) -> dict:
         """Get scanner status information"""
-        if self.scanner_mode == "network":
-            return {
-                'mode': 'network',
-                'type': 'YR8900',
-                'available': self.network_scanner is not None,
-                'scanning': self.scanning
-            }
-
-        elif self.scanner_mode == "usb":
+        if self.scanner_mode == "usb":
             return {
                 'mode': 'usb',
                 'type': 'YR9011',
