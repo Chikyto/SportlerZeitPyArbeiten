@@ -61,6 +61,16 @@ class MainWindow(QMainWindow):
         self.apply_config()       # 3. Aplicar config a tabs
         self.connect_signals()    # 4. Conectar señales
 
+        # 5. Si se restauró una sesión con distancias EN CURSO y el lector
+        #    está conectado, reanudar la detección automáticamente (tras un
+        #    corte de luz nadie debería tener que acordarse de apretar
+        #    'Iniciar Detección' mientras los corredores siguen pasando)
+        if (self.scanner and getattr(self.scanner, 'connected', False)
+                and self.race_manager.get_active_distances()):
+            names = ', '.join(d.name for d in self.race_manager.get_active_distances())
+            logger.info(f"♻️ Distancias en curso restauradas ({names}) — reanudando detección")
+            self.signals.auto_start_scanning.emit()
+
         logger.info("✅ MainWindow inicializado correctamente")
 
     def _setup_race_persistence(self):
