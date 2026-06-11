@@ -397,22 +397,28 @@ class ConfigurationTab(BaseTab):
                     checkpoint_widget = self.antennas_table.cellWidget(row, 4)
                     checkpoint = checkpoint_widget.layout().itemAt(0).widget().isChecked()
 
-                    # Actualizar o crear config de esta antena
-                    if port_str not in self.wizard_config['antennas']:
-                        self.wizard_config['antennas'][port_str] = {}
-
-                    self.wizard_config['antennas'][port_str].update({
+                    # Claves SIEMPRE int (formato normalizado del resto del
+                    # sistema): escribir '1' como string creaba una entrada
+                    # duplicada junto a la 1 entera
+                    antennas = self.wizard_config['antennas']
+                    existing = antennas.pop(port_num, None) or antennas.pop(port_str, None) or {}
+                    antennas.pop(port_str, None)
+                    existing.update({
                         'enabled': True,
                         'start': start,
                         'finish': finish,
                         'checkpoint': checkpoint,
                         'name': f'Antena {port_num}'
                     })
+                    antennas[port_num] = existing
                     updated += 1
                 else:
                     # Si está desmarcada, deshabilitar la antena en la config
-                    if port_str in self.wizard_config['antennas']:
-                        self.wizard_config['antennas'][port_str]['enabled'] = False
+                    antennas = self.wizard_config['antennas']
+                    existing = antennas.pop(port_num, None) or antennas.pop(port_str, None)
+                    if existing is not None:
+                        existing['enabled'] = False
+                        antennas[port_num] = existing
 
             # Guardar
             self.save_config()
