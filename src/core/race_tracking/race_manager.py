@@ -457,14 +457,12 @@ class RaceManager:
                 distance_id=distance.distance_id
             )
 
-        event_type, checkpoint_num = self._determine_event_type(roles, athlete, distance)
+        event_type, checkpoint_num, reason = self._determine_event_type(
+            roles, athlete, distance, antenna_port, timestamp
+        )
 
         if not event_type:
-            logger.warning(
-                f"❌ Detección rechazada: {athlete.name} — rol de antena {roles} "
-                f"no coincide con estado del atleta "
-                f"({self.results[distance.distance_id][athlete.athlete_id].status.value})"
-            )
+            logger.warning(f"❌ Detección rechazada: {athlete.name} — {reason}")
             return None
 
         # 4. Crear evento de detección
@@ -604,56 +602,21 @@ class RaceManager:
         self,
         roles: List[str],
         athlete: Athlete,
-        distance: RaceDistance
-    ) -> Tuple[Optional[EventType], Optional[int]]:
+        distance: RaceDistance,
+        antenna_port: int,
+        timestamp: datetime
+    ) -> Tuple[Optional[EventType], Optional[int], str]:
         """
-        Determinar tipo de evento según roles y estado del atleta
-
-        Args:
-            roles: Roles de la antena
-            athlete: Atleta que pasó
-            distance: Distancia en la que compite
+        Determinar tipo de evento según roles, estado del atleta y
+        ventanas de tiempo (delegado a detection_validator).
 
         Returns:
-            Tuple (EventType, checkpoint_number) o (None, None)
+            Tuple (EventType, checkpoint_number, motivo)
         """
+        from .detection_validator import resolve_event
+
         result = self.results[distance.distance_id][athlete.athlete_id]
-
-        # Si no ha largado y la antena tiene rol 'start'
-        if 'start' in roles and result.status == AthleteStatus.NOT_STARTED:
-            return EventType.START, None
-
-        # Si está corriendo
-        if result.status == AthleteStatus.RUNNING:
-            # Si tiene rol 'finish'
-            if 'finish' in roles:
-                if result.start_time:
-                    from datetime import datetime
-                    elapsed = (datetime.now() - result.start_time).total_seconds()
-                    m = distance.distance_meters
-                    if m < 800:
-                        ref_speed = 12.0   # sprints: ~43 km/h
-                    elif m < 3000:
-                        ref_speed = 8.0    # medio fondo: ~29 km/h
-                    else:
-                        ref_speed = 6.0    # fondo: ~22 km/h
-                    min_seconds = max(5.0, m / ref_speed)
-                    if elapsed < min_seconds:
-                        logger.warning(
-                            f"⏱️ FINISH ignorado para {athlete.name}: "
-                            f"solo {elapsed:.1f}s transcurridos "
-                            f"(mínimo {min_seconds:.0f}s para {distance.distance_meters:.0f}m)"
-                        )
-                        return None, None
-                return EventType.FINISH, None
-
-            # Si tiene rol 'checkpoint'
-            if 'checkpoint' in roles:
-                # Determinar número de checkpoint
-                next_checkpoint = len(result.checkpoint_times) + 1
-                return EventType.CHECKPOINT, next_checkpoint
-
-        return None, None
+        return resolve_event(roles, antenna_port, result, distance, timestamp)
     
     def _record_event_in_result(self, result: AthleteResult, event: DetectionEvent) -> bool:
         """

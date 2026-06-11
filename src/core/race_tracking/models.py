@@ -20,6 +20,8 @@ from typing import Optional, List, Dict
 from enum import Enum
 import uuid
 
+from .checkpoint_config import CheckpointDef
+
 
 # ============================================================================
 # ENUMERACIONES
@@ -240,6 +242,9 @@ class RaceDistance:
     notes: Optional[str] = None
     race_mode: RaceMode = RaceMode.LINEAR  # Nuevo campo
     duration_hours: Optional[float] = None  # Nuevo campo (solo para TIME_BASED)
+    # Definición de checkpoints con kilometraje (ver checkpoint_config.py).
+    # Si está vacía, los CP se asignan por secuencia sin ventanas de tiempo.
+    checkpoints: List[CheckpointDef] = field(default_factory=list)
     
     def __post_init__(self):
         """Validar datos al crear"""

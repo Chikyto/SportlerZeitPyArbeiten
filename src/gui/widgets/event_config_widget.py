@@ -85,6 +85,14 @@ class EventConfigWidget(QWidget):
         self.edit_category_btn = QPushButton("Editar Seleccionada")
         self.edit_category_btn.clicked.connect(self.edit_selected_category)
         buttons_layout.addWidget(self.edit_category_btn)
+
+        self.checkpoints_btn = QPushButton("🔵 Checkpoints")
+        self.checkpoints_btn.setToolTip(
+            "Definir km y antena de cada checkpoint del recorrido "
+            "(habilita las ventanas de tiempo anti-relecturas)"
+        )
+        self.checkpoints_btn.clicked.connect(self.configure_checkpoints)
+        buttons_layout.addWidget(self.checkpoints_btn)
         
         self.delete_category_btn = QPushButton("Eliminar Seleccionada")
         self.delete_category_btn.clicked.connect(self.delete_selected_category)
@@ -266,6 +274,44 @@ class EventConfigWidget(QWidget):
             #     self.refresh_categories_table()
             #     self.refresh_category_combo()
                 
+    def configure_checkpoints(self):
+        """Configurar km y antena de los checkpoints de la distancia seleccionada"""
+        current_row = self.categories_table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Error", "Selecciona una distancia primero")
+            return
+
+        distance_id = self.categories_table.item(current_row, 0).text()
+        distance = self.race_manager.get_distance(distance_id)
+        if not distance:
+            return
+
+        # Puertos con rol checkpoint según la config de antenas
+        checkpoint_ports = []
+        try:
+            main_window = self.window()
+            antennas = (getattr(main_window, 'wizard_config', None) or {}).get('antennas', {})
+            checkpoint_ports = sorted(
+                int(port) for port, cfg in antennas.items()
+                if cfg.get('checkpoint') and cfg.get('enabled', True)
+            )
+        except Exception as e:
+            logger.debug(f"No se pudieron leer antenas checkpoint: {e}")
+
+        from .checkpoint_layout_dialog import CheckpointLayoutDialog
+        dlg = CheckpointLayoutDialog(distance, antenna_ports=checkpoint_ports, parent=self)
+        if dlg.exec():
+            distance.checkpoints = dlg.get_checkpoints()
+            distance.expected_checkpoints = len(distance.checkpoints)
+            self.race_manager.save_now()
+            self.refresh_categories_table()
+            logger.info(
+                f"✅ Checkpoints de {distance.name}: "
+                + ", ".join(f"CP{c.number}@km{c.km}"
+                            + (f"(P{c.antenna_port})" if c.antenna_port else "")
+                            for c in distance.checkpoints)
+            )
+
     def delete_selected_category(self):
         """Eliminar categoría seleccionada"""
         current_row = self.categories_table.currentRow()

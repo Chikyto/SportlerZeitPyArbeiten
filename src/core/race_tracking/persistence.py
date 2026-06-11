@@ -43,6 +43,7 @@ from .models import (
     Athlete, RaceDistance, DetectionEvent, AthleteResult,
     AthleteStatus, RaceStatus, EventType, RaceMode, AwardCategory
 )
+from .checkpoint_config import checkpoints_from_list
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,8 @@ CREATE TABLE IF NOT EXISTS distances (
     end_time             TEXT,
     notes                TEXT,
     race_mode            TEXT,
-    duration_hours       REAL
+    duration_hours       REAL,
+    checkpoints          TEXT
 );
 CREATE TABLE IF NOT EXISTS athletes (
     athlete_id  TEXT PRIMARY KEY,
@@ -181,7 +183,20 @@ class RaceStatePersistence:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=FULL")
         self._conn.executescript(_SCHEMA)
+        self._migrate_schema()
         self._conn.commit()
+
+    def _migrate_schema(self):
+        """Agregar columnas nuevas a bases creadas con versiones anteriores"""
+        try:
+            cols = {row[1] for row in self._conn.execute(
+                "PRAGMA table_info(distances)")}
+            if 'checkpoints' not in cols:
+                self._conn.execute(
+                    "ALTER TABLE distances ADD COLUMN checkpoints TEXT")
+                logger.info("🔧 Migración: columna 'checkpoints' agregada a distances")
+        except sqlite3.Error as e:
+            logger.error(f"❌ Error migrando esquema: {e}")
 
     def _db_has_data(self) -> bool:
         try:
@@ -290,12 +305,18 @@ class RaceStatePersistence:
 
     @staticmethod
     def _upsert_distance(c, distance: RaceDistance):
+        checkpoints = getattr(distance, 'checkpoints', None) or []
         c.execute(
-            "INSERT OR REPLACE INTO distances VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO distances"
+            " (distance_id, name, distance_meters, expected_checkpoints,"
+            "  status, start_time, end_time, notes, race_mode,"
+            "  duration_hours, checkpoints)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (distance.distance_id, distance.name, distance.distance_meters,
              distance.expected_checkpoints, distance.status.value,
              _dt(distance.start_time), _dt(distance.end_time), distance.notes,
-             distance.race_mode.value, distance.duration_hours)
+             distance.race_mode.value, distance.duration_hours,
+             json.dumps([cp.to_dict() for cp in checkpoints]))
         )
 
     @staticmethod
@@ -404,8 +425,8 @@ class RaceStatePersistence:
             distances = []
             for row in c.execute(
                     "SELECT distance_id, name, distance_meters, expected_checkpoints,"
-                    " status, start_time, end_time, notes, race_mode, duration_hours"
-                    " FROM distances"):
+                    " status, start_time, end_time, notes, race_mode, duration_hours,"
+                    " checkpoints FROM distances"):
                 distances.append({
                     'distance_id': row[0],
                     'name': row[1],
@@ -417,6 +438,7 @@ class RaceStatePersistence:
                     'notes': row[7],
                     'race_mode': row[8],
                     'duration_hours': row[9],
+                    'checkpoints': json.loads(row[10]) if row[10] else [],
                     'participants': athletes_by_distance.get(row[0], []),
                 })
 
@@ -771,6 +793,7 @@ class RaceStatePersistence:
                     notes=dist_data.get('notes'),
                     race_mode=RaceMode(dist_data.get('race_mode', RaceMode.LINEAR.value)),
                     duration_hours=dist_data.get('duration_hours'),
+                    checkpoints=checkpoints_from_list(dist_data.get('checkpoints')),
                 )
                 for ath_data in dist_data.get('participants', []):
                     athlete = Athlete(

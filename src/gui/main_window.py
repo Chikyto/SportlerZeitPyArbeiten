@@ -716,6 +716,14 @@ class MainWindow(QMainWindow):
         event_id = self.cloud_config.get('event_id', '')
         url = f"{base_url}/api/events/{event_id}/detection"
         headers = {'Authorization': f"Bearer {self.cloud_config['token']}"}
+        # Km del checkpoint (si la lectura es de un CP con km definido):
+        # permite al live mostrar progreso y ritmo por tramo
+        from ..core.race_tracking.detection_validator import checkpoint_km_for_event
+        distance = self.race_manager.get_distance(getattr(event, 'distance_id', None))
+        checkpoint_km = checkpoint_km_for_event(
+            distance, getattr(event, 'checkpoint_number', None)
+        )
+
         payload = {
             # ID único del evento: permite al backend deduplicar si un
             # reintento llega después de un timeout (el envío original
@@ -726,6 +734,7 @@ class MainWindow(QMainWindow):
             'antenna_port': antenna_port,
             'event_type': event.event_type.value,
             'checkpoint_number': getattr(event, 'checkpoint_number', None),
+            'checkpoint_km': checkpoint_km,
             'category_id': getattr(event, 'distance_id', None),
             'athlete_name': event.athlete.name if getattr(event, 'athlete', None) else None,
             'bib_number': event.athlete.bib_number if getattr(event, 'athlete', None) else None,

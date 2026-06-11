@@ -685,14 +685,9 @@ class DetectionTab(BaseTab):
                 except (ValueError, TypeError):
                     ns = (a.tag_id or '').upper()
                 if ns == norm:
+                    from src.core.race_tracking.checkpoint_config import min_seconds_for_meters
                     m = dist.distance_meters
-                    if m < 800:
-                        ref = 12.0
-                    elif m < 3000:
-                        ref = 8.0
-                    else:
-                        ref = 6.0
-                    return max(5.0, m / ref)
+                    return min_seconds_for_meters(m, m)
         return 5.0
 
     def _tag_in_running_distance(self, tag_id: str) -> bool:
