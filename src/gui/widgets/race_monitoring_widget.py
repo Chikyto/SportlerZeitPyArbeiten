@@ -19,6 +19,9 @@ class RaceMonitoringWidget(QWidget):
         self.race_manager = race_manager
         self.setup_ui()
 
+        if race_manager:
+            self.refresh_category_combo()
+
         # Timer para actualización automática
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.refresh_all_data)
@@ -1218,7 +1221,7 @@ class RaceMonitoringWidget(QWidget):
 
     def refresh_all_data(self):
         """Actualizar todos los datos"""
-        if not self.race_manager or not self.race_manager:
+        if not self.race_manager:
             return
 
         self.refresh_categories_overview()
