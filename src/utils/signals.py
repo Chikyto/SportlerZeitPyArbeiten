@@ -61,6 +61,9 @@ class AppSignals(QObject):
     # athlete_name, distance_name, formatted_time
     athlete_finished = pyqtSignal(str, str, str)
 
+    # Emitida cuando se carga un .szconfig: (event_name, event_id)
+    backend_config_loaded = pyqtSignal(str, str)
+
 
 # Singleton para uso global
 _app_signals_instance = None

@@ -655,6 +655,12 @@ class ConfigurationTab(BaseTab):
 
             self.log(f"✅ Config importada: {config['api_url']} | evento: {config['event_id']} | agente: {config.get('agent_name', '-')}")
 
+            if self.signals and hasattr(self.signals, 'backend_config_loaded'):
+                self.signals.backend_config_loaded.emit(
+                    config.get('agent_name', ''),
+                    config.get('event_id', '')
+                )
+
             QMessageBox.information(self, "Config importada",
                 f"Conexión configurada correctamente.\n\n"
                 f"URL: {config['api_url']}\n"

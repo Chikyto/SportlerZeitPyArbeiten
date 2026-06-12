@@ -47,6 +47,8 @@ class EventConfigWidget(QWidget):
             logger.warning("⚠️  EventConfigWidget creado sin race_manager (nuevo vacío)")
 
         self.setup_ui()
+        if self.signals and hasattr(self.signals, 'backend_config_loaded'):
+            self.signals.backend_config_loaded.connect(self._on_backend_config_loaded)
         # Refrescar tabla para mostrar distancias existentes (cargadas desde CSV o JSON)
         self.refresh_categories_table()
         self.refresh_category_combo()
@@ -61,13 +63,24 @@ class EventConfigWidget(QWidget):
         event_info_group = QGroupBox("Información del Evento")
         event_info_layout = QGridLayout(event_info_group)
         
-        event_info_layout.addWidget(QLabel("Nombre del evento:"), 0, 0)
-        self.event_name_input = QLineEdit("Ultra Trail Competition 2025")
+        event_info_layout.addWidget(QLabel("Evento (backend):"), 0, 0)
+        self.event_name_input = QLineEdit()
+        self.event_name_input.setReadOnly(True)
+        self.event_name_input.setPlaceholderText("Sin cargar — importá un .szconfig en Configuración")
+        self.event_name_input.setStyleSheet("color: #555; background: #f5f5f5;")
         event_info_layout.addWidget(self.event_name_input, 0, 1)
-        
-        event_info_layout.addWidget(QLabel("Fecha:"), 0, 2)
+
+        event_info_layout.addWidget(QLabel("ID:"), 0, 2)
+        self.event_id_label = QLineEdit()
+        self.event_id_label.setReadOnly(True)
+        self.event_id_label.setPlaceholderText("—")
+        self.event_id_label.setStyleSheet("color: #555; background: #f5f5f5;")
+        self.event_id_label.setMaximumWidth(200)
+        event_info_layout.addWidget(self.event_id_label, 0, 3)
+
+        event_info_layout.addWidget(QLabel("Fecha:"), 1, 0)
         self.event_date_input = QLineEdit(datetime.now().strftime('%Y-%m-%d'))
-        event_info_layout.addWidget(self.event_date_input, 0, 3)
+        event_info_layout.addWidget(self.event_date_input, 1, 1)
         
         layout.addWidget(event_info_group)
         
@@ -853,6 +866,14 @@ class EventConfigWidget(QWidget):
     def get_event_manager(self):
         """Obtener el manager de eventos"""
         return self.race_manager
+
+    def _on_backend_config_loaded(self, event_name: str, event_id: str):
+        """Actualizar display cuando se carga un .szconfig"""
+        self.event_name_input.setText(event_name)
+        self.event_id_label.setText(event_id)
+        self.event_name_input.setStyleSheet(
+            "color: #1a5276; background: #eaf4fb; font-weight: bold;"
+        )
 
     def refresh_all(self):
         """Refrescar todas las tablas (llamado desde otras solapas cuando cambian datos)"""
