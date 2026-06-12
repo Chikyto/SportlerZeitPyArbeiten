@@ -880,9 +880,10 @@ class ConfigurationTab(BaseTab):
         try:
             with open('config/api_config.json', 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            return data.get('api_key', '')
-        except Exception:
+            # Estructura anidada {cloud: {api_key: ...}} o plana {api_key: ...}
             return data.get('cloud', {}).get('api_key', '') or data.get('api_key', '')
+        except Exception:
+            return ''
 
     def get_timestamp(self):
         """Timestamp formateado"""
