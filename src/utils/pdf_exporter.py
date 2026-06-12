@@ -59,6 +59,7 @@ def _table_style(header_color=None) -> TableStyle:
         ('ROWBACKGROUNDS',(0, 1), (-1, -1), [C_WHITE, C_ROW_ALT]),
         ('ALIGN',         (0, 1), (0, -1), 'CENTER'),   # #
         ('ALIGN',         (2, 1), (2, -1), 'CENTER'),   # Dorsal
+        ('ALIGN',         (3, 1), (3, -1), 'CENTER'),   # Categoría
         ('ALIGN',         (4, 1), (4, -1), 'RIGHT'),    # Tiempo
         ('ALIGN',         (5, 1), (5, -1), 'RIGHT'),    # Ritmo
         ('TOPPADDING',    (0, 1), (-1, -1), 4),
@@ -145,13 +146,18 @@ class PDFExporter:
     # ── Tabla de resultados ───────────────────────────────────────────────────
 
     def _results_table(self, results: list, distance_meters: float = 0,
-                       header_color=None) -> Table:
+                       header_color=None,
+                       athlete_cat_map: dict = None) -> Table:
+        """athlete_cat_map: {athlete_id: category_name} — overrides model's get_award_category()"""
         header = ['#', 'Atleta', 'Dorsal', 'Categoría', 'Tiempo neto', 'Ritmo']
         rows = [header]
         for i, result in enumerate(results, 1):
             a = result.athlete
-            cat = getattr(a, 'get_award_category', lambda: None)() or \
-                  getattr(a, 'gender', '') + ' ' + str(getattr(a, 'age_category', '') or '')
+            if athlete_cat_map is not None:
+                cat = athlete_cat_map.get(getattr(a, 'athlete_id', ''), '-')
+            else:
+                cat = getattr(a, 'get_award_category', lambda: None)() or \
+                      getattr(a, 'gender', '') + ' ' + str(getattr(a, 'age_category', '') or '')
             t_sec = None
             if result.total_time is not None:
                 try:
@@ -170,6 +176,19 @@ class PDFExporter:
         t.setStyle(_table_style(header_color))
         return t
 
+    @staticmethod
+    def _build_cat_map(results_by_award: dict, award_categories: dict) -> dict:
+        """Builds {athlete_id: category_name} from results_by_award_category data."""
+        m = {}
+        for award_id, results in results_by_award.items():
+            ac = award_categories.get(award_id)
+            name = ac.name if ac else award_id
+            for r in results:
+                aid = getattr(r.athlete, 'athlete_id', None)
+                if aid:
+                    m[aid] = name
+        return m
+
     # ── Documento completo por distancia (igual que el frontend) ─────────────
 
     def export_full_results(
@@ -181,6 +200,7 @@ class PDFExporter:
         podiums_by_award_cat: Dict[str, list],
         award_categories: Dict,
         output_path: str,
+        results_by_award_cat: Dict = None,
     ):
         """
         Genera un PDF completo con:
@@ -199,10 +219,12 @@ class PDFExporter:
         story = []
         self._header(story, distance_name)
 
+        cat_map = self._build_cat_map(results_by_award_cat or {}, award_categories)
+
         # 1. Clasificación General
         if all_results:
             story.append(Paragraph("Clasificación General", self.styles['SectionBlue']))
-            story.append(self._results_table(all_results, distance_meters))
+            story.append(self._results_table(all_results, distance_meters, athlete_cat_map=cat_map))
             story.append(Spacer(1, 0.6*cm))
 
         # 2. Por género (orden: M, F, X/O)
@@ -220,7 +242,7 @@ class PDFExporter:
             seen_genders.add(gender_key)
 
             story.append(Paragraph(section_title, self.styles['SectionBlue']))
-            story.append(self._results_table(results, distance_meters))
+            story.append(self._results_table(results, distance_meters, athlete_cat_map=cat_map))
             story.append(Spacer(1, 0.4*cm))
 
             # Subcategorías de premiación para este género
@@ -246,11 +268,9 @@ class PDFExporter:
                             t_sec = result.total_time.total_seconds()
                         except AttributeError:
                             t_sec = float(result.total_time)
-                    cat_str = (getattr(a, 'get_award_category', lambda: None)() or
-                               f"{getattr(a, 'gender', '')} {getattr(a, 'age_category', '') or ''}").strip()
                     rows.append([
                         str(pos), a.name, str(a.bib_number),
-                        cat_str or '-',
+                        cat_name,
                         result.get_formatted_time(),
                         _pace_str(t_sec, distance_meters) if distance_meters else '-',
                     ])
@@ -457,10 +477,13 @@ class PDFExporter:
                 by_gender = data.get('results_by_gender', {})
                 podiums = data.get('podiums_by_award_cat', {})
                 award_cats = data.get('award_categories', {})
+                by_award = data.get('results_by_category', {})
+
+                cat_map = self._build_cat_map(by_award, award_cats)
 
                 if all_r:
                     story.append(Paragraph("Clasificación General", self.styles['SectionBlue']))
-                    story.append(self._results_table(all_r, dm))
+                    story.append(self._results_table(all_r, dm, athlete_cat_map=cat_map))
                     story.append(Spacer(1, 0.6*cm))
 
                 seen = set()
@@ -475,7 +498,7 @@ class PDFExporter:
                         continue
                     seen.add(gk)
                     story.append(Paragraph(sec_title, self.styles['SectionBlue']))
-                    story.append(self._results_table(results, dm))
+                    story.append(self._results_table(results, dm, athlete_cat_map=cat_map))
                     story.append(Spacer(1, 0.4*cm))
                     for award_id, podium in sorted(podiums.items()):
                         gender_podium = [(p, r) for p, r in podium
@@ -487,6 +510,7 @@ class PDFExporter:
                             f"{grp_label} — {ac.name if ac else award_id}",
                             self.styles['SectionOrange']
                         ))
+                        ac_name = ac.name if ac else award_id
                         rows = [['#', 'Atleta', 'Dorsal', 'Categoría', 'Tiempo neto', 'Ritmo']]
                         for pos, result in gender_podium:
                             a = result.athlete
@@ -496,9 +520,8 @@ class PDFExporter:
                                     t_sec = result.total_time.total_seconds()
                                 except AttributeError:
                                     t_sec = float(result.total_time)
-                            cat_str = (getattr(a, 'get_award_category', lambda: None)() or '').strip()
                             rows.append([str(pos), a.name, str(a.bib_number),
-                                         cat_str or '-', result.get_formatted_time(),
+                                         ac_name, result.get_formatted_time(),
                                          _pace_str(t_sec, dm) if dm else '-'])
                         t = Table(rows, colWidths=self._COL_WIDTHS, repeatRows=1)
                         t.setStyle(_table_style(C_NAVY))
