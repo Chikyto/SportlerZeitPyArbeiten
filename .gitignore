@@ -18,6 +18,9 @@ Timing/
 # OS
 .DS_Store
 Thumbs.db
+# Config con credenciales (no versionar)
+config/api_config.json
+
 # Exported PDFs
 *.pdf
 
