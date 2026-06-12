@@ -409,3 +409,126 @@ class PDFExporter:
 
         doc.build(story)
         logger.info(f"✅ PDF relator: {output_path}")
+
+    # ── Multi-distancia (todas en un solo PDF) ────────────────────────────────
+
+    def export_multi_distance(
+        self,
+        distances_data: list,
+        kind: str,
+        output_path: str,
+    ):
+        """
+        Genera un PDF con todas las distancias, separadas por salto de página.
+
+        Args:
+            distances_data: lista de dicts con claves:
+                - distance: objeto RaceDistance
+                - all_results: lista de AthleteResult (general)
+                - results_by_gender: dict {gender: [results]}
+                - podiums_by_award_cat: dict {award_id: [(pos, result)]}
+                - award_categories: dict {award_id: AwardCategory}
+            kind: 'full' | 'gender' | 'categories' | 'announcer'
+            output_path: ruta del PDF de salida
+        """
+        from reportlab.platypus import PageBreak
+
+        doc = SimpleDocTemplate(
+            output_path, pagesize=A4,
+            leftMargin=2*cm, rightMargin=2*cm,
+            topMargin=2*cm, bottomMargin=2*cm,
+        )
+        story = []
+
+        for i, data in enumerate(distances_data):
+            distance = data['distance']
+            dm = getattr(distance, 'distance_meters', 0)
+
+            if i > 0:
+                story.append(PageBreak())
+
+            self._header(story, distance.name)
+
+            if kind == 'full':
+                all_r = data.get('all_results', [])
+                by_gender = data.get('results_by_gender', {})
+                podiums = data.get('podiums_by_award_cat', {})
+                award_cats = data.get('award_categories', {})
+
+                if all_r:
+                    story.append(Paragraph("Clasificación General", self.styles['SectionBlue']))
+                    story.append(self._results_table(all_r, dm))
+                    story.append(Spacer(1, 0.6*cm))
+
+                seen = set()
+                for gk, sec_title, grp_label in [
+                    ("M", "Clasificación General Varones", "Varones"),
+                    ("F", "Clasificación General Damas",   "Damas"),
+                    ("X", "Clasificación General No binario", "No binario"),
+                    ("O", "Clasificación General No binario", "No binario"),
+                ]:
+                    results = by_gender.get(gk, [])
+                    if not results or gk in seen:
+                        continue
+                    seen.add(gk)
+                    story.append(Paragraph(sec_title, self.styles['SectionBlue']))
+                    story.append(self._results_table(results, dm))
+                    story.append(Spacer(1, 0.4*cm))
+                    for award_id, podium in sorted(podiums.items()):
+                        gender_podium = [(p, r) for p, r in podium
+                                        if getattr(r.athlete, 'gender', '') == gk]
+                        if not gender_podium:
+                            continue
+                        ac = award_cats.get(award_id)
+                        story.append(Paragraph(
+                            f"{grp_label} — {ac.name if ac else award_id}",
+                            self.styles['SectionOrange']
+                        ))
+                        rows = [['#', 'Atleta', 'Dorsal', 'Categoría', 'Tiempo neto', 'Ritmo']]
+                        for pos, result in gender_podium:
+                            a = result.athlete
+                            t_sec = None
+                            if result.total_time is not None:
+                                try:
+                                    t_sec = result.total_time.total_seconds()
+                                except AttributeError:
+                                    t_sec = float(result.total_time)
+                            cat_str = (getattr(a, 'get_award_category', lambda: None)() or '').strip()
+                            rows.append([str(pos), a.name, str(a.bib_number),
+                                         cat_str or '-', result.get_formatted_time(),
+                                         _pace_str(t_sec, dm) if dm else '-'])
+                        t = Table(rows, colWidths=self._COL_WIDTHS, repeatRows=1)
+                        t.setStyle(_table_style(C_NAVY))
+                        story.append(KeepTogether([t]))
+                        story.append(Spacer(1, 0.3*cm))
+                    story.append(Spacer(1, 0.4*cm))
+
+            elif kind == 'gender':
+                seen = set()
+                for gk in ["M", "F", "X", "O"]:
+                    results = data.get('results_by_gender', {}).get(gk, [])
+                    if not results or gk in seen:
+                        continue
+                    seen.add(gk)
+                    labels = {"M": "Clasificación General Varones",
+                              "F": "Clasificación General Damas",
+                              "X": "Clasificación General No binario",
+                              "O": "Clasificación General No binario"}
+                    story.append(Paragraph(labels[gk], self.styles['SectionBlue']))
+                    story.append(self._results_table(results, dm))
+                    story.append(Spacer(1, 0.6*cm))
+
+            elif kind == 'categories':
+                for cat_id, results in sorted(data.get('results_by_category', {}).items()):
+                    if not results:
+                        continue
+                    story.append(Paragraph(cat_id, self.styles['SectionOrange']))
+                    story.append(self._results_table(results, dm))
+                    story.append(Spacer(1, 0.5*cm))
+
+            elif kind == 'announcer':
+                story.append(Paragraph("Clasificación General", self.styles['SectionBlue']))
+                story.append(self._results_table(data.get('all_results', [])[:30], dm))
+
+        doc.build(story)
+        logger.info(f"✅ PDF multi-distancia ({kind}): {output_path}")

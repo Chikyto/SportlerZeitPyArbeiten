@@ -222,14 +222,8 @@ class RaceMonitoringWidget(QWidget):
         export_podiums_btn = QPushButton("📄 CSV")
         export_podiums_btn.clicked.connect(self.export_podiums_to_csv)
         export_podiums_btn.setStyleSheet("background-color: #10b981; color: white; font-weight: bold;")
-        export_podiums_btn.setToolTip("Exportar podios de la distancia seleccionada a CSV")
+        export_podiums_btn.setToolTip("Exportar podios a CSV (distancia seleccionada o todas)")
         controls_layout.addWidget(export_podiums_btn)
-
-        export_all_podiums_btn = QPushButton("📄 CSV Todas")
-        export_all_podiums_btn.clicked.connect(self.export_all_podiums_to_csv)
-        export_all_podiums_btn.setStyleSheet("background-color: #059669; color: white; font-weight: bold;")
-        export_all_podiums_btn.setToolTip("Exportar podios de todas las distancias en un solo CSV")
-        controls_layout.addWidget(export_all_podiums_btn)
 
         # Botones de exportación a PDF
         export_pdf_general_btn = QPushButton("📕 PDF General")
@@ -476,10 +470,11 @@ class RaceMonitoringWidget(QWidget):
         selected_text = self.podiums_category_combo.currentText()
         logger.debug(f"  Distancia seleccionada: {selected_text}")
 
-        if selected_text == "Selecciona una distancia":
-            info_label = QLabel("Selecciona una distancia para ver los podios clasificados por categoría de premiación.")
+        if selected_text == "Todas las distancias":
+            info_label = QLabel("Selecciona una distancia específica para ver los podios.\nUsa los botones de exportación para obtener resultados de todas las distancias.")
             info_label.setStyleSheet("color: #666; font-style: italic; padding: 20px;")
             info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            info_label.setWordWrap(True)
             self.podiums_layout.addWidget(info_label)
             return
 
@@ -701,10 +696,9 @@ class RaceMonitoringWidget(QWidget):
 
         current_text = self.podiums_category_combo.currentText()
         self.podiums_category_combo.clear()
-        self.podiums_category_combo.addItem("Selecciona una distancia")
+        self.podiums_category_combo.addItem("Todas las distancias")
 
         for category in self.race_manager.get_all_categories():
-            # Solo mostrar categorías finalizadas o en curso
             from src.core.race_tracking.models import RaceStatus
             if category.status in [RaceStatus.RUNNING, RaceStatus.FINISHED]:
                 self.podiums_category_combo.addItem(f"{category.distance_id} - {category.name}")
@@ -753,10 +747,11 @@ class RaceMonitoringWidget(QWidget):
             QMessageBox.warning(self, "Error", "No hay race_manager disponible")
             return
 
-        # Verificar que hay una categoría seleccionada
         selected_text = self.podiums_category_combo.currentText()
-        if selected_text == "Selecciona una distancia":
-            QMessageBox.warning(self, "Error", "Selecciona una distancia primero")
+
+        # Si está en "Todas las distancias", delegar al exportador completo
+        if selected_text == "Todas las distancias":
+            self.export_all_podiums_to_csv()
             return
 
         race_category_id = selected_text.split(" - ")[0]
@@ -999,6 +994,82 @@ class RaceMonitoringWidget(QWidget):
             QMessageBox.critical(self, "Error", f"Error exportando:\n{str(e)}")
             logger.error(f"Error en export_all_podiums_to_csv: {e}", exc_info=True)
 
+    def _get_event_name(self):
+        """Obtiene el nombre del evento desde el tab de configuración"""
+        try:
+            main_window = self.window()
+            if hasattr(main_window, 'tab_manager'):
+                event_config_tab = main_window.tab_manager.get_tab('event_config')
+                if event_config_tab and hasattr(event_config_tab, 'event_name_input'):
+                    return event_config_tab.event_name_input.text() or "Carrera"
+        except Exception:
+            pass
+        return "Carrera"
+
+    def _build_distance_data(self, distance_id: str, top_n: int) -> dict:
+        """Recopila todos los datos necesarios para exportar una distancia"""
+        distance = self.race_manager.get_distance(distance_id)
+        all_results = self.race_manager.get_results(distance_id)
+        results_by_gender = self.race_manager.get_results_by_gender(distance_id, only_finished=True)
+        podiums = self.race_manager.get_podium_by_award_category(distance_id, top_n=top_n) or {}
+        award_categories = {aid: self.race_manager.get_award_category(aid)
+                            for aid in podiums if self.race_manager.get_award_category(aid)}
+        results_by_category = self.race_manager.get_results_by_award_category(distance_id)
+        return {
+            'distance': distance,
+            'all_results': all_results,
+            'results_by_gender': results_by_gender,
+            'podiums_by_award_cat': podiums,
+            'award_categories': award_categories,
+            'results_by_category': results_by_category,
+        }
+
+    def _export_pdf_all_distances(self, kind: str):
+        """Exporta todas las distancias en un único PDF"""
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+        from src.utils.pdf_exporter import PDFExporter
+
+        distances = self.race_manager.get_all_categories()
+        if not distances:
+            QMessageBox.warning(self, "Sin datos", "No hay distancias configuradas")
+            return
+
+        kind_labels = {
+            'full':       ('PDF General — Todas las distancias', 'podios_general_todas'),
+            'gender':     ('PDF Género — Todas las distancias',  'genero_todas'),
+            'categories': ('PDF Categorías — Todas las distancias', 'categorias_todas'),
+            'announcer':  ('PDF Relator — Todas las distancias', 'relator_todas'),
+        }
+        dialog_title, default_name = kind_labels.get(kind, ('PDF Todas', 'todas'))
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, dialog_title,
+            f"{default_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+            "PDF Files (*.pdf)"
+        )
+        if not file_path:
+            return
+
+        top_n = int(self.podium_top_n_combo.currentText())
+        from src.core.race_tracking.models import RaceStatus
+        distances_data = []
+        for d in distances:
+            if d.status not in [RaceStatus.RUNNING, RaceStatus.FINISHED]:
+                continue
+            distances_data.append(self._build_distance_data(d.distance_id, top_n))
+
+        if not distances_data:
+            QMessageBox.warning(self, "Sin datos", "Ninguna distancia está en curso o finalizada")
+            return
+
+        try:
+            exporter = PDFExporter(event_name=self._get_event_name())
+            exporter.export_multi_distance(distances_data, kind=kind, output_path=file_path)
+            QMessageBox.information(self, "Éxito", f"PDF exportado:\n{file_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error exportando PDF:\n{str(e)}")
+            logger.error(f"Error en _export_pdf_all_distances({kind}): {e}", exc_info=True)
+
     def export_pdf_general(self):
         """Exportar clasificación general a PDF"""
         from PyQt6.QtWidgets import QFileDialog, QMessageBox
@@ -1016,8 +1087,8 @@ class RaceMonitoringWidget(QWidget):
         selected_text = self.podiums_category_combo.currentText()
         logger.info(f"  Distancia seleccionada: {selected_text}")
 
-        if selected_text == "Selecciona una distancia" or not selected_text:
-            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero en el tab de Podios")
+        if selected_text == "Todas las distancias":
+            self._export_pdf_all_distances('full')
             return
 
         # Extraer distance_id del formato "distance_id - nombre"
@@ -1119,8 +1190,8 @@ class RaceMonitoringWidget(QWidget):
 
         # Obtener distancia del combo de podios
         selected_text = self.podiums_category_combo.currentText()
-        if selected_text == "Selecciona una distancia" or not selected_text:
-            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero en el tab de Podios")
+        if selected_text == "Todas las distancias":
+            self._export_pdf_all_distances('gender')
             return
 
         race_category_id = selected_text.split(" - ")[0]
@@ -1190,8 +1261,8 @@ class RaceMonitoringWidget(QWidget):
 
         # Obtener distancia del combo de podios
         selected_text = self.podiums_category_combo.currentText()
-        if selected_text == "Selecciona una distancia" or not selected_text:
-            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero en el tab de Podios")
+        if selected_text == "Todas las distancias":
+            self._export_pdf_all_distances('categories')
             return
 
         race_category_id = selected_text.split(" - ")[0]
@@ -1250,8 +1321,8 @@ class RaceMonitoringWidget(QWidget):
 
         # Obtener distancia del combo de podios
         selected_text = self.podiums_category_combo.currentText()
-        if selected_text == "Selecciona una distancia" or not selected_text:
-            QMessageBox.warning(self, "Sin selección", "Selecciona una distancia primero en el tab de Podios")
+        if selected_text == "Todas las distancias":
+            self._export_pdf_all_distances('announcer')
             return
 
         race_category_id = selected_text.split(" - ")[0]
