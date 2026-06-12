@@ -655,12 +655,6 @@ class ConfigurationTab(BaseTab):
 
             self.log(f"✅ Config importada: {config['api_url']} | evento: {config['event_id']} | agente: {config.get('agent_name', '-')}")
 
-            if self.signals and hasattr(self.signals, 'backend_config_loaded'):
-                self.signals.backend_config_loaded.emit(
-                    config.get('agent_name', ''),
-                    config.get('event_id', '')
-                )
-
             QMessageBox.information(self, "Config importada",
                 f"Conexión configurada correctamente.\n\n"
                 f"URL: {config['api_url']}\n"
@@ -874,6 +868,11 @@ class ConfigurationTab(BaseTab):
         self.cloud_agent_input.setText(config.get('agent_name', ''))
         self.cloud_status_label.setText("🟡 Configurado (sin verificar)")
         self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #b45309;")
+        agent_name = config.get('agent_name', '')
+        event_id = config.get('event_id', '')
+        if agent_name and self.signals and hasattr(self.signals, 'backend_config_loaded'):
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self.signals.backend_config_loaded.emit(agent_name, event_id))
 
     def _get_saved_token(self) -> str:
         """Obtener token guardado de la config"""
