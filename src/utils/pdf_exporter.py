@@ -41,9 +41,30 @@ def _pace_str(total_seconds: float, distance_meters: float) -> str:
     return f"{mins}:{secs:02d} /km"
 
 
-def _table_style(header_color=None) -> TableStyle:
+def _table_style(header_color=None, no_category: bool = False) -> TableStyle:
     """Estilo de tabla estándar reutilizable"""
     hc = header_color or C_NAVY
+    if no_category:
+        # 5 columns: #, Atleta, Dorsal, Tiempo, Ritmo
+        return TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, 0), hc),
+            ('TEXTCOLOR',     (0, 0), (-1, 0), C_WHITE),
+            ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',      (0, 0), (-1, 0), 9),
+            ('ALIGN',         (0, 0), (-1, 0), 'CENTER'),
+            ('TOPPADDING',    (0, 0), (-1, 0), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('FONTNAME',      (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE',      (0, 1), (-1, -1), 9),
+            ('ROWBACKGROUNDS',(0, 1), (-1, -1), [C_WHITE, C_ROW_ALT]),
+            ('ALIGN',         (0, 1), (0, -1), 'CENTER'),   # #
+            ('ALIGN',         (2, 1), (2, -1), 'CENTER'),   # Dorsal
+            ('ALIGN',         (3, 1), (3, -1), 'RIGHT'),    # Tiempo
+            ('ALIGN',         (4, 1), (4, -1), 'RIGHT'),    # Ritmo
+            ('TOPPADDING',    (0, 1), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+            ('LINEBELOW',     (0, 0), (-1, -1), 0.25, C_RULE),
+        ])
     return TableStyle([
         # Encabezado
         ('BACKGROUND',    (0, 0), (-1, 0), hc),
@@ -71,8 +92,10 @@ def _table_style(header_color=None) -> TableStyle:
 class PDFExporter:
     """Exportador de resultados a PDF con el estilo del frontend web"""
 
-    # Anchos de columna para tabla estándar: #, Atleta, Dorsal, Cat, Tiempo, Ritmo
+    # 6 cols: #, Atleta, Dorsal, Cat, Tiempo, Ritmo
     _COL_WIDTHS = [1*cm, 6.5*cm, 1.5*cm, 2.8*cm, 3*cm, 2.5*cm]
+    # 5 cols: #, Atleta, Dorsal, Tiempo, Ritmo  (sin columna Categoría)
+    _COL_WIDTHS_5 = [1*cm, 8.3*cm, 1.5*cm, 3.3*cm, 3.2*cm]
 
     def __init__(self, event_name: str = "Carrera", event_date: str = ""):
         self.event_name = event_name
@@ -147,13 +170,41 @@ class PDFExporter:
 
     def _results_table(self, results: list, distance_meters: float = 0,
                        header_color=None,
-                       athlete_cat_map: dict = None) -> Table:
-        """athlete_cat_map: {athlete_id: category_name} — overrides model's get_award_category()"""
+                       athlete_cat_map: dict = None,
+                       cat_mode: str = 'full') -> Table:
+        """
+        cat_mode:
+          'full'   — nombre completo de categoría (tabla de 6 cols)
+          'letter' — solo la letra de género M/F/X (tabla de 6 cols, columna angosta)
+          'none'   — sin columna Categoría (tabla de 5 cols)
+        athlete_cat_map: {athlete_id: category_name} — usado cuando cat_mode='full'
+        """
+        if cat_mode == 'none':
+            header = ['#', 'Atleta', 'Dorsal', 'Tiempo neto', 'Ritmo']
+            rows = [header]
+            for i, result in enumerate(results, 1):
+                a = result.athlete
+                t_sec = None
+                if result.total_time is not None:
+                    try:
+                        t_sec = result.total_time.total_seconds()
+                    except AttributeError:
+                        t_sec = float(result.total_time)
+                rows.append([str(i), a.name, str(a.bib_number),
+                             result.get_formatted_time(),
+                             _pace_str(t_sec, distance_meters) if distance_meters else '-'])
+            t = Table(rows, colWidths=self._COL_WIDTHS_5, repeatRows=1)
+            t.setStyle(_table_style(header_color, no_category=True))
+            return t
+
         header = ['#', 'Atleta', 'Dorsal', 'Categoría', 'Tiempo neto', 'Ritmo']
         rows = [header]
         for i, result in enumerate(results, 1):
             a = result.athlete
-            if athlete_cat_map is not None:
+            if cat_mode == 'letter':
+                g = (getattr(a, 'gender', '') or '').upper()
+                cat = g[0] if g else '-'
+            elif athlete_cat_map is not None:
                 cat = athlete_cat_map.get(getattr(a, 'athlete_id', ''), '-')
             else:
                 cat = getattr(a, 'get_award_category', lambda: None)() or \
@@ -165,9 +216,7 @@ class PDFExporter:
                 except AttributeError:
                     t_sec = float(result.total_time)
             rows.append([
-                str(i),
-                a.name,
-                str(a.bib_number),
+                str(i), a.name, str(a.bib_number),
                 str(cat).strip() or '-',
                 result.get_formatted_time(),
                 _pace_str(t_sec, distance_meters) if distance_meters else '-',
@@ -221,13 +270,13 @@ class PDFExporter:
 
         cat_map = self._build_cat_map(results_by_award_cat or {}, award_categories)
 
-        # 1. Clasificación General
+        # 1. Clasificación General — muestra letra de género (M/F/X)
         if all_results:
             story.append(Paragraph("Clasificación General", self.styles['SectionBlue']))
-            story.append(self._results_table(all_results, distance_meters, athlete_cat_map=cat_map))
+            story.append(self._results_table(all_results, distance_meters, cat_mode='letter'))
             story.append(Spacer(1, 0.6*cm))
 
-        # 2. Por género (orden: M, F, X/O)
+        # 2. Por género — sin columna Categoría (el header ya lo indica)
         gender_cfg = [
             ("M", "Clasificación General Varones", "Varones"),
             ("F", "Clasificación General Damas",   "Damas"),
@@ -242,14 +291,13 @@ class PDFExporter:
             seen_genders.add(gender_key)
 
             story.append(Paragraph(section_title, self.styles['SectionBlue']))
-            story.append(self._results_table(results, distance_meters, athlete_cat_map=cat_map))
+            story.append(self._results_table(results, distance_meters, cat_mode='none'))
             story.append(Spacer(1, 0.4*cm))
 
-            # Subcategorías de premiación para este género
+            # Subcategorías — sin columna Categoría (el header naranja ya lo indica)
             for award_id, podium in sorted(podiums_by_award_cat.items()):
                 if not podium:
                     continue
-                # Filtrar solo resultados de este género
                 gender_podium = [(pos, r) for pos, r in podium
                                  if getattr(r.athlete, 'gender', '') == gender_key]
                 if not gender_podium:
@@ -259,7 +307,7 @@ class PDFExporter:
                 story.append(Paragraph(
                     f"{group_label} — {cat_name}", self.styles['SectionOrange']
                 ))
-                rows = [['#', 'Atleta', 'Dorsal', 'Categoría', 'Tiempo neto', 'Ritmo']]
+                rows = [['#', 'Atleta', 'Dorsal', 'Tiempo neto', 'Ritmo']]
                 for pos, result in gender_podium:
                     a = result.athlete
                     t_sec = None
@@ -270,12 +318,11 @@ class PDFExporter:
                             t_sec = float(result.total_time)
                     rows.append([
                         str(pos), a.name, str(a.bib_number),
-                        cat_name,
                         result.get_formatted_time(),
                         _pace_str(t_sec, distance_meters) if distance_meters else '-',
                     ])
-                t = Table(rows, colWidths=self._COL_WIDTHS, repeatRows=1)
-                t.setStyle(_table_style(C_NAVY))
+                t = Table(rows, colWidths=self._COL_WIDTHS_5, repeatRows=1)
+                t.setStyle(_table_style(C_NAVY, no_category=True))
                 story.append(KeepTogether([t]))
                 story.append(Spacer(1, 0.3*cm))
 
@@ -483,7 +530,7 @@ class PDFExporter:
 
                 if all_r:
                     story.append(Paragraph("Clasificación General", self.styles['SectionBlue']))
-                    story.append(self._results_table(all_r, dm, athlete_cat_map=cat_map))
+                    story.append(self._results_table(all_r, dm, cat_mode='letter'))
                     story.append(Spacer(1, 0.6*cm))
 
                 seen = set()
@@ -498,7 +545,7 @@ class PDFExporter:
                         continue
                     seen.add(gk)
                     story.append(Paragraph(sec_title, self.styles['SectionBlue']))
-                    story.append(self._results_table(results, dm, athlete_cat_map=cat_map))
+                    story.append(self._results_table(results, dm, cat_mode='none'))
                     story.append(Spacer(1, 0.4*cm))
                     for award_id, podium in sorted(podiums.items()):
                         gender_podium = [(p, r) for p, r in podium
@@ -510,8 +557,7 @@ class PDFExporter:
                             f"{grp_label} — {ac.name if ac else award_id}",
                             self.styles['SectionOrange']
                         ))
-                        ac_name = ac.name if ac else award_id
-                        rows = [['#', 'Atleta', 'Dorsal', 'Categoría', 'Tiempo neto', 'Ritmo']]
+                        rows = [['#', 'Atleta', 'Dorsal', 'Tiempo neto', 'Ritmo']]
                         for pos, result in gender_podium:
                             a = result.athlete
                             t_sec = None
@@ -521,10 +567,10 @@ class PDFExporter:
                                 except AttributeError:
                                     t_sec = float(result.total_time)
                             rows.append([str(pos), a.name, str(a.bib_number),
-                                         ac_name, result.get_formatted_time(),
+                                         result.get_formatted_time(),
                                          _pace_str(t_sec, dm) if dm else '-'])
-                        t = Table(rows, colWidths=self._COL_WIDTHS, repeatRows=1)
-                        t.setStyle(_table_style(C_NAVY))
+                        t = Table(rows, colWidths=self._COL_WIDTHS_5, repeatRows=1)
+                        t.setStyle(_table_style(C_NAVY, no_category=True))
                         story.append(KeepTogether([t]))
                         story.append(Spacer(1, 0.3*cm))
                     story.append(Spacer(1, 0.4*cm))
@@ -541,20 +587,22 @@ class PDFExporter:
                               "X": "Clasificación General No binario",
                               "O": "Clasificación General No binario"}
                     story.append(Paragraph(labels[gk], self.styles['SectionBlue']))
-                    story.append(self._results_table(results, dm))
+                    story.append(self._results_table(results, dm, cat_mode='none'))
                     story.append(Spacer(1, 0.6*cm))
 
             elif kind == 'categories':
+                award_cats = data.get('award_categories', {})
                 for cat_id, results in sorted(data.get('results_by_category', {}).items()):
                     if not results:
                         continue
-                    story.append(Paragraph(cat_id, self.styles['SectionOrange']))
-                    story.append(self._results_table(results, dm))
+                    ac = award_cats.get(cat_id)
+                    story.append(Paragraph(ac.name if ac else cat_id, self.styles['SectionOrange']))
+                    story.append(self._results_table(results, dm, cat_mode='none'))
                     story.append(Spacer(1, 0.5*cm))
 
             elif kind == 'announcer':
                 story.append(Paragraph("Clasificación General", self.styles['SectionBlue']))
-                story.append(self._results_table(data.get('all_results', [])[:30], dm))
+                story.append(self._results_table(data.get('all_results', [])[:30], dm, cat_mode='none'))
 
         doc.build(story)
         logger.info(f"✅ PDF multi-distancia ({kind}): {output_path}")
