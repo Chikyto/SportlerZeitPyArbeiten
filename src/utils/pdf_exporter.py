@@ -170,10 +170,10 @@ class PDFExporter:
 
     @staticmethod
     def _strip_gender_prefix(cat_name: str) -> str:
-        """'Masculino 45-49' → '45-49', 'Femenino Sub-19' → 'Sub-19'"""
-        for prefix in ('No binario ', 'Masculino ', 'Femenino ',
-                       'Male ', 'Female ', 'Masc ', 'Fem '):
-            if cat_name.startswith(prefix):
+        """'Masculino 45-49' → '45-49', 'No Binario Sub-15' → 'Sub-15'"""
+        lower = cat_name.lower()
+        for prefix in ('no binario ', 'masculino ', 'femenino ', 'male ', 'female '):
+            if lower.startswith(prefix):
                 return cat_name[len(prefix):]
         return cat_name
 
