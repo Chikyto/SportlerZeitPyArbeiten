@@ -356,7 +356,6 @@ class RaceMonitoringWidget(QWidget):
                 "el número de checkpoints para esta distancia."
             )
             info_item.setForeground(QColor(200, 100, 0))  # Naranja
-            from PyQt6.QtGui import QFont
             info_item.setFont(QFont("Arial", 10))
             self.splits_table.setItem(0, 0, info_item)
 
