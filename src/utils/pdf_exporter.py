@@ -83,17 +83,20 @@ class PDFExporter:
         self.styles.add(ParagraphStyle(
             name='EventTitle',
             fontSize=20, fontName='Helvetica-Bold',
-            textColor=C_BLACK, spaceAfter=2, alignment=TA_LEFT,
+            textColor=C_BLACK, spaceAfter=6, spaceBefore=0, alignment=TA_LEFT,
+            leading=24,
         ))
         self.styles.add(ParagraphStyle(
             name='DistanceName',
             fontSize=13, fontName='Helvetica-Bold',
-            textColor=C_NAVY, spaceAfter=2, alignment=TA_LEFT,
+            textColor=C_NAVY, spaceAfter=4, spaceBefore=0, alignment=TA_LEFT,
+            leading=16,
         ))
         self.styles.add(ParagraphStyle(
             name='MetaLine',
             fontSize=8, fontName='Helvetica',
-            textColor=C_META, spaceAfter=6, alignment=TA_LEFT,
+            textColor=C_META, spaceAfter=8, alignment=TA_LEFT,
+            leading=10,
         ))
         self.styles.add(ParagraphStyle(
             name='SectionBlue',

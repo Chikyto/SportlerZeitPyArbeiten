@@ -999,7 +999,8 @@ class RaceMonitoringWidget(QWidget):
         try:
             main_window = self.window()
             if hasattr(main_window, 'tab_manager'):
-                event_config_tab = main_window.tab_manager.get_tab('event_config')
+                # La clave registrada en TabManager es 'events'
+                event_config_tab = main_window.tab_manager.get_tab('events')
                 if event_config_tab and hasattr(event_config_tab, 'event_name_input'):
                     return event_config_tab.event_name_input.text() or "Carrera"
         except Exception:
@@ -1051,12 +1052,12 @@ class RaceMonitoringWidget(QWidget):
             return
 
         top_n = int(self.podium_top_n_combo.currentText())
-        from src.core.race_tracking.models import RaceStatus
         distances_data = []
         for d in distances:
-            if d.status not in [RaceStatus.RUNNING, RaceStatus.FINISHED]:
-                continue
-            distances_data.append(self._build_distance_data(d.distance_id, top_n))
+            data = self._build_distance_data(d.distance_id, top_n)
+            # Incluir cualquier distancia que tenga al menos un resultado
+            if data['all_results']:
+                distances_data.append(data)
 
         if not distances_data:
             QMessageBox.warning(self, "Sin datos", "Ninguna distancia está en curso o finalizada")
