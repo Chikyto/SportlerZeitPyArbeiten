@@ -3,357 +3,409 @@
 """
 Exportador de PDF para Resultados de Carreras
 src/utils/pdf_exporter.py
-
-Genera PDFs para:
-- Clasificación general
-- Clasificación por género
-- Clasificación por categorías IAAF
-- Formato especial para relator
 """
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, letter
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
-    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+    HRFlowable, KeepTogether
 )
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from datetime import datetime
 import logging
 from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+# ── Paleta de colores (igual que el frontend) ────────────────────────────────
+C_NAVY       = colors.HexColor('#1e2a4a')   # encabezado de tablas
+C_BLUE       = colors.HexColor('#2b6cb0')   # "Clasificación General …"
+C_ORANGE     = colors.HexColor('#c05621')   # "Damas — F 20-29", subcats
+C_ROW_ALT    = colors.HexColor('#f7fafc')   # fila alternada
+C_RULE       = colors.HexColor('#e2e8f0')   # línea separadora
+C_META       = colors.HexColor('#718096')   # texto pequeño de meta
+C_WHITE      = colors.white
+C_BLACK      = colors.HexColor('#1a202c')
+
+
+def _pace_str(total_seconds: float, distance_meters: float) -> str:
+    """Calcula ritmo en min:seg /km"""
+    if not total_seconds or not distance_meters:
+        return "-"
+    pace_sec_km = total_seconds / (distance_meters / 1000)
+    mins = int(pace_sec_km // 60)
+    secs = int(pace_sec_km % 60)
+    return f"{mins}:{secs:02d} /km"
+
+
+def _table_style(header_color=None) -> TableStyle:
+    """Estilo de tabla estándar reutilizable"""
+    hc = header_color or C_NAVY
+    return TableStyle([
+        # Encabezado
+        ('BACKGROUND',    (0, 0), (-1, 0), hc),
+        ('TEXTCOLOR',     (0, 0), (-1, 0), C_WHITE),
+        ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0, 0), (-1, 0), 9),
+        ('ALIGN',         (0, 0), (-1, 0), 'CENTER'),
+        ('TOPPADDING',    (0, 0), (-1, 0), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        # Filas de datos
+        ('FONTNAME',      (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE',      (0, 1), (-1, -1), 9),
+        ('ROWBACKGROUNDS',(0, 1), (-1, -1), [C_WHITE, C_ROW_ALT]),
+        ('ALIGN',         (0, 1), (0, -1), 'CENTER'),   # #
+        ('ALIGN',         (2, 1), (2, -1), 'CENTER'),   # Dorsal
+        ('ALIGN',         (4, 1), (4, -1), 'RIGHT'),    # Tiempo
+        ('ALIGN',         (5, 1), (5, -1), 'RIGHT'),    # Ritmo
+        ('TOPPADDING',    (0, 1), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+        ('LINEBELOW',     (0, 0), (-1, -1), 0.25, C_RULE),
+    ])
+
 
 class PDFExporter:
-    """
-    Exportador de resultados a PDF
+    """Exportador de resultados a PDF con el estilo del frontend web"""
 
-    Genera documentos profesionales con clasificaciones y podios
-    """
+    # Anchos de columna para tabla estándar: #, Atleta, Dorsal, Cat, Tiempo, Ritmo
+    _COL_WIDTHS = [1*cm, 6.5*cm, 1.5*cm, 2.8*cm, 3*cm, 2.5*cm]
 
     def __init__(self, event_name: str = "Carrera", event_date: str = ""):
-        """
-        Args:
-            event_name: Nombre del evento
-            event_date: Fecha del evento
-        """
         self.event_name = event_name
-        self.event_date = event_date or datetime.now().strftime("%Y-%m-%d")
+        self.event_date = event_date or datetime.now().strftime("%d/%m/%Y")
         self.styles = getSampleStyleSheet()
-        self._setup_custom_styles()
+        self._setup_styles()
 
-    def _setup_custom_styles(self):
-        """Configurar estilos personalizados"""
-        # Título principal
+    def _setup_styles(self):
         self.styles.add(ParagraphStyle(
-            name='CustomTitle',
-            parent=self.styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor('#1a1a2e'),
-            spaceAfter=12,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold'
+            name='EventTitle',
+            fontSize=20, fontName='Helvetica-Bold',
+            textColor=C_BLACK, spaceAfter=2, alignment=TA_LEFT,
         ))
-
-        # Subtítulo
         self.styles.add(ParagraphStyle(
-            name='CustomSubtitle',
-            parent=self.styles['Heading2'],
-            fontSize=16,
-            textColor=colors.HexColor('#0f3460'),
-            spaceAfter=8,
-            alignment=TA_CENTER,
-            fontName='Helvetica-Bold'
+            name='DistanceName',
+            fontSize=13, fontName='Helvetica-Bold',
+            textColor=C_NAVY, spaceAfter=2, alignment=TA_LEFT,
         ))
-
-        # Sección
+        self.styles.add(ParagraphStyle(
+            name='MetaLine',
+            fontSize=8, fontName='Helvetica',
+            textColor=C_META, spaceAfter=6, alignment=TA_LEFT,
+        ))
+        self.styles.add(ParagraphStyle(
+            name='SectionBlue',
+            fontSize=11, fontName='Helvetica-Bold',
+            textColor=C_BLUE, spaceBefore=10, spaceAfter=4, alignment=TA_LEFT,
+        ))
+        self.styles.add(ParagraphStyle(
+            name='SectionOrange',
+            fontSize=10, fontName='Helvetica-Bold',
+            textColor=C_ORANGE, spaceBefore=8, spaceAfter=3, alignment=TA_LEFT,
+        ))
+        # Para el relator
+        self.styles.add(ParagraphStyle(
+            name='AnnouncerName',
+            fontSize=18, fontName='Helvetica-Bold',
+            textColor=C_BLACK, spaceAfter=4, alignment=TA_LEFT,
+        ))
+        # Compat con código anterior
         self.styles.add(ParagraphStyle(
             name='SectionHeader',
-            parent=self.styles['Heading3'],
-            fontSize=14,
-            textColor=colors.HexColor('#e94560'),
-            spaceAfter=6,
-            spaceBefore=12,
-            fontName='Helvetica-Bold'
+            fontSize=11, fontName='Helvetica-Bold',
+            textColor=C_BLUE, spaceBefore=10, spaceAfter=4, alignment=TA_LEFT,
         ))
+        self.styles.add(ParagraphStyle(
+            name='CustomTitle',
+            fontSize=20, fontName='Helvetica-Bold',
+            textColor=C_BLACK, spaceAfter=6, alignment=TA_CENTER,
+        ))
+        self.styles.add(ParagraphStyle(
+            name='CustomSubtitle',
+            fontSize=13, fontName='Helvetica-Bold',
+            textColor=C_NAVY, spaceAfter=4, alignment=TA_CENTER,
+        ))
+
+    # ── Encabezado de página ──────────────────────────────────────────────────
+
+    def _header(self, story: list, distance_name: str, extra_meta: str = ""):
+        story.append(Paragraph(self.event_name, self.styles['EventTitle']))
+        story.append(Paragraph(distance_name, self.styles['DistanceName']))
+        meta = f"Finalizado: {datetime.now().strftime('%d/%m/%Y, %H:%M:%S')}"
+        if extra_meta:
+            meta += f"  |  {extra_meta}"
+        story.append(Paragraph(meta, self.styles['MetaLine']))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=C_RULE, spaceAfter=6))
+
+    # ── Tabla de resultados ───────────────────────────────────────────────────
+
+    def _results_table(self, results: list, distance_meters: float = 0,
+                       header_color=None) -> Table:
+        header = ['#', 'Atleta', 'Dorsal', 'Categoría', 'Tiempo neto', 'Ritmo']
+        rows = [header]
+        for i, result in enumerate(results, 1):
+            a = result.athlete
+            cat = getattr(a, 'get_award_category', lambda: None)() or \
+                  getattr(a, 'gender', '') + ' ' + str(getattr(a, 'age_category', '') or '')
+            t_sec = None
+            if result.total_time is not None:
+                try:
+                    t_sec = result.total_time.total_seconds()
+                except AttributeError:
+                    t_sec = float(result.total_time)
+            rows.append([
+                str(i),
+                a.name,
+                str(a.bib_number),
+                str(cat).strip() or '-',
+                result.get_formatted_time(),
+                _pace_str(t_sec, distance_meters) if distance_meters else '-',
+            ])
+        t = Table(rows, colWidths=self._COL_WIDTHS, repeatRows=1)
+        t.setStyle(_table_style(header_color))
+        return t
+
+    # ── Documento completo por distancia (igual que el frontend) ─────────────
+
+    def export_full_results(
+        self,
+        distance_name: str,
+        distance_meters: float,
+        all_results: list,
+        results_by_gender: Dict[str, list],
+        podiums_by_award_cat: Dict[str, list],
+        award_categories: Dict,
+        output_path: str,
+    ):
+        """
+        Genera un PDF completo con:
+          - Clasificación General (todos)
+          - Clasificación General Damas + subcategorías
+          - Clasificación General Varones + subcategorías
+          - Clasificación General No binario + subcategorías
+
+        Idéntico en estructura al PDF exportado por el frontend web.
+        """
+        doc = SimpleDocTemplate(
+            output_path, pagesize=A4,
+            leftMargin=2*cm, rightMargin=2*cm,
+            topMargin=2*cm, bottomMargin=2*cm,
+        )
+        story = []
+        self._header(story, distance_name)
+
+        # 1. Clasificación General
+        if all_results:
+            story.append(Paragraph("Clasificación General", self.styles['SectionBlue']))
+            story.append(self._results_table(all_results, distance_meters))
+            story.append(Spacer(1, 0.6*cm))
+
+        # 2. Por género (orden: M, F, X/O)
+        gender_cfg = [
+            ("M", "Clasificación General Varones", "Varones"),
+            ("F", "Clasificación General Damas",   "Damas"),
+            ("X", "Clasificación General No binario", "No binario"),
+            ("O", "Clasificación General No binario", "No binario"),
+        ]
+        seen_genders = set()
+        for gender_key, section_title, group_label in gender_cfg:
+            results = results_by_gender.get(gender_key, [])
+            if not results or gender_key in seen_genders:
+                continue
+            seen_genders.add(gender_key)
+
+            story.append(Paragraph(section_title, self.styles['SectionBlue']))
+            story.append(self._results_table(results, distance_meters))
+            story.append(Spacer(1, 0.4*cm))
+
+            # Subcategorías de premiación para este género
+            for award_id, podium in sorted(podiums_by_award_cat.items()):
+                if not podium:
+                    continue
+                # Filtrar solo resultados de este género
+                gender_podium = [(pos, r) for pos, r in podium
+                                 if getattr(r.athlete, 'gender', '') == gender_key]
+                if not gender_podium:
+                    continue
+                award_cat = award_categories.get(award_id)
+                cat_name = award_cat.name if award_cat else award_id
+                story.append(Paragraph(
+                    f"{group_label} — {cat_name}", self.styles['SectionOrange']
+                ))
+                rows = [['#', 'Atleta', 'Dorsal', 'Categoría', 'Tiempo neto', 'Ritmo']]
+                for pos, result in gender_podium:
+                    a = result.athlete
+                    t_sec = None
+                    if result.total_time is not None:
+                        try:
+                            t_sec = result.total_time.total_seconds()
+                        except AttributeError:
+                            t_sec = float(result.total_time)
+                    cat_str = (getattr(a, 'get_award_category', lambda: None)() or
+                               f"{getattr(a, 'gender', '')} {getattr(a, 'age_category', '') or ''}").strip()
+                    rows.append([
+                        str(pos), a.name, str(a.bib_number),
+                        cat_str or '-',
+                        result.get_formatted_time(),
+                        _pace_str(t_sec, distance_meters) if distance_meters else '-',
+                    ])
+                t = Table(rows, colWidths=self._COL_WIDTHS, repeatRows=1)
+                t.setStyle(_table_style(C_NAVY))
+                story.append(KeepTogether([t]))
+                story.append(Spacer(1, 0.3*cm))
+
+            story.append(Spacer(1, 0.4*cm))
+
+        doc.build(story)
+        logger.info(f"✅ PDF completo generado: {output_path}")
+
+    # ── Métodos individuales (signaturas originales, estilo mejorado) ─────────
 
     def export_general_classification(
         self,
         distance_name: str,
-        results: List,
-        output_path: str
+        results: list,
+        output_path: str,
+        distance_meters: float = 0,
     ):
-        """
-        Exportar clasificación general (todos los participantes)
-
-        Args:
-            distance_name: Nombre de la distancia (ej: "21 Kilómetros")
-            results: Lista de AthleteResult ordenados por posición
-            output_path: Ruta del archivo PDF de salida
-        """
-        doc = SimpleDocTemplate(output_path, pagesize=A4)
+        """Clasificación general (todos los participantes)"""
+        doc = SimpleDocTemplate(
+            output_path, pagesize=A4,
+            leftMargin=2*cm, rightMargin=2*cm,
+            topMargin=2*cm, bottomMargin=2*cm,
+        )
         story = []
-
-        # Encabezado
-        story.append(Paragraph(self.event_name, self.styles['CustomTitle']))
-        story.append(Paragraph(f"Fecha: {self.event_date}", self.styles['Normal']))
+        self._header(story, distance_name)
+        story.append(Paragraph("Clasificación General", self.styles['SectionBlue']))
+        story.append(self._results_table(results, distance_meters))
         story.append(Spacer(1, 0.5*cm))
-        story.append(Paragraph(f"Clasificación General - {distance_name}", self.styles['CustomSubtitle']))
-        story.append(Spacer(1, 0.5*cm))
-
-        # Tabla de resultados
-        data = [['Pos', 'Dorsal', 'Nombre', 'Género', 'Categoría', 'Tiempo']]
-
-        for result in results:
-            athlete = result.athlete
-            data.append([
-                str(result.position or '-'),
-                str(athlete.bib_number),
-                athlete.name,
-                athlete.gender or '-',
-                athlete.get_award_category() or '-',
-                result.get_formatted_time()
-            ])
-
-        table = Table(data, colWidths=[2*cm, 2.5*cm, 6*cm, 2*cm, 3*cm, 3*cm])
-        table.setStyle(TableStyle([
-            # Encabezado
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a1a2e')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-
-            # Datos
-            ('ALIGN', (0, 1), (0, -1), 'CENTER'),  # Posición centrada
-            ('ALIGN', (1, 1), (1, -1), 'CENTER'),  # Dorsal centrado
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 10),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f5f5')]),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ]))
-
-        story.append(table)
-        story.append(Spacer(1, 1*cm))
         story.append(Paragraph(
-            f"Total de participantes: {len(results)}",
-            self.styles['Normal']
+            f"Total participantes: {len(results)}",
+            self.styles['MetaLine']
         ))
-
         doc.build(story)
-        logger.info(f"✅ PDF generado: {output_path}")
+        logger.info(f"✅ PDF clasificación general: {output_path}")
 
     def export_classification_by_gender(
         self,
         distance_name: str,
-        results_by_gender: Dict[str, List],
-        output_path: str
+        results_by_gender: Dict[str, list],
+        output_path: str,
+        distance_meters: float = 0,
     ):
-        """
-        Exportar clasificación por género (Masculino, Femenino, Otro)
-
-        Args:
-            distance_name: Nombre de la distancia
-            results_by_gender: Dict con {"M": [...], "F": [...], "Otro": [...]}
-            output_path: Ruta del archivo PDF
-        """
-        doc = SimpleDocTemplate(output_path, pagesize=A4)
+        """Clasificación separada por género"""
+        doc = SimpleDocTemplate(
+            output_path, pagesize=A4,
+            leftMargin=2*cm, rightMargin=2*cm,
+            topMargin=2*cm, bottomMargin=2*cm,
+        )
         story = []
+        self._header(story, distance_name)
 
-        # Encabezado
-        story.append(Paragraph(self.event_name, self.styles['CustomTitle']))
-        story.append(Paragraph(f"Fecha: {self.event_date}", self.styles['Normal']))
-        story.append(Spacer(1, 0.5*cm))
-        story.append(Paragraph(f"Clasificación por Género - {distance_name}", self.styles['CustomSubtitle']))
-        story.append(Spacer(1, 0.8*cm))
-
-        gender_names = {
-            "M": "Masculino",
-            "F": "Femenino",
-            "X": "No Binario",
-            "O": "Otro",
-            "Otro": "Otro",
+        gender_labels = {
+            "M": ("Clasificación General Varones", C_NAVY),
+            "F": ("Clasificación General Damas",   C_NAVY),
+            "X": ("Clasificación General No binario", C_NAVY),
+            "O": ("Clasificación General No binario", C_NAVY),
         }
-        gender_order = ["M", "F", "X", "O", "Otro"]
-        present_genders = [g for g in gender_order if results_by_gender.get(g)]
-        # Also include any unexpected keys not in the predefined order
-        for g in results_by_gender:
-            if g not in gender_order and results_by_gender.get(g):
-                present_genders.append(g)
-
-        for gender in present_genders:
-            results = results_by_gender.get(gender, [])
-            if not results:
+        seen = set()
+        for key in ["M", "F", "X", "O"]:
+            results = results_by_gender.get(key, [])
+            if not results or key in seen:
                 continue
-
-            # Título de sección
-            section_title = gender_names.get(gender, gender)
-            story.append(Paragraph(section_title, self.styles['SectionHeader']))
-            story.append(Spacer(1, 0.3*cm))
-
-            # Tabla
-            data = [['Pos', 'Dorsal', 'Nombre', 'Categoría', 'Tiempo']]
-            for i, result in enumerate(results, 1):
-                athlete = result.athlete
-                data.append([
-                    str(i),
-                    str(athlete.bib_number),
-                    athlete.name,
-                    athlete.get_award_category() or '-',
-                    result.get_formatted_time()
-                ])
-
-            table = Table(data, colWidths=[2*cm, 2.5*cm, 7*cm, 3*cm, 3*cm])
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e94560')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 11),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-                ('ALIGN', (0, 1), (0, -1), 'CENTER'),
-                ('ALIGN', (1, 1), (1, -1), 'CENTER'),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 10),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#ffeef1')]),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ]))
-
-            story.append(table)
-            story.append(Spacer(1, 0.8*cm))
+            seen.add(key)
+            label, hc = gender_labels.get(key, (key, C_NAVY))
+            story.append(Paragraph(label, self.styles['SectionBlue']))
+            story.append(self._results_table(results, distance_meters, hc))
+            story.append(Spacer(1, 0.6*cm))
 
         doc.build(story)
-        logger.info(f"✅ PDF por género generado: {output_path}")
+        logger.info(f"✅ PDF por género: {output_path}")
 
     def export_classification_by_category(
         self,
         distance_name: str,
-        results_by_category: Dict[str, List],
-        output_path: str
+        results_by_category: Dict[str, list],
+        output_path: str,
+        distance_meters: float = 0,
     ):
-        """
-        Exportar clasificación por categorías IAAF
-
-        Args:
-            distance_name: Nombre de la distancia
-            results_by_category: Dict con {category_id: [results]}
-            output_path: Ruta del archivo PDF
-        """
-        doc = SimpleDocTemplate(output_path, pagesize=A4)
+        """Clasificación por categorías de premiación"""
+        doc = SimpleDocTemplate(
+            output_path, pagesize=A4,
+            leftMargin=2*cm, rightMargin=2*cm,
+            topMargin=2*cm, bottomMargin=2*cm,
+        )
         story = []
-
-        # Encabezado
-        story.append(Paragraph(self.event_name, self.styles['CustomTitle']))
-        story.append(Paragraph(f"Fecha: {self.event_date}", self.styles['Normal']))
-        story.append(Spacer(1, 0.5*cm))
-        story.append(Paragraph(f"Clasificación por Categorías - {distance_name}", self.styles['CustomSubtitle']))
-        story.append(Spacer(1, 0.8*cm))
+        self._header(story, distance_name)
 
         for category_id, results in sorted(results_by_category.items()):
             if not results:
                 continue
-
-            # Título de categoría
-            story.append(Paragraph(f"📊 {category_id}", self.styles['SectionHeader']))
-            story.append(Spacer(1, 0.3*cm))
-
-            # Tabla
-            data = [['Pos', 'Dorsal', 'Nombre', 'Tiempo']]
-            for i, result in enumerate(results, 1):
-                athlete = result.athlete
-                data.append([
-                    str(i),
-                    str(athlete.bib_number),
-                    athlete.name,
-                    result.get_formatted_time()
-                ])
-
-            table = Table(data, colWidths=[2*cm, 2.5*cm, 9*cm, 3.5*cm])
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0f3460')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 11),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-                ('ALIGN', (0, 1), (0, -1), 'CENTER'),
-                ('ALIGN', (1, 1), (1, -1), 'CENTER'),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 10),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#e8f4f8')]),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ]))
-
-            story.append(table)
-            story.append(Spacer(1, 0.8*cm))
+            story.append(Paragraph(category_id, self.styles['SectionOrange']))
+            story.append(self._results_table(results, distance_meters))
+            story.append(Spacer(1, 0.5*cm))
 
         doc.build(story)
-        logger.info(f"✅ PDF por categorías generado: {output_path}")
+        logger.info(f"✅ PDF por categorías: {output_path}")
 
     def export_announcer_format(
         self,
         distance_name: str,
-        results: List,
-        output_path: str
+        results: list,
+        output_path: str,
+        distance_meters: float = 0,
     ):
-        """
-        Exportar formato especial para relator (letra grande, info clara)
-
-        Args:
-            distance_name: Nombre de la distancia
-            results: Lista de resultados
-            output_path: Ruta del archivo PDF
-        """
-        doc = SimpleDocTemplate(output_path, pagesize=letter)
+        """Formato especial para relator — letra grande"""
+        doc = SimpleDocTemplate(
+            output_path, pagesize=A4,
+            leftMargin=2*cm, rightMargin=2*cm,
+            topMargin=2*cm, bottomMargin=2*cm,
+        )
         story = []
+        self._header(story, distance_name, extra_meta="FORMATO RELATOR")
 
-        # Encabezado
-        story.append(Paragraph(f"🎤 {self.event_name}", self.styles['CustomTitle']))
-        story.append(Paragraph(f"FORMATO PARA RELATOR - {distance_name}", self.styles['CustomSubtitle']))
-        story.append(Spacer(1, 1*cm))
+        col_w = [1.2*cm, 7*cm, 1.8*cm, 3*cm, 3.5*cm]
+        header = ['#', 'Atleta', 'Dorsal', 'Tiempo neto', 'Ritmo']
 
-        for result in results[:20]:  # Top 20 para relator
-            athlete = result.athlete
+        rows = [header]
+        for i, result in enumerate(results[:30], 1):
+            a = result.athlete
+            t_sec = None
+            if result.total_time is not None:
+                try:
+                    t_sec = result.total_time.total_seconds()
+                except AttributeError:
+                    t_sec = float(result.total_time)
+            rows.append([
+                str(i), a.name, str(a.bib_number),
+                result.get_formatted_time(),
+                _pace_str(t_sec, distance_meters) if distance_meters else '-',
+            ])
 
-            # Nombre grande
-            name_style = ParagraphStyle(
-                name='AnnouncerName',
-                fontSize=18,
-                fontName='Helvetica-Bold',
-                textColor=colors.HexColor('#1a1a2e'),
-                spaceAfter=4
-            )
-            story.append(Paragraph(f"🏃 {athlete.name}", name_style))
-
-            # Info en tabla
-            info_data = [
-                ['Posición General:', str(result.position or '-')],
-                ['Dorsal:', str(athlete.bib_number)],
-                ['Género:', athlete.gender or '-'],
-                ['Categoría:', athlete.get_award_category() or '-'],
-                ['Tiempo:', result.get_formatted_time()],
-            ]
-
-            info_table = Table(info_data, colWidths=[5*cm, 8*cm])
-            info_table.setStyle(TableStyle([
-                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 14),
-                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
-                ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#0f3460')),
-                ('TOPPADDING', (0, 0), (-1, -1), 2),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-            ]))
-
-            story.append(info_table)
-            story.append(Spacer(1, 0.8*cm))
-
-            # Línea separadora
-            story.append(Paragraph("─" * 80, self.styles['Normal']))
-            story.append(Spacer(1, 0.6*cm))
+        style = TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, 0), C_NAVY),
+            ('TEXTCOLOR',     (0, 0), (-1, 0), C_WHITE),
+            ('FONTNAME',      (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',      (0, 0), (-1, 0), 11),
+            ('ALIGN',         (0, 0), (-1, 0), 'CENTER'),
+            ('TOPPADDING',    (0, 0), (-1, 0), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('FONTNAME',      (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE',      (0, 1), (-1, -1), 12),
+            ('ROWBACKGROUNDS',(0, 1), (-1, -1), [C_WHITE, C_ROW_ALT]),
+            ('ALIGN',         (0, 1), (0, -1), 'CENTER'),
+            ('ALIGN',         (2, 1), (2, -1), 'CENTER'),
+            ('ALIGN',         (3, 1), (3, -1), 'RIGHT'),
+            ('ALIGN',         (4, 1), (4, -1), 'RIGHT'),
+            ('TOPPADDING',    (0, 1), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+            ('LINEBELOW',     (0, 0), (-1, -1), 0.25, C_RULE),
+        ])
+        t = Table(rows, colWidths=col_w, repeatRows=1)
+        t.setStyle(style)
+        story.append(t)
 
         doc.build(story)
-        logger.info(f"✅ PDF para relator generado: {output_path}")
+        logger.info(f"✅ PDF relator: {output_path}")

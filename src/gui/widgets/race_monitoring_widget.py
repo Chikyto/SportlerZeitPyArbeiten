@@ -1071,11 +1071,25 @@ class RaceMonitoringWidget(QWidget):
             logger.info("  Creando PDFExporter...")
             exporter = PDFExporter(event_name=event_name)
 
-            logger.info("  Generando PDF...")
-            exporter.export_general_classification(
+            # Obtener datos completos para el PDF estilo frontend
+            results_by_gender = self.race_manager.get_results_by_gender(race_category_id, only_finished=True)
+            top_n = int(self.podium_top_n_combo.currentText())
+            podiums = self.race_manager.get_podium_by_award_category(race_category_id, top_n=top_n) or {}
+            award_categories = {}
+            for award_id in podiums:
+                ac = self.race_manager.get_award_category(award_id)
+                if ac:
+                    award_categories[award_id] = ac
+
+            logger.info("  Generando PDF completo (estilo frontend)...")
+            exporter.export_full_results(
                 distance_name=distance.name,
-                results=results,
-                output_path=file_path
+                distance_meters=getattr(distance, 'distance_meters', 0),
+                all_results=results,
+                results_by_gender=results_by_gender,
+                podiums_by_award_cat=podiums,
+                award_categories=award_categories,
+                output_path=file_path,
             )
 
             logger.info(f"✅ PDF generado exitosamente: {file_path}")
@@ -1149,7 +1163,8 @@ class RaceMonitoringWidget(QWidget):
             exporter.export_classification_by_gender(
                 distance_name=distance.name,
                 results_by_gender=results_by_gender,
-                output_path=file_path
+                output_path=file_path,
+                distance_meters=getattr(distance, 'distance_meters', 0),
             )
 
             logger.info(f"✅ PDF por género generado: {file_path}")
@@ -1209,7 +1224,8 @@ class RaceMonitoringWidget(QWidget):
             exporter.export_classification_by_category(
                 distance_name=distance.name,
                 results_by_category=results_by_category,
-                output_path=file_path
+                output_path=file_path,
+                distance_meters=getattr(distance, 'distance_meters', 0),
             )
 
             QMessageBox.information(
@@ -1268,7 +1284,8 @@ class RaceMonitoringWidget(QWidget):
             exporter.export_announcer_format(
                 distance_name=distance.name,
                 results=results,
-                output_path=file_path
+                output_path=file_path,
+                distance_meters=getattr(distance, 'distance_meters', 0),
             )
 
             QMessageBox.information(
