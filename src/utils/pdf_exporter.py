@@ -168,16 +168,26 @@ class PDFExporter:
 
     # ── Tabla de resultados ───────────────────────────────────────────────────
 
+    @staticmethod
+    def _strip_gender_prefix(cat_name: str) -> str:
+        """'Masculino 45-49' → '45-49', 'Femenino Sub-19' → 'Sub-19'"""
+        for prefix in ('No binario ', 'Masculino ', 'Femenino ',
+                       'Male ', 'Female ', 'Masc ', 'Fem '):
+            if cat_name.startswith(prefix):
+                return cat_name[len(prefix):]
+        return cat_name
+
     def _results_table(self, results: list, distance_meters: float = 0,
                        header_color=None,
                        athlete_cat_map: dict = None,
                        cat_mode: str = 'full') -> Table:
         """
         cat_mode:
-          'full'   — nombre completo de categoría (tabla de 6 cols)
-          'letter' — solo la letra de género M/F/X (tabla de 6 cols, columna angosta)
-          'none'   — sin columna Categoría (tabla de 5 cols)
-        athlete_cat_map: {athlete_id: category_name} — usado cuando cat_mode='full'
+          'full'   — nombre completo de categoría (6 cols)
+          'short'  — letra género + rango edad: 'M 45-49' (6 cols, general)
+          'age'    — solo rango edad: '45-49'  (6 cols, por género)
+          'none'   — sin columna Categoría     (5 cols, subcats/relator)
+        athlete_cat_map: {athlete_id: category_name}
         """
         if cat_mode == 'none':
             header = ['#', 'Atleta', 'Dorsal', 'Tiempo neto', 'Ritmo']
@@ -201,14 +211,17 @@ class PDFExporter:
         rows = [header]
         for i, result in enumerate(results, 1):
             a = result.athlete
-            if cat_mode == 'letter':
-                g = (getattr(a, 'gender', '') or '').upper()
-                cat = g[0] if g else '-'
-            elif athlete_cat_map is not None:
-                cat = athlete_cat_map.get(getattr(a, 'athlete_id', ''), '-')
-            else:
-                cat = getattr(a, 'get_award_category', lambda: None)() or \
-                      getattr(a, 'gender', '') + ' ' + str(getattr(a, 'age_category', '') or '')
+            g = (getattr(a, 'gender', '') or '').upper()
+            letter = g[0] if g else '?'
+            cat_name = (athlete_cat_map or {}).get(getattr(a, 'athlete_id', ''), '') if athlete_cat_map else ''
+            if cat_mode == 'short':
+                age_part = self._strip_gender_prefix(cat_name) if cat_name else ''
+                cat = f"{letter} {age_part}".strip() if age_part else letter
+            elif cat_mode == 'age':
+                cat = self._strip_gender_prefix(cat_name) if cat_name else '-'
+            else:  # 'full'
+                cat = cat_name or (getattr(a, 'get_award_category', lambda: None)() or
+                                   f"{letter} {getattr(a, 'age_category', '') or ''}").strip()
             t_sec = None
             if result.total_time is not None:
                 try:
@@ -273,7 +286,7 @@ class PDFExporter:
         # 1. Clasificación General — muestra letra de género (M/F/X)
         if all_results:
             story.append(Paragraph("Clasificación General", self.styles['SectionBlue']))
-            story.append(self._results_table(all_results, distance_meters, cat_mode='letter'))
+            story.append(self._results_table(all_results, distance_meters, athlete_cat_map=cat_map, cat_mode='short'))
             story.append(Spacer(1, 0.6*cm))
 
         # 2. Por género — sin columna Categoría (el header ya lo indica)
@@ -291,7 +304,7 @@ class PDFExporter:
             seen_genders.add(gender_key)
 
             story.append(Paragraph(section_title, self.styles['SectionBlue']))
-            story.append(self._results_table(results, distance_meters, cat_mode='none'))
+            story.append(self._results_table(results, distance_meters, athlete_cat_map=cat_map, cat_mode='age'))
             story.append(Spacer(1, 0.4*cm))
 
             # Subcategorías — sin columna Categoría (el header naranja ya lo indica)
@@ -530,7 +543,7 @@ class PDFExporter:
 
                 if all_r:
                     story.append(Paragraph("Clasificación General", self.styles['SectionBlue']))
-                    story.append(self._results_table(all_r, dm, cat_mode='letter'))
+                    story.append(self._results_table(all_r, dm, athlete_cat_map=cat_map, cat_mode='short'))
                     story.append(Spacer(1, 0.6*cm))
 
                 seen = set()
@@ -545,7 +558,7 @@ class PDFExporter:
                         continue
                     seen.add(gk)
                     story.append(Paragraph(sec_title, self.styles['SectionBlue']))
-                    story.append(self._results_table(results, dm, cat_mode='none'))
+                    story.append(self._results_table(results, dm, athlete_cat_map=cat_map, cat_mode='age'))
                     story.append(Spacer(1, 0.4*cm))
                     for award_id, podium in sorted(podiums.items()):
                         gender_podium = [(p, r) for p, r in podium
@@ -587,7 +600,7 @@ class PDFExporter:
                               "X": "Clasificación General No binario",
                               "O": "Clasificación General No binario"}
                     story.append(Paragraph(labels[gk], self.styles['SectionBlue']))
-                    story.append(self._results_table(results, dm, cat_mode='none'))
+                    story.append(self._results_table(results, dm, cat_mode='age'))
                     story.append(Spacer(1, 0.6*cm))
 
             elif kind == 'categories':
