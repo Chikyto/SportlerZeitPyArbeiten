@@ -1134,8 +1134,9 @@ class RaceMonitoringWidget(QWidget):
             results_by_gender = self.race_manager.get_results_by_gender(race_category_id, only_finished=True)
             top_n = int(self.podium_top_n_combo.currentText())
             podiums = self.race_manager.get_podium_by_award_category(race_category_id, top_n=top_n) or {}
+            results_by_award_cat = self.race_manager.get_results_by_award_category(race_category_id) or {}
             award_categories = {}
-            for award_id in podiums:
+            for award_id in list(podiums) + list(results_by_award_cat):
                 ac = self.race_manager.get_award_category(award_id)
                 if ac:
                     award_categories[award_id] = ac
@@ -1149,6 +1150,7 @@ class RaceMonitoringWidget(QWidget):
                 podiums_by_award_cat=podiums,
                 award_categories=award_categories,
                 output_path=file_path,
+                results_by_award_cat=results_by_award_cat,
             )
 
             logger.info(f"✅ PDF generado exitosamente: {file_path}")
