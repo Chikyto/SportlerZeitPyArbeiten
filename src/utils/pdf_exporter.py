@@ -171,18 +171,27 @@ class PDFExporter:
         story.append(Spacer(1, 0.8*cm))
 
         gender_names = {
-            "M": "🏃‍♂️ Masculino",
-            "F": "🏃‍♀️ Femenino",
-            "Otro": "Otros"
+            "M": "Masculino",
+            "F": "Femenino",
+            "X": "No Binario",
+            "O": "Otro",
+            "Otro": "Otro",
         }
+        gender_order = ["M", "F", "X", "O", "Otro"]
+        present_genders = [g for g in gender_order if results_by_gender.get(g)]
+        # Also include any unexpected keys not in the predefined order
+        for g in results_by_gender:
+            if g not in gender_order and results_by_gender.get(g):
+                present_genders.append(g)
 
-        for gender in ["M", "F", "Otro"]:
+        for gender in present_genders:
             results = results_by_gender.get(gender, [])
             if not results:
                 continue
 
             # Título de sección
-            story.append(Paragraph(gender_names[gender], self.styles['SectionHeader']))
+            section_title = gender_names.get(gender, gender)
+            story.append(Paragraph(section_title, self.styles['SectionHeader']))
             story.append(Spacer(1, 0.3*cm))
 
             # Tabla
