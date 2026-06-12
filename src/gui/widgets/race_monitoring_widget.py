@@ -222,8 +222,14 @@ class RaceMonitoringWidget(QWidget):
         export_podiums_btn = QPushButton("📄 CSV")
         export_podiums_btn.clicked.connect(self.export_podiums_to_csv)
         export_podiums_btn.setStyleSheet("background-color: #10b981; color: white; font-weight: bold;")
-        export_podiums_btn.setToolTip("Exportar podios a CSV")
+        export_podiums_btn.setToolTip("Exportar podios de la distancia seleccionada a CSV")
         controls_layout.addWidget(export_podiums_btn)
+
+        export_all_podiums_btn = QPushButton("📄 CSV Todas")
+        export_all_podiums_btn.clicked.connect(self.export_all_podiums_to_csv)
+        export_all_podiums_btn.setStyleSheet("background-color: #059669; color: white; font-weight: bold;")
+        export_all_podiums_btn.setToolTip("Exportar podios de todas las distancias en un solo CSV")
+        controls_layout.addWidget(export_all_podiums_btn)
 
         # Botones de exportación a PDF
         export_pdf_general_btn = QPushButton("📕 PDF General")
@@ -886,6 +892,112 @@ class RaceMonitoringWidget(QWidget):
             )
             import logging
             logging.error(f"Error en export_podiums_to_csv: {e}", exc_info=True)
+
+    def export_all_podiums_to_csv(self):
+        """Exportar podios de todas las distancias en un único CSV"""
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+        import csv
+
+        if not self.race_manager:
+            QMessageBox.warning(self, "Error", "No hay race_manager disponible")
+            return
+
+        distances = self.race_manager.get_all_categories()
+        if not distances:
+            QMessageBox.warning(self, "Sin datos", "No hay distancias configuradas")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exportar Podios de Todas las Distancias",
+            f"podios_todas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            "CSV Files (*.csv)"
+        )
+        if not file_path:
+            return
+
+        top_n = int(self.podium_top_n_combo.currentText())
+
+        try:
+            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow([f"PODIOS - TODAS LAS DISTANCIAS"])
+                writer.writerow([f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+                writer.writerow([f"Top N: {top_n}"])
+                writer.writerow([])
+
+                exported_any = False
+
+                for distance in distances:
+                    dist_id = distance.distance_id
+                    podiums = self.race_manager.get_podium_by_award_category(dist_id, top_n=top_n)
+                    results_by_gender = self.race_manager.get_results_by_gender(dist_id, only_finished=True)
+
+                    total_finished = sum(
+                        len(v) for v in results_by_gender.values()
+                    )
+                    if total_finished == 0 and not any(
+                        len(p) > 0 for p in (podiums or {}).values()
+                    ):
+                        continue  # Distancia sin finalizados, saltar
+
+                    exported_any = True
+                    separator = "=" * 60
+                    writer.writerow([separator])
+                    writer.writerow([f"DISTANCIA: {distance.name}  ({dist_id})"])
+                    writer.writerow([separator])
+                    writer.writerow([])
+
+                    # Podios por categoría de premiación
+                    if podiums:
+                        writer.writerow(["PODIOS POR CATEGORÍA DE PREMIACIÓN"])
+                        writer.writerow(["Posición", "Dorsal", "Nombre", "Tiempo", "Género", "Edad", "Equipo", "Categoría Premiación"])
+                        for award_cat_id, podium in sorted(podiums.items()):
+                            award_cat = self.race_manager.get_award_category(award_cat_id)
+                            if not award_cat or not podium:
+                                continue
+                            for position, result in podium:
+                                gender_map = {"M": "Masculino", "F": "Femenino", "O": "Otro"}
+                                age = result.athlete.get_age()
+                                writer.writerow([
+                                    position,
+                                    result.athlete.bib_number,
+                                    result.athlete.name,
+                                    result.get_formatted_time(),
+                                    gender_map.get(result.athlete.gender, "N/D"),
+                                    age if age is not None else "N/D",
+                                    result.athlete.team or "",
+                                    award_cat.name,
+                                ])
+                        writer.writerow([])
+
+                    # General por género
+                    writer.writerow(["CLASIFICACIÓN GENERAL POR GÉNERO"])
+                    writer.writerow(["Pos", "Dorsal", "Nombre", "Tiempo", "Género", "Edad", "Equipo"])
+                    for gender_key, gender_label in [("M", "Masculino"), ("F", "Femenino"), ("O", "No Binario")]:
+                        gender_results = results_by_gender.get(gender_key, [])
+                        for pos, result in enumerate(gender_results[:top_n], 1):
+                            age = result.athlete.get_age()
+                            writer.writerow([
+                                pos,
+                                result.athlete.bib_number,
+                                result.athlete.name,
+                                result.get_formatted_time(),
+                                gender_label,
+                                age if age is not None else "N/D",
+                                result.athlete.team or "",
+                            ])
+                    writer.writerow([])
+
+                if not exported_any:
+                    QMessageBox.warning(self, "Sin datos", "Ninguna distancia tiene finalizados aún")
+                    return
+
+            QMessageBox.information(self, "Éxito", f"Podios exportados a:\n{file_path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error exportando:\n{str(e)}")
+            logger.error(f"Error en export_all_podiums_to_csv: {e}", exc_info=True)
 
     def export_pdf_general(self):
         """Exportar clasificación general a PDF"""
