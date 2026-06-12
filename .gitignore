@@ -18,6 +18,9 @@ Timing/
 # OS
 .DS_Store
 Thumbs.db
+# Exported PDFs
+*.pdf
+
 # Local race data
 data/*.json
 data/*.bak
