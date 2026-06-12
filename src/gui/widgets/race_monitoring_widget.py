@@ -994,14 +994,15 @@ class RaceMonitoringWidget(QWidget):
             logger.error(f"Error en export_all_podiums_to_csv: {e}", exc_info=True)
 
     def _get_event_name(self):
-        """Obtiene el nombre del evento desde el tab de configuración"""
+        """Obtiene el nombre del evento desde el agente configurado (.szconfig)"""
         try:
             main_window = self.window()
             if hasattr(main_window, 'tab_manager'):
-                # La clave registrada en TabManager es 'events'
-                event_config_tab = main_window.tab_manager.get_tab('events')
-                if event_config_tab and hasattr(event_config_tab, 'event_name_input'):
-                    return event_config_tab.event_name_input.text() or "Carrera"
+                config_tab = main_window.tab_manager.get_tab('configuration')
+                if config_tab and hasattr(config_tab, 'cloud_agent_input'):
+                    name = config_tab.cloud_agent_input.text().strip()
+                    if name:
+                        return name
         except Exception:
             pass
         return "Carrera"
@@ -1125,22 +1126,9 @@ class RaceMonitoringWidget(QWidget):
                 QMessageBox.warning(self, "Sin resultados", "No hay resultados para exportar")
                 return
 
-            # Obtener nombre del evento desde el tab de configuración
-            event_name = "Carrera"
-            try:
-                # Buscar el tab de event_config en la ventana principal
-                main_window = self.window()
-                if hasattr(main_window, 'tab_manager'):
-                    event_config_tab = main_window.tab_manager.get_tab('event_config')
-                    if event_config_tab and hasattr(event_config_tab, 'event_name_input'):
-                        event_name = event_config_tab.event_name_input.text() or "Carrera"
-                        logger.info(f"  Nombre del evento: {event_name}")
-            except Exception as e:
-                logger.warning(f"  No se pudo obtener nombre del evento: {e}, usando 'Carrera'")
-
             # Crear exporter
             logger.info("  Creando PDFExporter...")
-            exporter = PDFExporter(event_name=event_name)
+            exporter = PDFExporter(event_name=self._get_event_name())
 
             # Obtener datos completos para el PDF estilo frontend
             results_by_gender = self.race_manager.get_results_by_gender(race_category_id, only_finished=True)
@@ -1219,18 +1207,7 @@ class RaceMonitoringWidget(QWidget):
             logger.info(f"  Masculino: {len(results_by_gender.get('M', []))}")
             logger.info(f"  Femenino: {len(results_by_gender.get('F', []))}")
 
-            # Obtener nombre del evento
-            event_name = "Carrera"
-            try:
-                main_window = self.window()
-                if hasattr(main_window, 'tab_manager'):
-                    event_config_tab = main_window.tab_manager.get_tab('event_config')
-                    if event_config_tab and hasattr(event_config_tab, 'event_name_input'):
-                        event_name = event_config_tab.event_name_input.text() or "Carrera"
-            except:
-                pass
-
-            exporter = PDFExporter(event_name=event_name)
+            exporter = PDFExporter(event_name=self._get_event_name())
             exporter.export_classification_by_gender(
                 distance_name=distance.name,
                 results_by_gender=results_by_gender,
@@ -1287,11 +1264,7 @@ class RaceMonitoringWidget(QWidget):
             # Obtener clasificación por categorías
             results_by_category = self.race_manager.get_results_by_award_category(race_category_id)
 
-            event_name = "Carrera"
-            if hasattr(self.parent(), 'event_name_input'):
-                event_name = self.parent().event_name_input.text() or "Carrera"
-
-            exporter = PDFExporter(event_name=event_name)
+            exporter = PDFExporter(event_name=self._get_event_name())
             exporter.export_classification_by_category(
                 distance_name=distance.name,
                 results_by_category=results_by_category,
@@ -1347,11 +1320,7 @@ class RaceMonitoringWidget(QWidget):
             # Obtener resultados
             results = self.race_manager.get_results(race_category_id)
 
-            event_name = "Carrera"
-            if hasattr(self.parent(), 'event_name_input'):
-                event_name = self.parent().event_name_input.text() or "Carrera"
-
-            exporter = PDFExporter(event_name=event_name)
+            exporter = PDFExporter(event_name=self._get_event_name())
             exporter.export_announcer_format(
                 distance_name=distance.name,
                 results=results,
