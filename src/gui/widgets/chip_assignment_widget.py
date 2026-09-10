@@ -1355,9 +1355,12 @@ class ChipAssignmentWidget(QWidget):
                                 f"No se pudo leer api_config.json:\n{e}")
             return
 
-        api_url  = config.get('api_url',  '').rstrip('/')
-        api_key  = config.get('api_key',  '')
-        event_id = config.get('event_id', '')
+        # El .szconfig se guarda bajo "cloud". Se mantiene compatibilidad
+        # con el formato plano usado por versiones anteriores.
+        cloud_config = config.get('cloud') or config
+        api_url  = cloud_config.get('api_url',  '').rstrip('/')
+        api_key  = cloud_config.get('api_key',  '') or cloud_config.get('token', '')
+        event_id = cloud_config.get('event_id', '')
 
         if not api_url or not event_id:
             QMessageBox.critical(self, "Configuración incompleta",

@@ -3,12 +3,14 @@
 
 # GUI Framework - OBLIGATORIO
 PyQt6==6.6.1
+PyQt6-Qt6==6.6.1
 
 # Comunicación serial (USB) - OBLIGATORIO para YR9011
 pyserial==3.5
 
 # HTTP requests - OBLIGATORIO para sincronización con backend
 requests==2.31.0
+aiohttp>=3.10,<4
 
 # Comunicación y colores en consola - OBLIGATORIO
 colorama==0.4.6

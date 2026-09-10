@@ -19,6 +19,14 @@ from src.core.race_tracking.models import Athlete, RaceDistance
 logger = logging.getLogger(__name__)
 
 
+def normalize_api_url(api_url: str) -> str:
+    """Return the backend origin expected by the /api hardware routes."""
+    normalized = api_url.strip().rstrip('/')
+    if normalized.endswith('/api/v1'):
+        normalized = normalized[:-len('/api/v1')]
+    return normalized
+
+
 class AthleteImporter:
     """
     Importador de atletas desde sistema web de pre-registro
@@ -52,7 +60,7 @@ class AthleteImporter:
             api_url: URL del backend Cloud Run (ej: "https://api.run.app")
             api_key: API key para autenticación (opcional)
         """
-        self.api_url = api_url.rstrip('/')
+        self.api_url = normalize_api_url(api_url)
         self.api_key = api_key
         self.session = requests.Session()
 
