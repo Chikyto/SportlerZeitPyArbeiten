@@ -1515,165 +1515,252 @@ class ChipAssignmentWidget(QWidget):
         return 1.0  # valor mínimo válido si no se puede inferir
 
     def import_assignments_from_csv(self):
-        """Importar asignaciones de chips desde CSV externo"""
-        from PyQt6.QtWidgets import QFileDialog
+        """Importar asignaciones de chips desde CSV externo (con pre-validación)"""
+        from PyQt6.QtWidgets import QFileDialog, QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
         import csv
 
-        # Seleccionar archivo
+        # ── 1. Seleccionar archivo ──────────────────────────────────────────
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Seleccionar CSV con Asignaciones",
+            "Seleccionar CSV con Asignaciones o Inscriptos",
             "",
             "CSV Files (*.csv);;All Files (*)"
         )
-
         if not file_path:
             return
 
         try:
+            # ── 2. Leer y analizar sin importar todavía ─────────────────────
+            with open(file_path, 'r', encoding='utf-8') as f:
+                rows = list(csv.DictReader(f))
+
+            if not rows:
+                QMessageBox.warning(self, "CSV vacío", "El archivo no contiene filas de datos.")
+                return
+
+            fieldnames = list(rows[0].keys())
+
+            # Detectar formato
+            is_web_export = 'N° Pecho' in fieldnames and 'Dorsal' not in fieldnames
+            if not is_web_export and not all(c in fieldnames for c in ['Dorsal', 'Chip RFID']):
+                raise ValueError(
+                    f"El CSV debe tener las columnas: Dorsal, Chip RFID\n"
+                    f"Columnas encontradas: {', '.join(fieldnames)}\n\n"
+                    f"Si es un CSV de inscriptos web, asegurate de que tenga la columna 'N° Pecho'."
+                )
+
+            def _full_name(row):
+                nombre = row.get('Nombre', '').strip()
+                apellido = row.get('Apellido', '').strip()
+                return f"{nombre} {apellido}".strip() if apellido else nombre
+
+            # ── 3. Análisis previo ──────────────────────────────────────────
+            sin_dorsal    = []   # filas sin número de pecho
+            sin_chip      = []   # filas sin chip asignado
+            ya_existentes = []   # (dorsal, nombre, distancia) que ya están cargados
+            nuevos        = []   # que se crearían
+            dorsal_invalido = [] # no se puede parsear como número
+
+            existing_athletes_set = set()  # (bib, dist_id)
+            for dist in self.race_manager.get_all_distances():
+                for a in dist.participants:
+                    existing_athletes_set.add((a.bib_number, dist.distance_id))
+
+            for row in rows:
+                bib_col = 'N° Pecho' if is_web_export else 'Dorsal'
+                dorsal_raw = row.get(bib_col, '').strip()
+                nombre = _full_name(row)
+                distancia = row.get('Distancia', '').strip()
+                dist_id_csv = distancia.upper().replace(' ', '_') if distancia else None
+                chip_id = row.get('Chip RFID', '').strip()
+
+                if not dorsal_raw:
+                    sin_dorsal.append(nombre or '(sin nombre)')
+                    continue
+
+                try:
+                    dorsal_num = int(dorsal_raw)
+                except ValueError:
+                    dorsal_invalido.append(dorsal_raw)
+                    continue
+
+                if not chip_id:
+                    sin_chip.append(f"#{dorsal_num} {nombre}")
+
+                # ¿Ya existe?
+                key = (dorsal_num, dist_id_csv)
+                if dist_id_csv and key in existing_athletes_set:
+                    ya_existentes.append(f"#{dorsal_num} {nombre} ({distancia})")
+                elif not dist_id_csv:
+                    # sin distancia en CSV: buscar en todos
+                    if any(bib == dorsal_num for bib, _ in existing_athletes_set):
+                        ya_existentes.append(f"#{dorsal_num} {nombre}")
+                    else:
+                        nuevos.append(f"#{dorsal_num} {nombre}")
+                else:
+                    nuevos.append(f"#{dorsal_num} {nombre} ({distancia})")
+
+            # ── 4. Mostrar resumen y pedir confirmación ─────────────────────
+            hay_existentes = bool(self.race_manager.get_all_distances())
+            formato_label = "exportación web (N° Pecho)" if is_web_export else "asignación de chips (Dorsal/Chip RFID)"
+
+            resumen = f"ANÁLISIS DEL CSV\n{'─'*40}\n"
+            resumen += f"Formato detectado: {formato_label}\n"
+            resumen += f"Total de filas: {len(rows)}\n\n"
+
+            resumen += f"✅ Atletas nuevos a importar: {len(nuevos)}\n"
+            if nuevos[:5]:
+                resumen += "   " + "\n   ".join(nuevos[:5])
+                if len(nuevos) > 5:
+                    resumen += f"\n   ... y {len(nuevos)-5} más"
+                resumen += "\n"
+            resumen += "\n"
+
+            if ya_existentes:
+                resumen += f"⏭️  Ya cargados (se actualizará SOLO el chip si cambió): {len(ya_existentes)}\n"
+                resumen += "   " + "\n   ".join(ya_existentes[:5])
+                if len(ya_existentes) > 5:
+                    resumen += f"\n   ... y {len(ya_existentes)-5} más"
+                resumen += "\n\n"
+
+            if sin_chip:
+                resumen += f"⚠️  Sin chip asignado ({len(sin_chip)}) — se importarán sin chip:\n"
+                resumen += "   " + "\n   ".join(sin_chip[:5])
+                if len(sin_chip) > 5:
+                    resumen += f"\n   ... y {len(sin_chip)-5} más"
+                resumen += "\n\n"
+
+            if sin_dorsal:
+                resumen += f"❌ Sin dorsal ({len(sin_dorsal)}) — se OMITIRÁN:\n"
+                resumen += "   " + "\n   ".join(sin_dorsal[:5])
+                if len(sin_dorsal) > 5:
+                    resumen += f"\n   ... y {len(sin_dorsal)-5} más"
+                resumen += "\n\n"
+
+            if dorsal_invalido:
+                resumen += f"❌ Dorsal no numérico ({len(dorsal_invalido)}) — se OMITIRÁN:\n"
+                resumen += "   " + ", ".join(dorsal_invalido[:10])
+                resumen += "\n\n"
+
+            if hay_existentes:
+                resumen += "ℹ️  Atletas ya cargados NO se sobreescribirán.\n"
+                resumen += "    Solo se actualizará el chip si el CSV trae uno nuevo.\n"
+
+            # Diálogo de confirmación con el resumen
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Confirmar importación")
+            dlg.setMinimumWidth(520)
+            vbox = QVBoxLayout(dlg)
+            txt = QTextEdit()
+            txt.setReadOnly(True)
+            txt.setPlainText(resumen)
+            txt.setMinimumHeight(300)
+            vbox.addWidget(txt)
+            btns = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+            )
+            btns.button(QDialogButtonBox.StandardButton.Ok).setText("Importar")
+            btns.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
+            btns.accepted.connect(dlg.accept)
+            btns.rejected.connect(dlg.reject)
+            vbox.addWidget(btns)
+
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            # ── 5. Importar ─────────────────────────────────────────────────
             updated = 0
             not_found = 0
             errors = []
 
-            with open(file_path, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                fieldnames = reader.fieldnames or []
+            for row in rows:
+                bib_col = 'N° Pecho' if is_web_export else 'Dorsal'
+                dorsal_raw = row.get(bib_col, '').strip()
+                if not dorsal_raw:
+                    continue
+                try:
+                    dorsal_num = int(dorsal_raw)
+                except ValueError:
+                    errors.append(f"Dorsal inválido: {dorsal_raw}")
+                    continue
 
-                # Detectar formato: asignación de chips vs. exportación de inscriptos web
-                # Formato asignación: Dorsal, Chip RFID
-                # Formato web:        N° Pecho (bib), sin columna Chip RFID
-                is_web_export = 'N° Pecho' in fieldnames and 'Dorsal' not in fieldnames
+                nombre = _full_name(row)
+                distancia = row.get('Distancia', '').strip()
+                dist_id_csv = distancia.upper().replace(' ', '_') if distancia else None
+                chip_id = row.get('Chip RFID', '').strip()
 
-                if not is_web_export:
-                    required_cols = ['Dorsal', 'Chip RFID']
-                    if not all(col in fieldnames for col in required_cols):
-                        raise ValueError(
-                            f"El CSV debe tener las columnas: {', '.join(required_cols)}\n"
-                            f"Columnas encontradas: {', '.join(fieldnames)}\n\n"
-                            f"Si este es un CSV exportado desde la plataforma web,\n"
-                            f"asegurate de que tenga la columna 'N° Pecho'."
-                        )
-
-                # Nombre completo: puede estar en 'Nombre' (solo) o en 'Nombre'+'Apellido'
-                def _get_nombre(row):
-                    nombre = row.get('Nombre', '').strip()
-                    apellido = row.get('Apellido', '').strip()
-                    if apellido:
-                        return f"{nombre} {apellido}".strip()
-                    return nombre
-
-                for row in reader:
-                    if is_web_export:
-                        dorsal = row.get('N° Pecho', '').strip()
-                        chip_id = row.get('Chip RFID', '').strip()  # puede no existir
-                        if not row.get('Nombre') and not dorsal:
-                            continue  # fila vacía
-                        # Poblar 'Nombre' combinado para el bloque de creación de atletas
-                        row['Nombre'] = _get_nombre(row)
-                    else:
-                        dorsal = row.get('Dorsal', '').strip()
-                        chip_id = row.get('Chip RFID', '').strip()
-                        row['Nombre'] = _get_nombre(row)
-
-                    if not dorsal:
+                # Buscar atleta existente
+                found = False
+                for category in self.race_manager.get_all_categories():
+                    if dist_id_csv and category.distance_id != dist_id_csv:
                         continue
-
-                    try:
-                        dorsal_num = int(dorsal)
-                    except ValueError:
-                        errors.append(f"Dorsal inválido: {dorsal}")
-                        continue
-
-                    nombre    = row.get('Nombre', '').strip()
-                    distancia = row.get('Distancia', '').strip()
-                    dist_id_csv = distancia.upper().replace(' ', '_') if distancia else None
-
-                    # Buscar atleta por dorsal — priorizar la distancia del CSV si está disponible
-                    found = False
-                    for category in self.race_manager.get_all_categories():
-                        # Si el CSV tiene distancia, solo buscar en esa distancia
-                        if dist_id_csv and category.distance_id != dist_id_csv:
-                            continue
-                        for athlete in category.participants:
-                            if athlete.bib_number == dorsal_num:
-                                # Verificar que el chip no esté usado
-                                chip_in_use = False
-                                for cat in self.race_manager.get_all_categories():
-                                    for ath in cat.participants:
-                                        if ath.tag_id == chip_id and ath.athlete_id != athlete.athlete_id:
-                                            chip_in_use = True
-                                            break
-                                    if chip_in_use:
-                                        break
-
-                                if not chip_id:
-                                    # Sin chip en el CSV — atleta ya existe, nada que actualizar
-                                    updated += 1
-                                elif chip_in_use:
-                                    errors.append(f"Chip {chip_id} ya asignado a otro atleta")
+                    for athlete in category.participants:
+                        if athlete.bib_number == dorsal_num:
+                            # Actualizar SOLO el chip si el CSV trae uno nuevo y no está en uso
+                            if chip_id and chip_id != athlete.tag_id:
+                                chip_in_use = any(
+                                    a.tag_id == chip_id and a.athlete_id != athlete.athlete_id
+                                    for d in self.race_manager.get_all_distances()
+                                    for a in d.participants
+                                )
+                                if chip_in_use:
+                                    errors.append(f"Chip {chip_id} ya asignado a otro atleta (#{dorsal_num})")
                                 else:
                                     athlete.tag_id = chip_id
-                                    updated += 1
-                                    logger.info(f"✓ Chip {chip_id} asignado a {athlete.name} (#{dorsal_num})")
-
-                                found = True
-                                break
-                        if found:
-                            break
-
-                    if not found:
-
-                        if not nombre:
-                            not_found += 1
-                            errors.append(f"Dorsal {dorsal_num}: no encontrado y sin columna Nombre para crear el atleta")
-                            continue
-
-                        try:
-                            from src.core.race_tracking.models import Athlete, RaceDistance
-                            from datetime import date
-
-                            dist_id = dist_id_csv or 'GENERAL'
-
-                            # Buscar distancia existente o crearla
-                            target_dist = self.race_manager.get_distance(dist_id)
-                            if target_dist is None:
-                                meters = self._distance_meters(dist_id)
-                                target_dist = RaceDistance(
-                                    distance_id=dist_id,
-                                    name=distancia or 'General',
-                                    distance_meters=meters,
-                                    expected_checkpoints=0,
-                                )
-                                self.race_manager.add_distance(target_dist)
-                                logger.info(f"✚ Distancia creada automáticamente: {distancia}")
-
-                            # Parsear fecha de nacimiento si está disponible
-                            birth_date = None
-                            fecha_str = row.get('Fecha Nacimiento', '').strip()
-                            if fecha_str:
-                                for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y'):
-                                    try:
-                                        from datetime import datetime as _dt
-                                        birth_date = _dt.strptime(fecha_str, fmt).date()
-                                        break
-                                    except ValueError:
-                                        pass
-
-                            new_athlete = Athlete(
-                                bib_number=dorsal_num,
-                                name=nombre,
-                                tag_id=chip_id if chip_id else None,
-                                distance_id=dist_id,
-                                gender=row.get('Género', '').strip() or None,
-                                birth_date=birth_date,
-                            )
-                            target_dist.add_participant(new_athlete)
+                                    logger.info(f"✓ Chip actualizado: {chip_id} → {athlete.name} (#{dorsal_num})")
                             updated += 1
-                            logger.info(f"✚ Atleta creado desde CSV: {nombre} (#{dorsal_num}) distancia={distancia} chip={chip_id}")
+                            found = True
+                            break
+                    if found:
+                        break
 
-                        except Exception as e:
-                            not_found += 1
-                            errors.append(f"Error creando atleta dorsal {dorsal_num}: {e}")
+                if not found:
+                    if not nombre:
+                        not_found += 1
+                        errors.append(f"Dorsal {dorsal_num}: no encontrado y sin nombre para crear atleta")
+                        continue
+                    try:
+                        from src.core.race_tracking.models import Athlete, RaceDistance
+
+                        dist_id = dist_id_csv or 'GENERAL'
+                        target_dist = self.race_manager.get_distance(dist_id)
+                        if target_dist is None:
+                            meters = self._distance_meters(dist_id)
+                            target_dist = RaceDistance(
+                                distance_id=dist_id,
+                                name=distancia or 'General',
+                                distance_meters=meters,
+                                expected_checkpoints=0,
+                            )
+                            self.race_manager.add_distance(target_dist)
+                            logger.info(f"✚ Distancia creada: {distancia}")
+
+                        birth_date = None
+                        fecha_str = row.get('Fecha Nacimiento', '').strip()
+                        if fecha_str:
+                            for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y'):
+                                try:
+                                    from datetime import datetime as _dt
+                                    birth_date = _dt.strptime(fecha_str, fmt).date()
+                                    break
+                                except ValueError:
+                                    pass
+
+                        new_athlete = Athlete(
+                            bib_number=dorsal_num,
+                            name=nombre,
+                            tag_id=chip_id if chip_id else None,
+                            distance_id=dist_id,
+                            gender=row.get('Género', '').strip() or None,
+                            birth_date=birth_date,
+                        )
+                        target_dist.add_participant(new_athlete)
+                        updated += 1
+                        logger.info(f"✚ Atleta creado: {nombre} (#{dorsal_num}) dist={distancia} chip={chip_id or '-'}")
+
+                    except Exception as e:
+                        not_found += 1
+                        errors.append(f"Error creando atleta #{dorsal_num}: {e}")
 
             # Actualizar tabla y guardar
             self.refresh_athletes_table()
@@ -1682,30 +1769,23 @@ class ChipAssignmentWidget(QWidget):
             self.update_stats()
             self.auto_save_data()
 
-            # Mostrar resultado
-            msg = f"✅ Importación completada:\n\n"
-            msg += f"• Atletas procesados: {updated}\n"
-            if not_found > 0:
-                msg += f"• Errores: {not_found}\n"
+            msg = f"✅ Importación completada:\n\n• Procesados: {updated}\n"
+            if not_found:
+                msg += f"• Errores/omitidos: {not_found}\n"
             if errors:
-                msg += f"\n⚠️ Advertencias:\n"
-                msg += '\n'.join(errors[:5])
-                if len(errors) > 5:
-                    msg += f"\n... y {len(errors) - 5} más"
+                msg += f"\n⚠️ Detalles:\n" + '\n'.join(errors[:8])
+                if len(errors) > 8:
+                    msg += f"\n... y {len(errors)-8} más"
 
             if updated > 0:
                 QMessageBox.information(self, "Importación Completada", msg)
             else:
                 QMessageBox.warning(self, "Sin Cambios", msg)
 
-            logger.info(f"✅ Importación de asignaciones: {updated} actualizados, {not_found} no encontrados")
+            logger.info(f"✅ CSV import: {updated} procesados, {not_found} omitidos")
 
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Error importando asignaciones:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Error", f"Error importando asignaciones:\n{str(e)}")
             logger.error(f"❌ Error importando asignaciones: {e}")
             import traceback
             traceback.print_exc()
