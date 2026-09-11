@@ -149,6 +149,13 @@ class LocalReaderScanner(QObject):
 
                 elif msg_type in ("error", "disconnected"):
                     logger.warning(f"⚠️ Servicio reportó: {msg}")
+                    # Si el servicio informa que el lector físico no está conectado,
+                    # actualizar el estado para que el UI muestre naranja
+                    err_msg = msg.get("message", "").lower()
+                    if "no conectado" in err_msg or "not connected" in err_msg or msg_type == "disconnected":
+                        if self.reader_ready:
+                            self.reader_ready = False
+                            self.status_changed.emit(False)
 
         except Exception as e:
             if self.scanning:

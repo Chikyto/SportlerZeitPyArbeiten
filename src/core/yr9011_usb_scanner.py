@@ -419,6 +419,13 @@ class YR9011USBScanner(QObject):
 
                 time.sleep(0.05)
 
+            except serial.SerialException as e:
+                # Desconexión física del puerto COM
+                logger.error(f"❌ Lector USB desconectado: {e}")
+                self.connected = False
+                self.scanning = False
+                self.error_occurred.emit(f"Lector desconectado: {e}")
+                break
             except Exception as e:
                 logger.error(f"Error en loop de lectura: {e}")
                 time.sleep(1)

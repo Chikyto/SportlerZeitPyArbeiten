@@ -455,7 +455,10 @@ class ChipAssignmentWidget(QWidget):
     def on_usb_scanner_error(self, error_msg: str):
         """Manejar errores del lector USB"""
         logger.error(f"❌ Error lector USB: {error_msg}")
-        self.usb_status_label.setText(f"⚠️ {error_msg[:40]}...")
+        if "desconectado" in error_msg.lower() or "disconnected" in error_msg.lower():
+            self.usb_status_label.setText("📴 Lector USB desconectado")
+        else:
+            self.usb_status_label.setText(f"⚠️ {error_msg[:40]}")
         self.usb_status_label.setStyleSheet("color: #f59e0b; font-size: 11px; margin-left: 20px;")
 
     def connect_local_scanner(self):
