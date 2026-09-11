@@ -1355,9 +1355,10 @@ class ChipAssignmentWidget(QWidget):
                                 f"No se pudo leer api_config.json:\n{e}")
             return
 
-        api_url  = config.get('api_url',  '').rstrip('/')
-        api_key  = config.get('api_key',  '')
-        event_id = config.get('event_id', '')
+        cloud = config.get('cloud', config)
+        api_url  = (cloud.get('api_url',  '') or config.get('api_url',  '')).rstrip('/')
+        api_key  = cloud.get('api_key',  '') or cloud.get('token', '') or config.get('api_key', '')
+        event_id = cloud.get('event_id', '') or config.get('event_id', '')
 
         if not api_url or not event_id:
             QMessageBox.critical(self, "Configuración incompleta",
@@ -1426,10 +1427,14 @@ class ChipAssignmentWidget(QWidget):
                                 pass
                 else:
                     info = distance_map.get(dist_id, {})
+                    d_meters = info.get('distance_m', 0) or self._distance_meters(dist_id)
+                    if not d_meters:
+                        logger.warning(f"⚠️  No se pudo inferir distance_meters para '{dist_id}', usando 1000m por defecto")
+                        d_meters = 1000.0
                     distance = RaceDistance(
                         distance_id=dist_id,
                         name=info.get('name', dist_id.upper()),
-                        distance_meters=info.get('distance_m', 0),
+                        distance_meters=d_meters,
                         expected_checkpoints=0,
                         participants=athletes,
                         start_time=None,
