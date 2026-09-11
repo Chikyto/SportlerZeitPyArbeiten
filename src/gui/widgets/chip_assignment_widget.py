@@ -1864,13 +1864,33 @@ class ChipAssignmentWidget(QWidget):
                             tag = chip_id
                             chips_asignados.add(chip_id)
 
+                    # Construir notes igual que el web import
+                    notes_parts = []
+                    if birth_date:
+                        from datetime import date as _date
+                        age = (_date.today() - birth_date).days // 365
+                        notes_parts.append(f"Edad: {age}")
+                    gender_val = row.get('Género', '').strip()
+                    if gender_val:
+                        notes_parts.append(f"Género: {gender_val}")
+                    if row.get('DNI', '').strip():
+                        notes_parts.append(f"DNI: {row['DNI'].strip()}")
+                    if row.get('Email', '').strip():
+                        notes_parts.append(f"Email: {row['Email'].strip()}")
+                    if row.get('Teléfono', '').strip():
+                        notes_parts.append(f"Tel: {row['Teléfono'].strip()}")
+                    pago = row.get('Estado Pago', '').strip()
+                    if pago:
+                        notes_parts.append(f"Pago: {pago}")
+
                     new_athlete = Athlete(
                         bib_number=dorsal_num,
                         name=nombre,
                         tag_id=tag,
                         distance_id=target_dist.distance_id,
-                        gender=row.get('Género', '').strip() or None,
+                        gender=gender_val or None,
                         birth_date=birth_date,
+                        notes=" | ".join(notes_parts) if notes_parts else None,
                     )
                     target_dist.add_participant(new_athlete)
                     updated += 1
