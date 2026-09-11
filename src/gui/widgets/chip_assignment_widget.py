@@ -862,18 +862,18 @@ class ChipAssignmentWidget(QWidget):
         logger.debug(f"📡 Tag detectado: {chip_id} (modo escaneo: {self.scan_mode}, "
                      f"atleta: {self.selected_athlete.name if self.selected_athlete else 'Ninguno'})")
 
-        # Solo procesar si estamos en modo escaneo y hay atleta seleccionado
+        # Si hay un atleta seleccionado, asignar directamente aunque scan_mode esté apagado
+        # (el botón "Escanear Chip" es opcional; el chip llega y se asigna al atleta activo)
         if not self.scan_mode:
-            # Durante una carrera TODAS las lecturas pasan por acá además
-            # del cronometraje: ignorarlas en silencio (solo aviso visual)
-            logger.debug(f"Chip {chip_id} ignorado: modo escaneo no activo")
-            # Mostrar notificación visual AMARILLA (útil para ver qué chips hay sin asignar)
-            self.scan_status_label.setText(f"⚠️ Chip detectado ({chip_id}) pero modo escaneo NO activo")
-            self.scan_status_label.setStyleSheet("color: #f59e0b; font-weight: bold; font-size: 13px;")
-
-            # Auto-limpiar después de 5 segundos
-            QTimer.singleShot(5000, lambda: self.scan_status_label.setText(""))
-            return
+            if self.selected_athlete:
+                # Redirigir directamente al path de asignación
+                logger.info(f"📡 Chip {chip_id} → asignando a {self.selected_athlete.name} (scan_mode implícito)")
+            else:
+                # Sin atleta seleccionado — mostrar aviso y salir
+                self.scan_status_label.setText(f"📡 Chip detectado: {chip_id} — seleccioná un atleta para asignar")
+                self.scan_status_label.setStyleSheet("color: #f59e0b; font-weight: bold; font-size: 13px;")
+                QTimer.singleShot(4000, lambda: self.scan_status_label.setText(""))
+                return
 
         if not self.selected_athlete:
             logger.warning(f"⚠️  Chip {chip_id} detectado sin atleta seleccionado")
