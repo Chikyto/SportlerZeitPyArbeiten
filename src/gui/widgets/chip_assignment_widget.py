@@ -1537,18 +1537,43 @@ class ChipAssignmentWidget(QWidget):
 
             with open(file_path, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames or []
 
-                # Verificar que tenga las columnas necesarias
-                required_cols = ['Dorsal', 'Chip RFID']
-                if not all(col in reader.fieldnames for col in required_cols):
-                    raise ValueError(
-                        f"El CSV debe tener las columnas: {', '.join(required_cols)}\n"
-                        f"Columnas encontradas: {', '.join(reader.fieldnames)}"
-                    )
+                # Detectar formato: asignación de chips vs. exportación de inscriptos web
+                # Formato asignación: Dorsal, Chip RFID
+                # Formato web:        N° Pecho (bib), sin columna Chip RFID
+                is_web_export = 'N° Pecho' in fieldnames and 'Dorsal' not in fieldnames
+
+                if not is_web_export:
+                    required_cols = ['Dorsal', 'Chip RFID']
+                    if not all(col in fieldnames for col in required_cols):
+                        raise ValueError(
+                            f"El CSV debe tener las columnas: {', '.join(required_cols)}\n"
+                            f"Columnas encontradas: {', '.join(fieldnames)}\n\n"
+                            f"Si este es un CSV exportado desde la plataforma web,\n"
+                            f"asegurate de que tenga la columna 'N° Pecho'."
+                        )
+
+                # Nombre completo: puede estar en 'Nombre' (solo) o en 'Nombre'+'Apellido'
+                def _get_nombre(row):
+                    nombre = row.get('Nombre', '').strip()
+                    apellido = row.get('Apellido', '').strip()
+                    if apellido:
+                        return f"{nombre} {apellido}".strip()
+                    return nombre
 
                 for row in reader:
-                    dorsal = row.get('Dorsal', '').strip()
-                    chip_id = row.get('Chip RFID', '').strip()
+                    if is_web_export:
+                        dorsal = row.get('N° Pecho', '').strip()
+                        chip_id = row.get('Chip RFID', '').strip()  # puede no existir
+                        if not row.get('Nombre') and not dorsal:
+                            continue  # fila vacía
+                        # Poblar 'Nombre' combinado para el bloque de creación de atletas
+                        row['Nombre'] = _get_nombre(row)
+                    else:
+                        dorsal = row.get('Dorsal', '').strip()
+                        chip_id = row.get('Chip RFID', '').strip()
+                        row['Nombre'] = _get_nombre(row)
 
                     if not dorsal:
                         continue
