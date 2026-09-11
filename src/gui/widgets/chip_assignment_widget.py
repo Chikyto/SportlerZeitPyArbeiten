@@ -313,6 +313,13 @@ class ChipAssignmentWidget(QWidget):
         self.export_button.clicked.connect(self.save_assignments)
         bottom_buttons.addWidget(self.export_button)
 
+        self.delete_athlete_button = QPushButton("🗑 Eliminar Atleta")
+        self.delete_athlete_button.setToolTip("Elimina el atleta seleccionado de la lista")
+        self.delete_athlete_button.setStyleSheet("color: #dc2626;")
+        self.delete_athlete_button.setEnabled(False)
+        self.delete_athlete_button.clicked.connect(self.delete_selected_athlete)
+        bottom_buttons.addWidget(self.delete_athlete_button)
+
         self.clear_all_button = QPushButton("🗑️ Nuevo Evento")
         self.clear_all_button.setToolTip("Borra todos los atletas y chips. Usá esto antes de cargar un nuevo evento.")
         self.clear_all_button.setStyleSheet("color: #dc2626;")
@@ -661,7 +668,9 @@ class ChipAssignmentWidget(QWidget):
             self.manual_chip_input.setEnabled(False)
             self.assign_button.setEnabled(False)
             self.clear_button.setEnabled(False)
+            self.delete_athlete_button.setEnabled(False)
             return
+        self.delete_athlete_button.setEnabled(True)
 
         # Obtener ID del atleta
         row = self.athletes_table.currentRow()
@@ -1633,78 +1642,141 @@ class ChipAssignmentWidget(QWidget):
                 else:
                     nuevos.append(label)
 
-            # ── 4. Mostrar resumen y pedir confirmación ─────────────────────
+            # ── 4. Diálogo de selección interactiva ────────────────────────
+            from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+                                          QTableWidget, QTableWidgetItem, QCheckBox,
+                                          QDialogButtonBox, QTextEdit, QPushButton,
+                                          QHeaderView as _QHV)
+            from PyQt6.QtCore import Qt as _Qt
+
             formato_label = "exportación web (N° Pecho)" if is_web_export else "asignación de chips (Dorsal/Chip RFID)"
 
-            resumen = f"ANÁLISIS DEL CSV\n{'─'*40}\n"
-            resumen += f"Formato detectado: {formato_label}\n"
-            resumen += f"Total de filas: {len(rows)}\n\n"
+            # Construir filas para la tabla de selección
+            # Cada entrada: (checked_default, dorsal_num, nombre, distancia, chip_id, estado, row_original)
+            tabla_filas = []
+            for row in rows:
+                dorsal_raw = row.get(bib_col, '').strip()
+                if not dorsal_raw:
+                    continue
+                try:
+                    dorsal_num = int(dorsal_raw)
+                except ValueError:
+                    continue
+                nombre    = _full_name(row)
+                distancia = row.get('Distancia', '').strip()
+                chip_id   = row.get('Chip RFID', '').strip()
+                existing, _ = self._find_existing_athlete(dorsal_num, distancia)
+                estado = "Ya cargado" if existing else "Nuevo"
+                tabla_filas.append({
+                    'checked': True,
+                    'dorsal': dorsal_num,
+                    'nombre': nombre,
+                    'distancia': distancia,
+                    'chip': chip_id,
+                    'estado': estado,
+                    'row': row,
+                })
 
-            resumen += f"✅ Atletas NUEVOS a importar: {len(nuevos)}\n"
-            if nuevos:
-                resumen += "   " + "\n   ".join(nuevos[:8])
-                if len(nuevos) > 8:
-                    resumen += f"\n   ... y {len(nuevos)-8} más"
-                resumen += "\n"
-            resumen += "\n"
-
-            if ya_existentes:
-                resumen += f"⏭️  Ya cargados — NO se duplicarán ({len(ya_existentes)}):\n"
-                resumen += "   " + "\n   ".join(ya_existentes[:8])
-                if len(ya_existentes) > 8:
-                    resumen += f"\n   ... y {len(ya_existentes)-8} más"
-                resumen += "\n   (Solo se actualizará el chip si el CSV trae uno nuevo)\n\n"
-
-            if chip_duplicado:
-                resumen += f"🚫 CHIPS DUPLICADOS — se omitirá la asignación ({len(chip_duplicado)}):\n"
-                resumen += "   " + "\n   ".join(chip_duplicado[:8])
-                resumen += "\n\n"
-
-            if sin_chip:
-                resumen += f"⚠️  Sin chip asignado ({len(sin_chip)}) — se importan sin chip:\n"
-                resumen += "   " + "\n   ".join(sin_chip[:8])
-                if len(sin_chip) > 8:
-                    resumen += f"\n   ... y {len(sin_chip)-8} más"
-                resumen += "\n\n"
-
-            if sin_dorsal:
-                resumen += f"❌ Sin dorsal ({len(sin_dorsal)}) — se OMITIRÁN:\n"
-                resumen += "   " + "\n   ".join(sin_dorsal[:5])
-                if len(sin_dorsal) > 5:
-                    resumen += f"\n   ... y {len(sin_dorsal)-5} más"
-                resumen += "\n\n"
-
-            if dorsal_invalido:
-                resumen += f"❌ Dorsal no numérico ({len(dorsal_invalido)}) — se OMITIRÁN:\n"
-                resumen += "   " + ", ".join(dorsal_invalido[:10])
-                resumen += "\n\n"
-
-            if not nuevos and not ya_existentes:
-                resumen += "ℹ️  No hay atletas para procesar."
-            elif bool(self.race_manager.get_all_distances()):
-                resumen += "ℹ️  Los atletas ya cargados NO se sobreescribirán.\n"
-                resumen += "    Solo se actualiza el chip si cambia y no está en uso."
-
-            # Diálogo de confirmación
             dlg = QDialog(self)
-            dlg.setWindowTitle("Confirmar importación")
-            dlg.setMinimumWidth(540)
+            dlg.setWindowTitle("Seleccionar atletas a importar")
+            dlg.setMinimumSize(720, 520)
             vbox = QVBoxLayout(dlg)
-            txt = QTextEdit()
-            txt.setReadOnly(True)
-            txt.setPlainText(resumen)
-            txt.setMinimumHeight(320)
-            vbox.addWidget(txt)
+
+            # Advertencias arriba
+            advertencias = []
+            if chip_duplicado:
+                advertencias.append(f"🚫 Chips duplicados ({len(chip_duplicado)}): " + "; ".join(chip_duplicado[:3]))
+            if sin_chip:
+                advertencias.append(f"⚠️ Sin chip ({len(sin_chip)}): se importarán sin chip")
+            if sin_dorsal:
+                advertencias.append(f"❌ Sin dorsal ({len(sin_dorsal)}): se omitirán automáticamente")
+            if advertencias:
+                warn_lbl = QLabel("\n".join(advertencias))
+                warn_lbl.setStyleSheet("color: #b45309; background: #fef3c7; padding: 6px; border-radius: 4px;")
+                warn_lbl.setWordWrap(True)
+                vbox.addWidget(warn_lbl)
+
+            info_lbl = QLabel(
+                f"Formato: {formato_label} — {len(tabla_filas)} atletas encontrados.\n"
+                "Desmarcá los que no querés importar. Los 'Ya cargados' solo actualizarán el chip."
+            )
+            info_lbl.setWordWrap(True)
+            vbox.addWidget(info_lbl)
+
+            # Botones de selección rápida por distancia
+            dist_values = sorted({f['distancia'] for f in tabla_filas if f['distancia']})
+            if len(dist_values) > 1:
+                dist_bar = QHBoxLayout()
+                dist_bar.addWidget(QLabel("Distancia:"))
+                for dv in dist_values:
+                    btn = QPushButton(dv)
+                    btn.setCheckable(True)
+                    btn.setChecked(True)
+                    btn.setMaximumWidth(80)
+                    # closure: toggle all rows of this distance
+                    def _make_toggle(dist_name, button):
+                        def _toggle(checked):
+                            for i, fi in enumerate(tabla_filas):
+                                if fi['distancia'] == dist_name:
+                                    cb = sel_table.cellWidget(i, 0)
+                                    if cb:
+                                        cb.setChecked(checked)
+                                        fi['checked'] = checked
+                        button.toggled.connect(_toggle)
+                    _make_toggle(dv, btn)
+                    dist_bar.addWidget(btn)
+                dist_bar.addStretch()
+                vbox.addLayout(dist_bar)
+
+            # Tabla de selección
+            sel_table = QTableWidget(len(tabla_filas), 6)
+            sel_table.setHorizontalHeaderLabels(["✓", "Dorsal", "Nombre", "Distancia", "Chip RFID", "Estado"])
+            sel_table.horizontalHeader().setSectionResizeMode(2, _QHV.ResizeMode.Stretch)
+            sel_table.horizontalHeader().setSectionResizeMode(3, _QHV.ResizeMode.ResizeToContents)
+            sel_table.setAlternatingRowColors(True)
+            sel_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+            sel_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            sel_table.verticalHeader().setVisible(False)
+            sel_table.setMinimumHeight(280)
+
+            for i, fi in enumerate(tabla_filas):
+                cb = QCheckBox()
+                cb.setChecked(fi['checked'])
+                cb.setStyleSheet("margin-left: 8px;")
+                idx = i
+                def _on_check(state, ii=idx):
+                    tabla_filas[ii]['checked'] = bool(state)
+                cb.stateChanged.connect(_on_check)
+                sel_table.setCellWidget(i, 0, cb)
+                sel_table.setItem(i, 1, QTableWidgetItem(str(fi['dorsal'])))
+                sel_table.setItem(i, 2, QTableWidgetItem(fi['nombre']))
+                sel_table.setItem(i, 3, QTableWidgetItem(fi['distancia']))
+                sel_table.setItem(i, 4, QTableWidgetItem(fi['chip'] or '—'))
+                estado_item = QTableWidgetItem(fi['estado'])
+                if fi['estado'] == 'Ya cargado':
+                    estado_item.setForeground(_Qt.GlobalColor.darkGray)
+                else:
+                    estado_item.setForeground(_Qt.GlobalColor.darkGreen)
+                sel_table.setItem(i, 5, estado_item)
+
+            vbox.addWidget(sel_table)
+
             btns = QDialogButtonBox(
                 QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
             )
-            btns.button(QDialogButtonBox.StandardButton.Ok).setText("Importar")
+            btns.button(QDialogButtonBox.StandardButton.Ok).setText("Importar seleccionados")
             btns.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
             btns.accepted.connect(dlg.accept)
             btns.rejected.connect(dlg.reject)
             vbox.addWidget(btns)
 
             if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+
+            # Filtrar solo los marcados
+            rows_to_import = [fi['row'] for fi in tabla_filas if fi['checked']]
+            if not rows_to_import:
+                QMessageBox.information(self, "Sin selección", "No se seleccionó ningún atleta.")
                 return
 
             # ── 5. Importar ─────────────────────────────────────────────────
@@ -1719,7 +1791,7 @@ class ChipAssignmentWidget(QWidget):
                 if a.tag_id
             }
 
-            for row in rows:
+            for row in rows_to_import:
                 dorsal_raw = row.get(bib_col, '').strip()
                 if not dorsal_raw:
                     continue
@@ -2050,6 +2122,43 @@ class ChipAssignmentWidget(QWidget):
 
         except Exception as e:
             logger.error(f"❌ Error en auto-carga: {e}")
+
+    def delete_selected_athlete(self):
+        """Eliminar el atleta actualmente seleccionado en la tabla"""
+        if not self.race_manager or not self.selected_athlete:
+            return
+
+        athlete = self.selected_athlete
+        reply = QMessageBox.question(
+            self,
+            "Eliminar atleta",
+            f"¿Eliminár a {athlete.name} (#{athlete.bib_number}) de la lista?\n\n"
+            f"Esta acción no se puede deshacer.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Buscar la distancia que contiene al atleta y eliminarlo
+        removed = False
+        for dist in self.race_manager.get_all_distances():
+            for a in list(dist.participants):
+                if a.athlete_id == athlete.athlete_id:
+                    dist.participants.remove(a)
+                    removed = True
+                    logger.info(f"🗑 Atleta eliminado: {a.name} (#{a.bib_number}) de {dist.distance_id}")
+                    break
+            if removed:
+                break
+
+        if removed:
+            self.selected_athlete = None
+            self.delete_athlete_button.setEnabled(False)
+            self.refresh_athletes_table()
+            self.refresh_category_filter()
+            self.update_stats()
+            self.auto_save_data()
 
     def clear_all_data(self):
         """Limpiar todos los datos para comenzar una sesión nueva"""
