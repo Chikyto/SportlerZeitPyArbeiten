@@ -1514,6 +1514,30 @@ class ChipAssignmentWidget(QWidget):
 
         return 1.0  # valor mínimo válido si no se puede inferir
 
+    @staticmethod
+    def _norm_dist(dist_str: str) -> str:
+        """Normaliza un dist_id/nombre de distancia para comparación case-insensitive sin espacios."""
+        return (dist_str or '').strip().lower().replace(' ', '_').replace('-', '_')
+
+    def _find_existing_distance(self, dist_key: str):
+        """Busca una distancia existente comparando de forma normalizada. Retorna el objeto o None."""
+        key_norm = self._norm_dist(dist_key)
+        for d in self.race_manager.get_all_distances():
+            if self._norm_dist(d.distance_id) == key_norm or self._norm_dist(d.name) == key_norm:
+                return d
+        return None
+
+    def _find_existing_athlete(self, dorsal_num: int, dist_key: str):
+        """Busca un atleta por dorsal y distancia (comparación normalizada). Retorna (athlete, distance) o (None, None)."""
+        key_norm = self._norm_dist(dist_key) if dist_key else None
+        for d in self.race_manager.get_all_distances():
+            if key_norm and self._norm_dist(d.distance_id) != key_norm and self._norm_dist(d.name) != key_norm:
+                continue
+            for a in d.participants:
+                if a.bib_number == dorsal_num:
+                    return a, d
+        return None, None
+
     def import_assignments_from_csv(self):
         """Importar asignaciones de chips desde CSV externo (con pre-validación)"""
         from PyQt6.QtWidgets import QFileDialog, QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
@@ -1554,25 +1578,23 @@ class ChipAssignmentWidget(QWidget):
                 apellido = row.get('Apellido', '').strip()
                 return f"{nombre} {apellido}".strip() if apellido else nombre
 
-            # ── 3. Análisis previo ──────────────────────────────────────────
-            sin_dorsal    = []   # filas sin número de pecho
-            sin_chip      = []   # filas sin chip asignado
-            ya_existentes = []   # (dorsal, nombre, distancia) que ya están cargados
-            nuevos        = []   # que se crearían
-            dorsal_invalido = [] # no se puede parsear como número
+            bib_col = 'N° Pecho' if is_web_export else 'Dorsal'
 
-            existing_athletes_set = set()  # (bib, dist_id)
-            for dist in self.race_manager.get_all_distances():
-                for a in dist.participants:
-                    existing_athletes_set.add((a.bib_number, dist.distance_id))
+            # ── 3. Análisis previo ──────────────────────────────────────────
+            sin_dorsal      = []
+            sin_chip        = []
+            ya_existentes   = []
+            nuevos          = []
+            dorsal_invalido = []
+            chip_duplicado  = []  # chips que ya están asignados a otro atleta en el CSV
+
+            chips_en_csv = {}  # chip_id → primer dorsal que lo usa (detecta dupes dentro del CSV)
 
             for row in rows:
-                bib_col = 'N° Pecho' if is_web_export else 'Dorsal'
                 dorsal_raw = row.get(bib_col, '').strip()
-                nombre = _full_name(row)
-                distancia = row.get('Distancia', '').strip()
-                dist_id_csv = distancia.upper().replace(' ', '_') if distancia else None
-                chip_id = row.get('Chip RFID', '').strip()
+                nombre     = _full_name(row)
+                distancia  = row.get('Distancia', '').strip()
+                chip_id    = row.get('Chip RFID', '').strip()
 
                 if not dorsal_raw:
                     sin_dorsal.append(nombre or '(sin nombre)')
@@ -1586,48 +1608,63 @@ class ChipAssignmentWidget(QWidget):
 
                 if not chip_id:
                     sin_chip.append(f"#{dorsal_num} {nombre}")
-
-                # ¿Ya existe?
-                key = (dorsal_num, dist_id_csv)
-                if dist_id_csv and key in existing_athletes_set:
-                    ya_existentes.append(f"#{dorsal_num} {nombre} ({distancia})")
-                elif not dist_id_csv:
-                    # sin distancia en CSV: buscar en todos
-                    if any(bib == dorsal_num for bib, _ in existing_athletes_set):
-                        ya_existentes.append(f"#{dorsal_num} {nombre}")
-                    else:
-                        nuevos.append(f"#{dorsal_num} {nombre}")
                 else:
-                    nuevos.append(f"#{dorsal_num} {nombre} ({distancia})")
+                    # Chip duplicado dentro del propio CSV
+                    if chip_id in chips_en_csv and chips_en_csv[chip_id] != dorsal_num:
+                        chip_duplicado.append(
+                            f"Chip {chip_id} aparece en #{dorsal_num} y #{chips_en_csv[chip_id]}"
+                        )
+                    else:
+                        chips_en_csv[chip_id] = dorsal_num
+
+                    # Chip ya asignado a otro atleta en el sistema
+                    for d in self.race_manager.get_all_distances():
+                        for a in d.participants:
+                            if a.tag_id == chip_id and a.bib_number != dorsal_num:
+                                chip_duplicado.append(
+                                    f"Chip {chip_id} (#{dorsal_num} {nombre}) ya asignado a {a.name} (#{a.bib_number})"
+                                )
+
+                # ¿Ya existe en el sistema?
+                existing, _ = self._find_existing_athlete(dorsal_num, distancia)
+                label = f"#{dorsal_num} {nombre}" + (f" ({distancia})" if distancia else "")
+                if existing:
+                    ya_existentes.append(label)
+                else:
+                    nuevos.append(label)
 
             # ── 4. Mostrar resumen y pedir confirmación ─────────────────────
-            hay_existentes = bool(self.race_manager.get_all_distances())
             formato_label = "exportación web (N° Pecho)" if is_web_export else "asignación de chips (Dorsal/Chip RFID)"
 
             resumen = f"ANÁLISIS DEL CSV\n{'─'*40}\n"
             resumen += f"Formato detectado: {formato_label}\n"
             resumen += f"Total de filas: {len(rows)}\n\n"
 
-            resumen += f"✅ Atletas nuevos a importar: {len(nuevos)}\n"
-            if nuevos[:5]:
-                resumen += "   " + "\n   ".join(nuevos[:5])
-                if len(nuevos) > 5:
-                    resumen += f"\n   ... y {len(nuevos)-5} más"
+            resumen += f"✅ Atletas NUEVOS a importar: {len(nuevos)}\n"
+            if nuevos:
+                resumen += "   " + "\n   ".join(nuevos[:8])
+                if len(nuevos) > 8:
+                    resumen += f"\n   ... y {len(nuevos)-8} más"
                 resumen += "\n"
             resumen += "\n"
 
             if ya_existentes:
-                resumen += f"⏭️  Ya cargados (se actualizará SOLO el chip si cambió): {len(ya_existentes)}\n"
-                resumen += "   " + "\n   ".join(ya_existentes[:5])
-                if len(ya_existentes) > 5:
-                    resumen += f"\n   ... y {len(ya_existentes)-5} más"
+                resumen += f"⏭️  Ya cargados — NO se duplicarán ({len(ya_existentes)}):\n"
+                resumen += "   " + "\n   ".join(ya_existentes[:8])
+                if len(ya_existentes) > 8:
+                    resumen += f"\n   ... y {len(ya_existentes)-8} más"
+                resumen += "\n   (Solo se actualizará el chip si el CSV trae uno nuevo)\n\n"
+
+            if chip_duplicado:
+                resumen += f"🚫 CHIPS DUPLICADOS — se omitirá la asignación ({len(chip_duplicado)}):\n"
+                resumen += "   " + "\n   ".join(chip_duplicado[:8])
                 resumen += "\n\n"
 
             if sin_chip:
-                resumen += f"⚠️  Sin chip asignado ({len(sin_chip)}) — se importarán sin chip:\n"
-                resumen += "   " + "\n   ".join(sin_chip[:5])
-                if len(sin_chip) > 5:
-                    resumen += f"\n   ... y {len(sin_chip)-5} más"
+                resumen += f"⚠️  Sin chip asignado ({len(sin_chip)}) — se importan sin chip:\n"
+                resumen += "   " + "\n   ".join(sin_chip[:8])
+                if len(sin_chip) > 8:
+                    resumen += f"\n   ... y {len(sin_chip)-8} más"
                 resumen += "\n\n"
 
             if sin_dorsal:
@@ -1642,19 +1679,21 @@ class ChipAssignmentWidget(QWidget):
                 resumen += "   " + ", ".join(dorsal_invalido[:10])
                 resumen += "\n\n"
 
-            if hay_existentes:
-                resumen += "ℹ️  Atletas ya cargados NO se sobreescribirán.\n"
-                resumen += "    Solo se actualizará el chip si el CSV trae uno nuevo.\n"
+            if not nuevos and not ya_existentes:
+                resumen += "ℹ️  No hay atletas para procesar."
+            elif bool(self.race_manager.get_all_distances()):
+                resumen += "ℹ️  Los atletas ya cargados NO se sobreescribirán.\n"
+                resumen += "    Solo se actualiza el chip si cambia y no está en uso."
 
-            # Diálogo de confirmación con el resumen
+            # Diálogo de confirmación
             dlg = QDialog(self)
             dlg.setWindowTitle("Confirmar importación")
-            dlg.setMinimumWidth(520)
+            dlg.setMinimumWidth(540)
             vbox = QVBoxLayout(dlg)
             txt = QTextEdit()
             txt.setReadOnly(True)
             txt.setPlainText(resumen)
-            txt.setMinimumHeight(300)
+            txt.setMinimumHeight(320)
             vbox.addWidget(txt)
             btns = QDialogButtonBox(
                 QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -1669,98 +1708,105 @@ class ChipAssignmentWidget(QWidget):
                 return
 
             # ── 5. Importar ─────────────────────────────────────────────────
-            updated = 0
-            not_found = 0
-            errors = []
+            updated   = 0
+            skipped   = 0
+            errors    = []
+            # Chips ya asignados (de sistema + este CSV) para evitar duplicados
+            chips_asignados = {
+                a.tag_id
+                for d in self.race_manager.get_all_distances()
+                for a in d.participants
+                if a.tag_id
+            }
 
             for row in rows:
-                bib_col = 'N° Pecho' if is_web_export else 'Dorsal'
                 dorsal_raw = row.get(bib_col, '').strip()
                 if not dorsal_raw:
                     continue
                 try:
                     dorsal_num = int(dorsal_raw)
                 except ValueError:
-                    errors.append(f"Dorsal inválido: {dorsal_raw}")
                     continue
 
-                nombre = _full_name(row)
+                nombre    = _full_name(row)
                 distancia = row.get('Distancia', '').strip()
-                dist_id_csv = distancia.upper().replace(' ', '_') if distancia else None
-                chip_id = row.get('Chip RFID', '').strip()
+                chip_id   = row.get('Chip RFID', '').strip()
 
-                # Buscar atleta existente
-                found = False
-                for category in self.race_manager.get_all_categories():
-                    if dist_id_csv and category.distance_id != dist_id_csv:
-                        continue
-                    for athlete in category.participants:
-                        if athlete.bib_number == dorsal_num:
-                            # Actualizar SOLO el chip si el CSV trae uno nuevo y no está en uso
-                            if chip_id and chip_id != athlete.tag_id:
-                                chip_in_use = any(
-                                    a.tag_id == chip_id and a.athlete_id != athlete.athlete_id
-                                    for d in self.race_manager.get_all_distances()
-                                    for a in d.participants
-                                )
-                                if chip_in_use:
-                                    errors.append(f"Chip {chip_id} ya asignado a otro atleta (#{dorsal_num})")
-                                else:
-                                    athlete.tag_id = chip_id
-                                    logger.info(f"✓ Chip actualizado: {chip_id} → {athlete.name} (#{dorsal_num})")
-                            updated += 1
-                            found = True
-                            break
-                    if found:
-                        break
+                # Buscar atleta existente con comparación normalizada
+                existing, existing_dist = self._find_existing_athlete(dorsal_num, distancia)
 
-                if not found:
-                    if not nombre:
-                        not_found += 1
-                        errors.append(f"Dorsal {dorsal_num}: no encontrado y sin nombre para crear atleta")
-                        continue
-                    try:
-                        from src.core.race_tracking.models import Athlete, RaceDistance
-
-                        dist_id = dist_id_csv or 'GENERAL'
-                        target_dist = self.race_manager.get_distance(dist_id)
-                        if target_dist is None:
-                            meters = self._distance_meters(dist_id)
-                            target_dist = RaceDistance(
-                                distance_id=dist_id,
-                                name=distancia or 'General',
-                                distance_meters=meters,
-                                expected_checkpoints=0,
+                if existing:
+                    # Solo actualiza chip si hay uno nuevo, no está en uso, y no duplica
+                    if chip_id and chip_id != existing.tag_id:
+                        if chip_id in chips_asignados:
+                            errors.append(
+                                f"Chip {chip_id} ya en uso — no asignado a #{dorsal_num} {existing.name}"
                             )
-                            self.race_manager.add_distance(target_dist)
-                            logger.info(f"✚ Distancia creada: {distancia}")
+                        else:
+                            existing.tag_id = chip_id
+                            chips_asignados.add(chip_id)
+                            logger.info(f"✓ Chip actualizado: {chip_id} → {existing.name} (#{dorsal_num})")
+                    updated += 1
+                    continue
 
-                        birth_date = None
-                        fecha_str = row.get('Fecha Nacimiento', '').strip()
-                        if fecha_str:
-                            for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y'):
-                                try:
-                                    from datetime import datetime as _dt
-                                    birth_date = _dt.strptime(fecha_str, fmt).date()
-                                    break
-                                except ValueError:
-                                    pass
+                # Atleta nuevo — crear
+                if not nombre:
+                    skipped += 1
+                    errors.append(f"Dorsal {dorsal_num}: sin nombre, no se puede crear")
+                    continue
 
-                        new_athlete = Athlete(
-                            bib_number=dorsal_num,
-                            name=nombre,
-                            tag_id=chip_id if chip_id else None,
+                try:
+                    from src.core.race_tracking.models import Athlete, RaceDistance
+
+                    # Buscar distancia existente (normalizado) o crear una nueva
+                    target_dist = self._find_existing_distance(distancia) if distancia else None
+                    if target_dist is None:
+                        dist_id = self._norm_dist(distancia) if distancia else 'general'
+                        meters  = self._distance_meters(distancia or dist_id)
+                        target_dist = RaceDistance(
                             distance_id=dist_id,
-                            gender=row.get('Género', '').strip() or None,
-                            birth_date=birth_date,
+                            name=distancia or 'General',
+                            distance_meters=meters,
+                            expected_checkpoints=0,
                         )
-                        target_dist.add_participant(new_athlete)
-                        updated += 1
-                        logger.info(f"✚ Atleta creado: {nombre} (#{dorsal_num}) dist={distancia} chip={chip_id or '-'}")
+                        self.race_manager.add_distance(target_dist)
+                        logger.info(f"✚ Distancia creada: {distancia} (id={dist_id})")
 
-                    except Exception as e:
-                        not_found += 1
-                        errors.append(f"Error creando atleta #{dorsal_num}: {e}")
+                    birth_date = None
+                    fecha_str = row.get('Fecha Nacimiento', '').strip()
+                    if fecha_str:
+                        for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y'):
+                            try:
+                                from datetime import datetime as _dt
+                                birth_date = _dt.strptime(fecha_str, fmt).date()
+                                break
+                            except ValueError:
+                                pass
+
+                    # Verificar chip antes de asignar
+                    tag = None
+                    if chip_id:
+                        if chip_id in chips_asignados:
+                            errors.append(f"Chip {chip_id} duplicado — #{dorsal_num} {nombre} importado sin chip")
+                        else:
+                            tag = chip_id
+                            chips_asignados.add(chip_id)
+
+                    new_athlete = Athlete(
+                        bib_number=dorsal_num,
+                        name=nombre,
+                        tag_id=tag,
+                        distance_id=target_dist.distance_id,
+                        gender=row.get('Género', '').strip() or None,
+                        birth_date=birth_date,
+                    )
+                    target_dist.add_participant(new_athlete)
+                    updated += 1
+                    logger.info(f"✚ Atleta creado: {nombre} (#{dorsal_num}) dist={target_dist.distance_id} chip={tag or '-'}")
+
+                except Exception as e:
+                    skipped += 1
+                    errors.append(f"Error #{dorsal_num}: {e}")
 
             # Actualizar tabla y guardar
             self.refresh_athletes_table()
@@ -1770,19 +1816,19 @@ class ChipAssignmentWidget(QWidget):
             self.auto_save_data()
 
             msg = f"✅ Importación completada:\n\n• Procesados: {updated}\n"
-            if not_found:
-                msg += f"• Errores/omitidos: {not_found}\n"
+            if skipped:
+                msg += f"• Omitidos: {skipped}\n"
             if errors:
-                msg += f"\n⚠️ Detalles:\n" + '\n'.join(errors[:8])
-                if len(errors) > 8:
-                    msg += f"\n... y {len(errors)-8} más"
+                msg += f"\n⚠️ Detalles:\n" + '\n'.join(errors[:10])
+                if len(errors) > 10:
+                    msg += f"\n... y {len(errors)-10} más"
 
             if updated > 0:
                 QMessageBox.information(self, "Importación Completada", msg)
             else:
                 QMessageBox.warning(self, "Sin Cambios", msg)
 
-            logger.info(f"✅ CSV import: {updated} procesados, {not_found} omitidos")
+            logger.info(f"✅ CSV import: {updated} procesados, {skipped} omitidos")
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error importando asignaciones:\n{str(e)}")
