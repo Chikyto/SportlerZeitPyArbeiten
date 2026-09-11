@@ -386,6 +386,9 @@ class MainWindow(QMainWindow):
         # 🔥 Señal de auto-inicio de escaneo cuando se inician distancias
         self.signals.auto_start_scanning.connect(self.on_auto_start_scanning)
 
+        # ☁️ Señal de config de backend importada → recargar cloud_config
+        self.signals.backend_config_loaded.connect(self.on_backend_config_loaded)
+
         # 🎟️ Señal de atleta llegando a meta → mostrar ticket
         #self.signals.athlete_finished.connect(self.on_athlete_finished_show_ticket)
 
@@ -400,6 +403,13 @@ class MainWindow(QMainWindow):
         else:
             self.status_label.setText(f"✗ {message}")
             logger.warning(f"✗ {message}")
+
+    @pyqtSlot(str, str)
+    def on_backend_config_loaded(self, api_url, event_id):
+        """Recargar cloud_config después de importar un .szconfig"""
+        self.cloud_config = self._load_cloud_config()
+        self.update_status_indicators()
+        logger.info(f"☁️ cloud_config recargado — URL: {api_url} | evento: {event_id}")
 
     @pyqtSlot(dict)
     def on_tag_detected_for_race(self, tag_data):

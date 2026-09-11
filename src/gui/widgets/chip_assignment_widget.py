@@ -1356,7 +1356,7 @@ class ChipAssignmentWidget(QWidget):
             return
 
         cloud = config.get('cloud', config)
-        api_url  = (cloud.get('api_url',  '') or config.get('api_url',  '')).rstrip('/')
+        api_url  = (cloud.get('api_url',  '') or config.get('api_url',  '')).rstrip('/').removesuffix('/api/v1')
         api_key  = cloud.get('api_key',  '') or cloud.get('token', '') or config.get('api_key', '')
         event_id = cloud.get('event_id', '') or config.get('event_id', '')
 

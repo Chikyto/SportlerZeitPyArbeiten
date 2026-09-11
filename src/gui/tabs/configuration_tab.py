@@ -653,6 +653,10 @@ class ConfigurationTab(BaseTab):
             # Actualizar UI
             self._apply_cloud_config_to_ui(config)
 
+            # Notificar al main window para que recargue cloud_config
+            if self.signals and hasattr(self.signals, 'backend_config_loaded'):
+                self.signals.backend_config_loaded.emit(config['api_url'], config['event_id'])
+
             self.log(f"✅ Config importada: {config['api_url']} | evento: {config['event_id']} | agente: {config.get('agent_name', '-')}")
 
             QMessageBox.information(self, "Config importada",
