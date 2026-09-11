@@ -41,6 +41,7 @@ class AppSignals(QObject):
     scanning_started = pyqtSignal()
     scanning_stopped = pyqtSignal()
     scan_progress = pyqtSignal(int)
+    auto_start_scanning = pyqtSignal()  # 🔥 Nueva: Auto-iniciar escaneo cuando se inician distancias
     
     # Errores de scanning
     scanner_error = pyqtSignal(str)
@@ -53,6 +54,15 @@ class AppSignals(QObject):
     # ===== SEÑALES DE RESULTADOS =====
     result_calculated = pyqtSignal(dict)
     results_exported = pyqtSignal(str)
+
+    # ===== SEÑALES DE DETECCIÓN CON ATLETA RESUELTO =====
+    # tag_id, athlete_name, distance_name, bib_number
+    athlete_tag_resolved = pyqtSignal(str, str, str, str)
+    # athlete_name, distance_name, formatted_time
+    athlete_finished = pyqtSignal(str, str, str)
+
+    # Emitida cuando se carga un .szconfig: (event_name, event_id)
+    backend_config_loaded = pyqtSignal(str, str)
 
 
 # Singleton para uso global

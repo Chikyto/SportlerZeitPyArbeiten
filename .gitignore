@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+env/
+.venv/
+Timing/
+
+# Pip / build
+*.dist-info/
+*.egg-info/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+# Config con credenciales (no versionar)
+config/api_config.json
+
+# Exported PDFs
+*.pdf
+
+# Local race data
+data/*.json
+data/*.bak
+data/*.jsonl
+data/*.db
+data/*.db-wal
+data/*.db-shm

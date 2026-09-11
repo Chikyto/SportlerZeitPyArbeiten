@@ -81,15 +81,22 @@ class TagProcessor:
             
             # Convertir port a int si es necesario
             port = int(port) if isinstance(port, str) else port
-            
+
+            logger.debug(f"🔍 TagProcessor: Procesando tag {tag_number} del puerto {port}")
+            logger.debug(f"   Puertos configurados: {list(self.antenna_roles.keys())}")
+            logger.debug(f"   Puerto en antenna_roles? {port in self.antenna_roles}")
+
             # Verificar que el puerto esté configurado
             if port not in self.antenna_roles:
                 logger.warning(f"⚠️  Tag {tag_number} en puerto {port} no configurado")
                 logger.warning(f"Puertos configurados: {list(self.antenna_roles.keys())}")
+                logger.warning(f"Tipo del puerto detectado: {type(port)}")
+                logger.warning(f"Tipos de keys en antenna_roles: {[type(k) for k in self.antenna_roles.keys()]}")
                 return None
-            
+
             # Obtener roles
             roles = self.antenna_roles.get(port, [])
+            logger.debug(f"   Roles del puerto {port}: {roles}")
             
             # Si es string (compatibilidad), convertir a lista
             if isinstance(roles, str):

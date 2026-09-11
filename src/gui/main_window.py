@@ -8,20 +8,22 @@ Responsabilidad única: Coordinación de alto nivel y UI principal
 Delegación: AntennaManager para antenas, TabManager para tabs
 """
 
-import json
 import logging
-import os
 import threading
-
+import json
+import os
 import requests
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
-                            QTabWidget, QLabel, QMessageBox)
-from PyQt6.QtCore import pyqtSlot
 
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                            QTabWidget, QLabel, QMessageBox)
+from PyQt6.QtCore import pyqtSlot, QTimer
 from src.utils.signals import AppSignals
 from ..core.advanced_scanner import AdvancedYR8900Scanner
+from ..core.race_tracking.race_manager import RaceManager
+from ..core.race_tracking.models import EventType
 from .managers.antenna_manager import AntennaManager
 from .managers.tab_manager import TabManager
+from .widgets.finish_ticket_dialog import FinishTicketDialog
 
 logger = logging.getLogger(__name__)
 
@@ -39,51 +41,163 @@ class MainWindow(QMainWindow):
     
     def __init__(self, wizard_config=None):
         super().__init__()
-        
+
         # Configuración y managers
         self.wizard_config = self._normalize_config(wizard_config)
         self.antenna_manager = AntennaManager(self.wizard_config)
+        self.race_manager = RaceManager()  # Sistema de timing de carreras
+        self._setup_race_persistence()     # Persistencia local ante cortes de energía
+        self.cloud_config = self._load_cloud_config()
         self.signals = AppSignals()
         self.scanner = None
-        self.cloud_config = self._load_cloud_config()
-        
+
         # Setup
         self.setWindowTitle("RFID Athletics Timer")
         self.setMinimumSize(1200, 800)
-        
+
         # Orden crítico de inicialización
         self.setup_ui()           # 1. Crear UI básica
         self.setup_scanner()      # 2. Configurar scanner
         self.apply_config()       # 3. Aplicar config a tabs
         self.connect_signals()    # 4. Conectar señales
-        
+
+        # 5. Si se restauró una sesión con distancias EN CURSO y el lector
+        #    está conectado, reanudar la detección automáticamente (tras un
+        #    corte de luz nadie debería tener que acordarse de apretar
+        #    'Iniciar Detección' mientras los corredores siguen pasando)
+        if (self.scanner and getattr(self.scanner, 'connected', False)
+                and self.race_manager.get_active_distances()):
+            names = ', '.join(d.name for d in self.race_manager.get_active_distances())
+            logger.info(f"♻️ Distancias en curso restauradas ({names}) — reanudando detección")
+            self.signals.auto_start_scanning.emit()
+
         logger.info("✅ MainWindow inicializado correctamente")
-    
+
+    def _setup_race_persistence(self):
+        """
+        Activar persistencia local del estado de carrera.
+
+        Si existe un snapshot de una sesión anterior (ej: corte de energía,
+        cierre inesperado), ofrece restaurarlo antes de crear la UI.
+        """
+        try:
+            from ..core.race_tracking.persistence import RaceStatePersistence
+
+            persistence = RaceStatePersistence()
+
+            if persistence.has_saved_state():
+                summary = persistence.get_state_summary()
+                if summary and summary['athletes'] > 0:
+                    saved_at = summary.get('saved_at') or 'desconocido'
+                    try:
+                        from datetime import datetime as _dt_cls
+                        saved_at = _dt_cls.fromisoformat(saved_at).strftime('%d/%m/%Y %H:%M:%S')
+                    except (ValueError, TypeError):
+                        pass
+
+                    running_info = ""
+                    if summary['distances_running']:
+                        running_info = (
+                            f"\n⚠️ Distancias EN CURSO al momento del guardado: "
+                            f"{', '.join(summary['distances_running'])}"
+                        )
+
+                    reply = QMessageBox.question(
+                        None,
+                        "Sesión Anterior Encontrada",
+                        f"Se encontró el estado de una sesión anterior "
+                        f"(¿corte de energía o cierre inesperado?).\n\n"
+                        f"📅 Guardado: {saved_at}\n"
+                        f"📏 Distancias: {summary['distances']}\n"
+                        f"👥 Atletas: {summary['athletes']}\n"
+                        f"🏃 En carrera: {summary['running']}\n"
+                        f"🏁 Finalizados: {summary['finished']}"
+                        f"{running_info}\n\n"
+                        f"¿Desea RESTAURAR ese estado?\n\n"
+                        f"(Si elige No, el estado anterior queda archivado "
+                        f"en data/ como respaldo)",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.Yes
+                    )
+
+                    if reply == QMessageBox.StandardButton.Yes:
+                        if persistence.restore_into(self.race_manager):
+                            logger.info("♻️ Estado de sesión anterior restaurado")
+                        else:
+                            QMessageBox.warning(
+                                None,
+                                "Error de Restauración",
+                                "No se pudo restaurar el estado anterior.\n"
+                                "Los datos quedan en data/race_event.db para revisión manual."
+                            )
+                    else:
+                        persistence.archive()
+                else:
+                    # Snapshot vacío o ilegible — archivar para no preguntar de nuevo
+                    persistence.archive()
+
+            self.race_manager.attach_persistence(persistence)
+            self.race_persistence = persistence
+
+            # Worker que envía al backend lo encolado en sync_outbox
+            # (reintenta automáticamente si se corta internet)
+            from ..core.cloud_sync_worker import CloudSyncWorker
+            self.sync_worker = CloudSyncWorker(persistence)
+            self.sync_worker.start()
+
+        except Exception as e:
+            # La persistencia nunca debe impedir que arranque la app
+            logger.error(f"❌ No se pudo activar persistencia local: {e}", exc_info=True)
+            self.race_persistence = None
+            self.sync_worker = None
+
     def _normalize_config(self, config):
         """
         Normalizar configuración para asegurar tipos correctos
-        
+
         Args:
-            config: Configuración del wizard
-        
+            config: Configuración del wizard (dict o SystemConfig)
+
         Returns:
             dict: Configuración normalizada
         """
         if not config:
             return config
-        
+
         logger.info("🔧 Normalizando configuración")
-        
+
+        # Convertir SystemConfig a diccionario si es necesario
+        from config.system_config import SystemConfig
+        if isinstance(config, SystemConfig):
+            logger.info("📦 Convirtiendo SystemConfig a diccionario")
+            config = {
+                'connection': {
+                    'host': config.reader.host,
+                    'port': config.reader.port
+                },
+                'antennas': {
+                    str(port): {
+                        'enabled': antenna.enabled,
+                        'start': antenna.function.value == 'largada',
+                        'finish': antenna.function.value == 'llegada',
+                        'checkpoint': antenna.function.value == 'checkpoint',
+                        'name': antenna.description or f'Antena {port}'
+                    }
+                    for port, antenna in config.antennas.items()
+                }
+            }
+            logger.info(f"✅ SystemConfig convertido a diccionario")
+
         # Normalizar keys de antennas a int
-        if 'antennas' in config:
+        if isinstance(config, dict) and 'antennas' in config:
             antennas_normalized = {}
             for key, value in config['antennas'].items():
                 port_int = int(key) if isinstance(key, str) else key
                 antennas_normalized[port_int] = value
-            
+
             config['antennas'] = antennas_normalized
             logger.info(f"✅ Antenas normalizadas: {list(antennas_normalized.keys())}")
-        
+
         return config
     
     def setup_ui(self):
@@ -101,21 +215,88 @@ class MainWindow(QMainWindow):
         self.tab_widget = QTabWidget()
         layout.addWidget(self.tab_widget)
         
-        # Barra de estado
+        # Barra de estado: mensaje general + badges de Lector y Backend
+        status_bar = QHBoxLayout()
         self.status_label = QLabel("Aplicación iniciada")
-        layout.addWidget(self.status_label)
+        status_bar.addWidget(self.status_label)
+        status_bar.addStretch()
+
+        badge_style = (
+            "QLabel {{ background: {bg}; color: {fg}; font-weight: bold;"
+            " padding: 3px 10px; border-radius: 9px; }}"
+        )
+        self._badge_styles = {
+            'green':  badge_style.format(bg="#d1fae5", fg="#065f46"),
+            'orange': badge_style.format(bg="#fef3c7", fg="#92400e"),
+            'red':    badge_style.format(bg="#fee2e2", fg="#991b1b"),
+            'gray':   badge_style.format(bg="#e5e7eb", fg="#4b5563"),
+        }
+
+        self.reader_status_label = QLabel("")
+        status_bar.addWidget(self.reader_status_label)
+        self.sync_status_label = QLabel("")
+        status_bar.addWidget(self.sync_status_label)
+        layout.addLayout(status_bar)
+
+        # Refrescar los indicadores de estado periódicamente
+        self.sync_status_timer = QTimer(self)
+        self.sync_status_timer.timeout.connect(self.update_status_indicators)
+        self.sync_status_timer.start(3000)
+        QTimer.singleShot(0, self.update_status_indicators)
         
         # Crear tabs usando TabManager
         self.tab_manager = TabManager(
             self.tab_widget,
             self.signals,
             self.scanner,
-            self.antenna_manager
+            self.antenna_manager,
+            self.race_manager
         )
         self.tab_manager.create_all_tabs()
         
         logger.info("✅ UI principal configurada")
-    
+
+    def update_status_indicators(self):
+        """Actualizar badges de Lector y Backend en la barra de estado"""
+        # --- Lector RFID ---
+        reader_connected = bool(self.scanner and getattr(self.scanner, 'connected', False))
+        if reader_connected:
+            self.reader_status_label.setText("📡 Lector: Conectado")
+            self.reader_status_label.setStyleSheet(self._badge_styles['green'])
+        else:
+            self.reader_status_label.setText("📡 Lector: Desconectado")
+            self.reader_status_label.setStyleSheet(self._badge_styles['red'])
+
+        # --- Backend / sincronización ---
+        persistence = getattr(self, 'race_persistence', None)
+        worker = getattr(self, 'sync_worker', None)
+
+        if not self.cloud_config:
+            self.sync_status_label.setText("☁️ Backend: sin configurar")
+            self.sync_status_label.setStyleSheet(self._badge_styles['gray'])
+            return
+        if not persistence:
+            self.sync_status_label.setText("☁️ Backend: envío directo (sin cola)")
+            self.sync_status_label.setStyleSheet(self._badge_styles['gray'])
+            return
+
+        pending = persistence.pending_sync_count()
+        offline = worker is not None and worker.last_flush_ok is False
+
+        if pending > 0 and offline:
+            self.sync_status_label.setText(
+                f"☁️ Backend: SIN CONEXIÓN — {pending} en cola"
+            )
+            self.sync_status_label.setStyleSheet(self._badge_styles['red'])
+        elif pending > 0:
+            self.sync_status_label.setText(
+                f"☁️ Backend: enviando... {pending} pendiente(s)"
+            )
+            self.sync_status_label.setStyleSheet(self._badge_styles['orange'])
+        else:
+            self.sync_status_label.setText("☁️ Backend: sincronizado")
+            self.sync_status_label.setStyleSheet(self._badge_styles['green'])
+
     def setup_scanner(self):
         """Configurar scanner con datos del wizard"""
         if not self.wizard_config:
@@ -144,10 +325,15 @@ class MainWindow(QMainWindow):
                 return
             
             # Configurar antenas habilitadas
+            # AntennaManager espera la config COMPLETA (con sección
+            # 'antennas'), no el sub-dict de antenas: pasarle el sub-dict
+            # lo dejaba sin antenas ("0 antenas activas") y le inyectaba
+            # una clave espuria 'antennas' a la config por referencia.
+            self.antenna_manager = AntennaManager(self.wizard_config)
             enabled_ports = self.antenna_manager.get_enabled_antennas()
             logger.info(f"📡 Antenas habilitadas: {enabled_ports}")
             self.scanner.available_antennas = enabled_ports
-      
+
             # Configurar potencia si está en config
             power = self.wizard_config.get('power_dbm')
             if power:
@@ -191,8 +377,17 @@ class MainWindow(QMainWindow):
         """Conectar señales del sistema"""
         logger.info("🔌 Conectando señales...")
 
+        # Señal de estado de conexión
         self.signals.connection_status_changed.connect(self.on_connection_status_changed)
-        self.signals.tag_detected.connect(self.on_tag_detected_for_backend)
+
+        # Señal de detección de tags → RaceManager
+        self.signals.tag_detected.connect(self.on_tag_detected_for_race)
+
+        # 🔥 Señal de auto-inicio de escaneo cuando se inician distancias
+        self.signals.auto_start_scanning.connect(self.on_auto_start_scanning)
+
+        # 🎟️ Señal de atleta llegando a meta → mostrar ticket
+        #self.signals.athlete_finished.connect(self.on_athlete_finished_show_ticket)
 
         logger.info("✅ Señales conectadas")
     
@@ -205,65 +400,193 @@ class MainWindow(QMainWindow):
         else:
             self.status_label.setText(f"✗ {message}")
             logger.warning(f"✗ {message}")
-    
-    # ========================================================================
-    # Integración Cloud Backend
-    # ========================================================================
-
-    def _load_cloud_config(self):
-        """Cargar configuración cloud desde config/api_config.json."""
-        try:
-            path = 'config/api_config.json'
-            if os.path.exists(path):
-                with open(path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                cloud = data.get('cloud', {})
-                if cloud.get('api_url') and cloud.get('api_key'):
-                    logger.info("☁️ Cloud config cargada")
-                    return {
-                        'api_url': cloud['api_url'],   # ya contiene /api/v1
-                        'token': cloud['api_key'],
-                        'event_id': cloud.get('event_id', ''),
-                    }
-        except Exception as e:
-            logger.warning(f"⚠️ No se pudo cargar cloud config: {e}")
-        return None
 
     @pyqtSlot(dict)
-    def on_tag_detected_for_backend(self, tag_info: dict):
-        """Handler de tag_detected: envía detección al backend en hilo daemon."""
-        self._send_detection_to_backend(
-            tag_info['chip_id'],
-            tag_info['antenna_id'],
-            tag_info['timestamp'],
-            tag_info['reading_type'],
-        )
+    def on_tag_detected_for_race(self, tag_data):
+        """
+        Procesar detección de tag para sistema de carreras
 
-    def _send_detection_to_backend(self, chip_id: str, antenna_id: str,
-                                   timestamp: str, reading_type: str):
-        """Enviar una detección RFID al backend cloud (no bloqueante)."""
-        if not self.cloud_config:
-            return
-
-        def _post():
-            try:
-                url = f"{self.cloud_config['api_url']}/timing/reads"
-                headers = {'Authorization': f"Bearer {self.cloud_config['token']}"}
-                payload = {
-                    'chip_id': chip_id,
-                    'antenna_id': antenna_id,
-                    'timestamp': timestamp,
-                    'reading_type': reading_type,
+        Args:
+            tag_data: Dict con información del tag procesado
+                {
+                    'tag_id': str,
+                    'antenna_port': int,
+                    'roles': List[str],
+                    'antenna_name': str,
+                    'timestamp': datetime
                 }
-                r = requests.post(url, json=payload, headers=headers, timeout=5)
-                if r.status_code not in (200, 201):
-                    logger.warning(f"⚠️ Backend respondió {r.status_code}: {r.text[:100]}")
-                else:
-                    logger.info(f"☁️ Detección enviada: {chip_id} → {reading_type}")
-            except Exception as e:
-                logger.warning(f"⚠️ No se pudo enviar al backend: {e}")
+        """
+        try:
+            logger.debug(f"🏁 Señal tag_detected recibida: {tag_data}")
 
-        threading.Thread(target=_post, daemon=True).start()
+            # Extraer datos necesarios
+            tag_id = tag_data.get('tag_id')
+            antenna_port = tag_data.get('antenna')  # o 'antenna_port'
+            if not antenna_port:
+                antenna_port = tag_data.get('antenna_port')
+            if not antenna_port:
+                antenna_port = tag_data.get('port')  # Nuevo: también intentar 'port'
+            # Priorizar timestamp_obj (datetime) sobre timestamp (string)
+            timestamp = tag_data.get('timestamp_obj')
+            if not timestamp:
+                timestamp = tag_data.get('timestamp')  # Fallback a timestamp string
+            roles = tag_data.get('roles', [])
+
+            # Validar datos mínimos
+            if not tag_id or not antenna_port or not timestamp:
+                logger.warning(f"⚠️  Detección incompleta: {tag_data}")
+                logger.warning(f"   tag_id={tag_id}, antenna_port={antenna_port}, timestamp={timestamp}")
+                return
+
+            # Procesar con RaceManager
+            event = self.race_manager.process_detection(
+                tag_id=tag_id,
+                timestamp=timestamp,
+                antenna_port=antenna_port,
+                roles=roles
+            )
+
+            if event:
+                self._send_detection_to_backend(event, tag_id, antenna_port, roles)
+            else:
+                # El motivo específico del rechazo ya lo registró
+                # process_detection como warning
+                logger.debug(f"⚠️  Tag {tag_id} detectado sin evento de carrera asociado")
+
+            # Resolver nombre y distancia del atleta para mostrar en tabla de detección
+            athlete, distance = self.race_manager._find_athlete_by_tag(tag_id)
+            if athlete and distance and self.signals:
+                self.signals.athlete_tag_resolved.emit(
+                    tag_id, athlete.name, distance.name, str(athlete.bib_number or '')
+                )
+
+                # Si fue un evento de llegada a meta, emitir notificación
+                if event and event.event_type == EventType.FINISH:
+                    result = self.race_manager.results.get(distance.distance_id, {}).get(athlete.athlete_id)
+                    formatted_time = result.get_formatted_time() if result else "N/A"
+                    self.signals.athlete_finished.emit(athlete.name, distance.name, formatted_time)
+
+        except Exception as e:
+            logger.error(f"❌ Error procesando detección para carrera: {e}")
+            import traceback
+            traceback.print_exc()
+
+    @pyqtSlot()
+    def on_auto_start_scanning(self):
+        """
+        🔥 Callback para auto-iniciar escaneo cuando se inician distancias
+
+        Este método es llamado cuando EventConfigWidget emite la señal auto_start_scanning
+        después de iniciar una o más distancias.
+        """
+        try:
+            logger.info("=" * 80)
+            logger.info("🚀 AUTO-INICIO DE ESCANEO SOLICITADO")
+            logger.info("=" * 80)
+
+            # Obtener referencia al DetectionTab
+            detection_tab = self.tab_manager.get_tab('detection')
+
+            if not detection_tab:
+                logger.error("❌ DetectionTab no encontrado")
+                return
+
+            # Llamar al método de auto-inicio
+            success = detection_tab.auto_start_scanning()
+
+            if success:
+                logger.info("✅ Escaneo automático iniciado exitosamente")
+                logger.info("📡 Las antenas están escaneando chips para la carrera")
+            else:
+                logger.warning("⚠️  No se pudo iniciar escaneo automático")
+                logger.warning("   Verifica configuración de scanner y antenas")
+
+            logger.info("=" * 80)
+
+        except Exception as e:
+            logger.error(f"❌ Error en auto-inicio de escaneo: {e}")
+
+    @pyqtSlot(str, str, str)
+    def on_athlete_finished_show_ticket(self, athlete_name: str, distance_name: str, formatted_time: str):
+        """
+        Mostrar ticket imprimible cuando un atleta cruza la meta
+
+        Args:
+            athlete_name: Nombre del atleta
+            distance_name: Nombre de la distancia
+            formatted_time: Tiempo formateado (HH:MM:SS)
+        """
+        try:
+            logger.info(f"🎟️  Generando ticket para: {athlete_name}")
+
+            # Buscar el atleta en el race_manager para obtener toda su info
+            athlete = None
+            distance = None
+            result = None
+
+            for dist in self.race_manager.get_all_distances():
+                for participant in dist.participants:
+                    if participant.name == athlete_name:
+                        athlete = participant
+                        distance = dist
+                        # Obtener el resultado
+                        results_dict = self.race_manager.results.get(dist.distance_id, {})
+                        result = results_dict.get(participant.athlete_id)
+                        break
+                if athlete:
+                    break
+
+            if not athlete or not distance or not result:
+                logger.warning(f"⚠️  No se pudo encontrar info completa para {athlete_name}")
+                return
+
+            # Obtener clasificaciones
+            position_overall = result.position or 0
+
+            # Posición por género
+            results_by_gender = self.race_manager.get_results_by_gender(distance.distance_id)
+            gender_key = athlete.gender.upper()[0] if athlete.gender else "Otro"
+            if gender_key not in ["M", "F"]:
+                gender_key = "Otro"
+            gender_results = results_by_gender.get(gender_key, [])
+            position_gender = next((i+1 for i, r in enumerate(gender_results) if r.athlete.athlete_id == athlete.athlete_id), 0)
+
+            # Posición por categoría
+            category = "Sin categoría"
+            results_by_award = self.race_manager.get_results_by_award_category(distance.distance_id)
+            category_results = results_by_award.get(category, [])
+            position_category = next((i+1 for i, r in enumerate(category_results) if r.athlete.athlete_id == athlete.athlete_id), 0)
+
+            # Obtener nombre del evento
+            event_config = self.tab_manager.get_tab('event_config')
+            event_name = "Carrera"
+            if event_config and hasattr(event_config, 'event_name_input'):
+                event_name = event_config.event_name_input.text() or "Carrera"
+
+            # Crear y mostrar el ticket
+            ticket_dialog = FinishTicketDialog(
+                athlete_name=athlete.name,
+                distance_name=distance.name,
+                bib_number=athlete.bib_number,
+                finish_time=formatted_time,
+                position_overall=position_overall,
+                position_gender=position_gender,
+                position_category=position_category,
+                gender=athlete.gender or "Otro",
+                category=category,
+                event_name=event_name,
+                parent=self
+            )
+
+            ticket_dialog.exec()
+            logger.info(f"✅ Ticket mostrado para {athlete_name}")
+
+        except Exception as e:
+            logger.error(f"❌ Error mostrando ticket: {e}")
+            import traceback
+            traceback.print_exc()
+            import traceback
+            traceback.print_exc()
 
     # ========================================================================
     # Métodos de acceso (delegan a AntennaManager)
@@ -295,22 +618,49 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Manejar cierre de la aplicación"""
-        reply = QMessageBox.question(
-            self,
-            'Confirmar Salida',
-            '¿Está seguro que desea salir?\nSe perderán los datos no guardados.',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            # Desconectar scanner si está conectado
-            if self.scanner and hasattr(self.scanner, 'connected') and self.scanner.connected:
-                logger.info("Desconectando scanner...")
-                self.scanner.disconnect()
+        msg = QMessageBox(self)
+        msg.setWindowTitle('Confirmar Salida')
+        msg.setText('¿Qué desea hacer antes de salir?')
+        msg.setInformativeText('Los resultados no exportados podrían perderse.')
+        msg.setIcon(QMessageBox.Icon.Question)
+
+        btn_save = msg.addButton('Guardar y salir', QMessageBox.ButtonRole.AcceptRole)
+        btn_exit = msg.addButton('Salir sin guardar', QMessageBox.ButtonRole.DestructiveRole)
+        btn_cancel = msg.addButton('Cancelar', QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(btn_cancel)
+        msg.exec()
+
+        clicked = msg.clickedButton()
+        if clicked == btn_cancel:
+            event.ignore()
+        elif clicked == btn_save:
+            self._save_on_exit()
+            self._close_persistence()
             event.accept()
         else:
-            event.ignore()
+            self._close_persistence()
+            event.accept()
+
+    def _close_persistence(self):
+        """Guardar estado final, detener sincronización y cerrar la base"""
+        try:
+            if getattr(self, 'sync_worker', None):
+                self.sync_worker.stop()
+            if getattr(self, 'race_persistence', None):
+                self.race_manager.save_now()
+                self.race_persistence.close()
+        except Exception as e:
+            logger.warning(f"⚠️ Error cerrando persistencia: {e}")
+
+    def _save_on_exit(self):
+        """Guardar estado al cerrar"""
+        try:
+            results_tab = self.tab_manager.get_tab('results')
+            if results_tab and hasattr(results_tab, 'export_results_csv'):
+                results_tab.export_results_csv(silent=True)
+                logger.info("✅ Resultados guardados al cerrar")
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo guardar al cerrar: {e}")
     
     # ========================================================================
     # Debug y utilidades
@@ -325,3 +675,92 @@ class MainWindow(QMainWindow):
             'antenna_summary': self.antenna_manager.get_summary(),
             'tab_count': self.tab_manager.get_tab_count()
         }
+    
+    # ========================================================================
+    # Configuración cloud y backend para integración
+    # ========================================================================
+
+    def _load_cloud_config(self):
+        try:
+            path = 'config/api_config.json'
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                # Soporta estructura plana {api_url, api_key, event_id} o anidada {cloud: {...}}
+                cloud = data.get('cloud', data)
+                if cloud.get('api_url') and cloud.get('api_key'):
+                    return {
+                        'api_url': cloud['api_url'],
+                        'token': cloud['api_key'],
+                        'event_id': cloud.get('event_id', ''),
+                    }
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo cargar cloud config: {e}")
+        return None
+
+    def _send_detection_to_backend(self, event, tag_id, antenna_port, roles):
+        """
+        Enviar detección al backend con cola persistente (store-and-forward).
+
+        La detección se encola en la base local ANTES de intentar enviarla.
+        Si hay internet sale enseguida; si no, queda pendiente y el
+        CloudSyncWorker la reenvía automáticamente al volver la conexión
+        (incluso tras reiniciar la aplicación).
+        """
+        if not self.cloud_config:
+            logger.debug("☁️ Sin cloud config — detección no enviada")
+            return
+
+        # api_url puede terminar en /api/v1 — quitarlo para usar ruta propia
+        base_url = self.cloud_config['api_url'].rstrip('/').removesuffix('/api/v1')
+        event_id = self.cloud_config.get('event_id', '')
+        url = f"{base_url}/api/events/{event_id}/detection"
+        headers = {'Authorization': f"Bearer {self.cloud_config['token']}"}
+        # Km del checkpoint (si la lectura es de un CP con km definido):
+        # permite al live mostrar progreso y ritmo por tramo
+        from ..core.race_tracking.detection_validator import checkpoint_km_for_event
+        distance = self.race_manager.get_distance(getattr(event, 'distance_id', None))
+        checkpoint_km = checkpoint_km_for_event(
+            distance, getattr(event, 'checkpoint_number', None)
+        )
+
+        payload = {
+            # ID único del evento: permite al backend deduplicar si un
+            # reintento llega después de un timeout (el envío original
+            # pudo haberse procesado igual)
+            'event_id': event.event_id,
+            'tag_id': tag_id,
+            'timestamp': event.timestamp.isoformat(),
+            'antenna_port': antenna_port,
+            'event_type': event.event_type.value,
+            'checkpoint_number': getattr(event, 'checkpoint_number', None),
+            'checkpoint_km': checkpoint_km,
+            'category_id': getattr(event, 'distance_id', None),
+            'athlete_name': event.athlete.name if getattr(event, 'athlete', None) else None,
+            'bib_number': event.athlete.bib_number if getattr(event, 'athlete', None) else None,
+        }
+
+        persistence = getattr(self, 'race_persistence', None)
+        worker = getattr(self, 'sync_worker', None)
+
+        if persistence and worker:
+            row_id = persistence.enqueue_sync('detection', url, payload, headers)
+            logger.info(
+                f"☁️ Detección encolada (id={row_id}): "
+                f"{tag_id} → {event.event_type.value}"
+            )
+            worker.notify()  # intento de envío inmediato
+            return
+
+        # Fallback sin persistencia: envío directo como antes
+        def _post():
+            try:
+                r = requests.post(url, json=payload, headers=headers, timeout=5)
+                if r.status_code not in (200, 201):
+                    logger.warning(f"⚠️ Backend respondió {r.status_code}: {r.text[:200]}")
+                else:
+                    logger.info(f"☁️ Detección enviada OK: {tag_id} → {event.event_type.value}")
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo enviar al backend: {type(e).__name__}: {e}")
+
+        threading.Thread(target=_post, daemon=True).start()

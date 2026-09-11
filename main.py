@@ -7,9 +7,13 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 from src.gui.wizard.auto_wizard import AutoConfigurationWizard  # 🔥 Cambiado a AutoWizard
 from src.gui.main_window import MainWindow
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+from src.utils.logger import setup_logging
+
+# Consola: solo WARNING/ERROR (los problemas se ven enseguida).
+# Detalle completo en timing_system.log con rotación (5MB × 5).
+# Con --verbose la consola muestra todo (para diagnóstico).
+setup_logging(
+    console_level=logging.DEBUG if '--verbose' in sys.argv else logging.WARNING
 )
 logger = logging.getLogger(__name__)
 
@@ -116,10 +120,41 @@ def ask_use_existing_config(config):
     else:
         return 'cancel'
 
+def install_excepthook():
+    """Evita que PyQt6 cierre la app ante una excepción no manejada en un slot.
+
+    Sin esto, cualquier error en un handler de botón/señal aborta el proceso
+    sin mostrar nada. Acá lo logueamos y mostramos un diálogo de error.
+    """
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+
+        logger.error(
+            "Excepción no manejada",
+            exc_info=(exc_type, exc_value, exc_traceback)
+        )
+
+        try:
+            QMessageBox.critical(
+                None,
+                "Error Inesperado",
+                f"Ocurrió un error inesperado:\n\n{exc_type.__name__}: {exc_value}\n\n"
+                f"La aplicación sigue funcionando, pero revisa los logs.\n"
+                f"Si el problema persiste, reinicia la aplicación."
+            )
+        except Exception:
+            pass  # Si no se puede mostrar el diálogo, al menos quedó el log
+
+    sys.excepthook = handle_exception
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("RFID Athletics Timer")
     app.setOrganizationName("RFID Sports")
+
+    install_excepthook()
     
     try:
         # Cargar configuración si existe

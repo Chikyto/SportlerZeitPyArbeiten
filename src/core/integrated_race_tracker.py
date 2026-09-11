@@ -1,6 +1,6 @@
 """
 Sistema integrado de cronometraje que combina:
-- Gestión de eventos multi-categoría
+- Gestión de eventos multi-distancia
 - Configuración de antenas
 - Scanner RFID con filtrado inteligente
 """
@@ -14,23 +14,24 @@ from dataclasses import dataclass
 class ChipReading:
     """Lectura de chip con información de contexto"""
     chip_id: str
-    category_id: str
+    distance_id: str
     antenna_id: int
     timestamp: datetime
     reading_type: str  # 'start', 'finish', 'checkpoint', 'start_finish'
-    race_time: float   # Segundos desde inicio de la categoría
+    race_time: float   # Segundos desde inicio de la distancia
     category_start_time: datetime
 
 @dataclass
 class ParticipantStatus:
     """Estado de un participante"""
     chip_id: str
-    category_id: str
+    distance_id: str
     status: str  # 'not_started', 'in_progress', 'finished'
     start_time: Optional[datetime] = None
     finish_time: Optional[datetime] = None
     total_time: Optional[float] = None
     checkpoints_passed: int = 0
+    laps_completed: int = 0  # Nuevo: contador de vueltas completadas
     last_reading: Optional[ChipReading] = None
 
 class IntegratedRaceTracker:
@@ -51,17 +52,17 @@ class IntegratedRaceTracker:
     def process_chip_reading(self, chip_id: str, antenna_id: int, timestamp: datetime) -> Optional[ChipReading]:
         """
         Procesar lectura de chip con filtrado inteligente
-        Solo procesa chips de categorías activas
+        Solo procesa chips de distancias activas
         """
         # 1. Verificar si el chip está registrado
-        category_id = self.event_manager.get_participant_category(chip_id)
-        if not category_id:
-            print(f"Chip {chip_id} no está registrado en ninguna categoría")
+        distance_id = self.event_manager.get_participant_category(chip_id)
+        if not distance_id:
+            print(f"Chip {chip_id} no está registrado en ninguna distancia")
             return None
-            
-        # 2. Verificar si la categoría está activa
-        if category_id not in self.event_manager.get_active_categories():
-            print(f"Chip {chip_id} pertenece a categoría {category_id} que no está activa")
+
+        # 2. Verificar si la distancia está activa
+        if distance_id not in self.event_manager.get_active_categories():
+            print(f"Chip {chip_id} pertenece a distancia {distance_id} que no está activa")
             return None
             
         # 3. Verificar configuración de antena
@@ -79,10 +80,10 @@ class IntegratedRaceTracker:
             print(f"Lectura de chip {chip_id} muy reciente, ignorando")
             return None
             
-        # 5. Obtener tiempo de inicio de la categoría
-        category_start_time = self.event_manager.category_start_times.get(category_id)
+        # 5. Obtener tiempo de inicio de la distancia
+        category_start_time = self.event_manager.distance_start_times.get(distance_id)
         if not category_start_time:
-            print(f"Categoría {category_id} no tiene tiempo de inicio")
+            print(f"Distancia {distance_id} no tiene tiempo de inicio")
             return None
             
         # 6. Calcular tiempo de carrera
@@ -94,7 +95,7 @@ class IntegratedRaceTracker:
         # 8. Crear lectura
         reading = ChipReading(
             chip_id=chip_id,
-            category_id=category_id,
+            distance_id=distance_id,
             antenna_id=antenna_id,
             timestamp=timestamp,
             reading_type=reading_type,
@@ -145,51 +146,76 @@ class IntegratedRaceTracker:
             return 'unknown'
             
     def _update_participant_status(self, reading: ChipReading):
-        """Actualizar estado del participante basado en la lectura"""
+        """
+        Actualizar estado del participante basado en la lectura
+
+        Soporta tres modos de carrera:
+        - LINEAR: largada → checkpoints → meta
+        - LAPS: misma antena múltiples veces (contador de vueltas)
+        - TIME_BASED: máximo de vueltas en X horas
+        """
         chip_id = reading.chip_id
-        
+
         # Obtener o crear estado del participante
         if chip_id not in self.participant_statuses:
             self.participant_statuses[chip_id] = ParticipantStatus(
                 chip_id=chip_id,
-                category_id=reading.category_id,
+                distance_id=reading.distance_id,
                 status='not_started'
             )
-            
+
         participant = self.participant_statuses[chip_id]
         participant.last_reading = reading
-        
+
         # Analizar todas las lecturas para determinar estado
         all_readings = self.chip_readings.get(chip_id, [])
         start_readings = [r for r in all_readings if r.reading_type in ['start', 'start_finish']]
         finish_readings = [r for r in all_readings if r.reading_type in ['finish', 'start_finish']]
         checkpoint_readings = [r for r in all_readings if r.reading_type == 'checkpoint']
-        
-        # Actualizar checkpoints
-        participant.checkpoints_passed = len(checkpoint_readings)
-        
-        # Determinar estado principal
-        if start_readings:
-            # Ha iniciado
-            first_start = min(start_readings, key=lambda x: x.timestamp)
+
+        # 🆕 LÓGICA PARA VUELTAS (antenas start_finish)
+        # Para antenas start_finish, contar vueltas
+        start_finish_readings = [r for r in all_readings if r.reading_type == 'start_finish']
+
+        if start_finish_readings:
+            # Ordenar por timestamp
+            start_finish_readings.sort(key=lambda x: x.timestamp)
+
+            # Primera lectura = START
+            first_start = start_finish_readings[0]
             participant.start_time = first_start.timestamp
             participant.status = 'in_progress'
-            
-            # Verificar si ha terminado
-            if finish_readings:
-                # Para antenas start_finish, el finish debe ser después del start
-                valid_finish_readings = []
-                for finish_reading in finish_readings:
-                    if finish_reading.reading_type == 'start_finish':
-                        # Para start_finish, debe ser después del primer start
-                        if finish_reading.timestamp > first_start.timestamp:
-                            valid_finish_readings.append(finish_reading)
-                    else:
-                        # Para antenas finish dedicadas, cualquier lectura es válida
-                        valid_finish_readings.append(finish_reading)
-                        
-                if valid_finish_readings:
-                    first_finish = min(valid_finish_readings, key=lambda x: x.timestamp)
+
+            # Lecturas siguientes = VUELTAS completadas
+            # Cada vez que pasa por start_finish después del inicio, completó una vuelta
+            if len(start_finish_readings) > 1:
+                # Número de vueltas = número de pasadas - 1 (la primera es el start)
+                participant.laps_completed = len(start_finish_readings) - 1
+
+                # Actualizar tiempo total como tiempo desde el inicio hasta la última pasada
+                last_reading = start_finish_readings[-1]
+                participant.total_time = (last_reading.timestamp - first_start.timestamp).total_seconds()
+
+            # NOTA: Para determinar FINISH en modo TIME_BASED,
+            # el organizador debe marcar manualmente cuando termina el evento
+            # o se puede implementar un temporizador automático
+
+        else:
+            # LÓGICA CLÁSICA para carreras lineales (sin start_finish)
+            # Actualizar checkpoints
+            participant.checkpoints_passed = len(checkpoint_readings)
+
+            # Determinar estado principal
+            if start_readings:
+                # Ha iniciado
+                first_start = min(start_readings, key=lambda x: x.timestamp)
+                participant.start_time = first_start.timestamp
+                participant.status = 'in_progress'
+
+                # Verificar si ha terminado
+                if finish_readings:
+                    # Para antenas finish dedicadas, cualquier lectura es válida
+                    first_finish = min(finish_readings, key=lambda x: x.timestamp)
                     participant.finish_time = first_finish.timestamp
                     participant.total_time = (first_finish.timestamp - first_start.timestamp).total_seconds()
                     participant.status = 'finished'
@@ -198,11 +224,11 @@ class IntegratedRaceTracker:
         """Obtener estado de un participante"""
         return self.participant_statuses.get(chip_id)
         
-    def get_category_results(self, category_id: str) -> List[ParticipantStatus]:
-        """Obtener resultados de una categoría ordenados por tiempo"""
+    def get_category_results(self, distance_id: str) -> List[ParticipantStatus]:
+        """Obtener resultados de una distancia ordenados por tiempo"""
         category_participants = [
             status for status in self.participant_statuses.values()
-            if status.category_id == category_id
+            if status.distance_id == distance_id
         ]
         
         # Separar por estado
@@ -219,12 +245,12 @@ class IntegratedRaceTracker:
         return finished + in_progress + not_started
         
     def get_active_participants_count(self) -> Dict[str, int]:
-        """Obtener conteo de participantes activos por categoría"""
+        """Obtener conteo de participantes activos por distancia"""
         counts = {}
-        for category_id in self.event_manager.get_active_categories():
+        for distance_id in self.event_manager.get_active_categories():
             active_count = sum(1 for status in self.participant_statuses.values()
-                             if status.category_id == category_id and status.status == 'in_progress')
-            counts[category_id] = active_count
+                             if status.distance_id == distance_id and status.status == 'in_progress')
+            counts[distance_id] = active_count
         return counts
         
     def get_system_status(self) -> Dict:

@@ -4,7 +4,13 @@
 # GUI Framework - OBLIGATORIO
 PyQt6==6.6.1
 
-# Comunicación y colores en consola - OBLIGATORIO  
+# Comunicación serial (USB) - OBLIGATORIO para YR9011
+pyserial==3.5
+
+# HTTP requests - OBLIGATORIO para sincronización con backend
+requests==2.31.0
+
+# Comunicación y colores en consola - OBLIGATORIO
 colorama==0.4.6
 
 # Fecha y hora - OBLIGATORIO (usado en el sistema de eventos)
@@ -12,6 +18,12 @@ python-dateutil==2.8.2
 
 # Tipos de datos y utilidades - OBLIGATORIO
 dataclasses-json==0.6.3
+
+# Generación de PDFs - OBLIGATORIO para exportar resultados
+reportlab>=4.0.9
+
+# WebSocket client - OBLIGATORIO para lector local (chip-assigner)
+websockets>=12.0
 
 # ===================================================
 # DEPENDENCIAS DEL SISTEMA (built-in con Python)

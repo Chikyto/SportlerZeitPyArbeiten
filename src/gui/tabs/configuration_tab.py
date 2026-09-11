@@ -1,18 +1,17 @@
 """
 Tab de configuración unificado - Conexión + Antenas del Wizard
 """
-import json
-import os
-
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QPushButton, QGroupBox, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QTextEdit, QCheckBox, QWidget,
+    QFileDialog,
 )
 from PyQt6.QtCore import pyqtSlot, Qt
 from PyQt6.QtGui import QColor
 from datetime import datetime
 from .base_tab import BaseTab
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -42,7 +41,12 @@ class ConfigurationTab(BaseTab):
         # === SECCIÓN 1: CONEXIÓN ===
         conn_group = QGroupBox("🔌 Conexión del Lector YR8900")
         conn_layout = QHBoxLayout(conn_group)
-        
+
+        # Estado de conexión del lector (mismo estilo que el del backend)
+        self.reader_status_label = QLabel("⚪ Sin conexión")
+        self.reader_status_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        conn_layout.addWidget(self.reader_status_label)
+
         conn_layout.addWidget(QLabel("Host:"))
         self.host_input = QLineEdit()
         self.host_input.setReadOnly(True)
@@ -67,8 +71,16 @@ class ConfigurationTab(BaseTab):
         test_btn.clicked.connect(self.test_connection)
         test_btn.setMaximumWidth(80)
         conn_layout.addWidget(test_btn)
-        
+
         self.layout.addWidget(conn_group)
+
+        # Refrescar el estado del lector periódicamente (el scanner se
+        # conecta/asigna después de crear este tab)
+        from PyQt6.QtCore import QTimer
+        self.reader_status_timer = QTimer(self)
+        self.reader_status_timer.timeout.connect(self.update_reader_status)
+        self.reader_status_timer.start(3000)
+        QTimer.singleShot(0, self.update_reader_status)
         
         # === SECCIÓN 2: ANTENAS (Simple, solo checkboxes) ===
         antennas_group = QGroupBox("📡 Configuración de Antenas")
@@ -114,65 +126,70 @@ class ConfigurationTab(BaseTab):
         antennas_layout.addLayout(actions_layout)
         
         self.layout.addWidget(antennas_group)
-        
-        # === SECCIÓN 3: INTEGRACIÓN CLOUD ===
-        cloud_group = QGroupBox("☁️ Integración Cloud Backend")
+
+        # === SECCIÓN 3: BACKEND CLOUD ===
+        cloud_group = QGroupBox("☁️ Resultados Públicos / Backend Cloud")
         cloud_layout = QVBoxLayout(cloud_group)
 
-        # Estado
-        self.cloud_status_label = QLabel("⚪ No configurado")
+        # Fila de estado + acciones
+        status_layout = QHBoxLayout()
+        self.cloud_status_label = QLabel("⚪ Sin configurar")
         self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px;")
-        cloud_layout.addWidget(self.cloud_status_label)
+        status_layout.addWidget(self.cloud_status_label)
+        status_layout.addStretch()
 
-        # URL del backend (sin /api/v1)
-        url_row = QHBoxLayout()
-        url_row.addWidget(QLabel("URL Backend:"))
-        self.api_url_input = QLineEdit()
-        self.api_url_input.setPlaceholderText("https://tu-backend.run.app")
-        url_row.addWidget(self.api_url_input)
-        cloud_layout.addLayout(url_row)
+        import_btn = QPushButton("📂 Importar config (.szconfig)")
+        import_btn.clicked.connect(self.import_szconfig)
+        import_btn.setStyleSheet("background-color: #2563eb; color: white; font-weight: bold; padding: 6px 12px;")
+        status_layout.addWidget(import_btn)
 
-        # Event ID
-        event_row = QHBoxLayout()
-        event_row.addWidget(QLabel("Event ID:"))
-        self.event_id_input = QLineEdit()
-        self.event_id_input.setPlaceholderText("hbcMynoxLHeG5dc5IxAZ")
-        event_row.addWidget(self.event_id_input)
-        cloud_layout.addLayout(event_row)
+        test_cloud_btn = QPushButton("🧪 Probar conexión")
+        test_cloud_btn.clicked.connect(self.test_cloud_connection)
+        test_cloud_btn.setMaximumWidth(140)
+        status_layout.addWidget(test_cloud_btn)
 
-        # Nombre del agente
-        agent_row = QHBoxLayout()
-        agent_row.addWidget(QLabel("Nombre Agente:"))
-        self.agent_name_input = QLineEdit()
-        self.agent_name_input.setPlaceholderText("Equipo de cronometraje")
-        agent_row.addWidget(self.agent_name_input)
-        cloud_layout.addLayout(agent_row)
+        cloud_layout.addLayout(status_layout)
 
-        # Token
-        token_row = QHBoxLayout()
-        token_row.addWidget(QLabel("Token (agt_...):"))
-        self.token_input = QLineEdit()
-        self.token_input.setPlaceholderText("agt_...")
-        self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
-        token_row.addWidget(self.token_input)
-        cloud_layout.addLayout(token_row)
+        # Campos (read-only, se rellenan al importar)
+        fields_layout = QHBoxLayout()
 
-        # Botones
-        cloud_btns = QHBoxLayout()
-        save_cloud_btn = QPushButton("💾 Guardar Config Cloud")
-        save_cloud_btn.clicked.connect(self._save_cloud_config)
-        cloud_btns.addWidget(save_cloud_btn)
+        fields_layout.addWidget(QLabel("URL:"))
+        self.cloud_url_input = QLineEdit()
+        self.cloud_url_input.setReadOnly(True)
+        self.cloud_url_input.setPlaceholderText("Se carga al importar el .szconfig")
+        self.cloud_url_input.setStyleSheet("color: #555;")
+        fields_layout.addWidget(self.cloud_url_input, 3)
 
-        test_cloud_btn = QPushButton("🧪 Verificar Conexión")
-        test_cloud_btn.clicked.connect(self._test_cloud_connection)
-        cloud_btns.addWidget(test_cloud_btn)
+        fields_layout.addWidget(QLabel("Evento:"))
+        self.cloud_event_input = QLineEdit()
+        self.cloud_event_input.setReadOnly(True)
+        self.cloud_event_input.setMaximumWidth(160)
+        fields_layout.addWidget(self.cloud_event_input, 1)
 
-        cloud_btns.addStretch()
-        cloud_layout.addLayout(cloud_btns)
+        fields_layout.addWidget(QLabel("Agente:"))
+        self.cloud_agent_input = QLineEdit()
+        self.cloud_agent_input.setReadOnly(True)
+        self.cloud_agent_input.setMaximumWidth(160)
+        fields_layout.addWidget(self.cloud_agent_input, 1)
+
+        cloud_layout.addLayout(fields_layout)
+
+        # Fila de sincronización de atletas
+        sync_layout = QHBoxLayout()
+        sync_info = QLabel("Live tracking: los atletas deben estar registrados en la plataforma web.")
+        sync_info.setStyleSheet("color: #555; font-size: 11px;")
+        sync_layout.addWidget(sync_info)
+        sync_layout.addStretch()
+        self.sync_athletes_btn = QPushButton("☁️ Sincronizar atletas")
+        self.sync_athletes_btn.clicked.connect(self.sync_athletes_to_backend)
+        self.sync_athletes_btn.setStyleSheet("background-color: #059669; color: white; font-weight: bold; padding: 6px 14px;")
+        self.sync_athletes_btn.setToolTip("Sube atletas locales al backend para live tracking — upsert por dorsal")
+        sync_layout.addWidget(self.sync_athletes_btn)
+        cloud_layout.addLayout(sync_layout)
 
         self.layout.addWidget(cloud_group)
 
-        # Cargar config cloud guardada
+        # Cargar config cloud guardada (si existe)
         self._load_cloud_config_from_file()
 
         # === LOG ===
@@ -201,15 +218,20 @@ class ConfigurationTab(BaseTab):
         self.port_input.setValue(conn.get('port', 4001))
         
         # Cargar antenas DEL WIZARD (no crear 8 filas vacías)
-        antennas = self.wizard_config.get('antennas', {})
-        antennas = {str(k): v for k, v in antennas.items()}
+        raw = self.wizard_config.get('antennas', {})
+        # Filtrar solo claves que son puertos numéricos válidos
+        antennas = {}
+        for k, v in raw.items():
+            try:
+                antennas[str(int(k))] = v
+            except (ValueError, TypeError):
+                pass
 
         if not antennas:
             self.log("⚠️ No hay antenas configuradas")
             self.antennas_table.setRowCount(0)
             return
-        
-        # ⭐ CAMBIO CLAVE: Crear solo las filas de antenas que EXISTEN en el config
+
         antenna_ports = sorted([int(p) for p in antennas.keys()])
         self.antennas_table.setRowCount(len(antenna_ports))
         
@@ -332,52 +354,93 @@ class ConfigurationTab(BaseTab):
     def apply_antenna_config(self):
         """Aplicar cambios en configuración de antenas"""
         if not self.wizard_config:
+            self.log("❌ No hay configuración disponible")
+            QMessageBox.warning(
+                self,
+                "Error",
+                "No hay configuración disponible.\n\nEjecute el wizard de configuración primero."
+            )
             return
-        
-        # Leer checkboxes y actualizar config
-        updated = 0
-        antennas = self.wizard_config.get('antennas', {})
-        antenna_ports = sorted([int(p) for p in antennas.keys()])
-        for row, port_num in enumerate(antenna_ports):
-            port_str = str(port_num)
+
+        try:
+            # Asegurar que existe la clave 'antennas'
+            if 'antennas' not in self.wizard_config:
+                self.wizard_config['antennas'] = {}
+
+            # Leer checkboxes y actualizar config
+            updated = 0
+            for row in range(self.antennas_table.rowCount()):
+                # Obtener el número de puerto real desde la columna 0
+                port_item = self.antennas_table.item(row, 0)
+                if not port_item:
+                    continue
+
+                # Extraer número de puerto del texto "Puerto N"
+                port_text = port_item.text()
+                port_num = int(port_text.split()[-1])
+                port_str = str(port_num)
+
+                # Leer checkboxes
+                enabled_widget = self.antennas_table.cellWidget(row, 1)
+                if not enabled_widget:
+                    continue
+
+                enabled = enabled_widget.layout().itemAt(0).widget().isChecked()
+
+                if enabled:
+                    start_widget = self.antennas_table.cellWidget(row, 2)
+                    start = start_widget.layout().itemAt(0).widget().isChecked()
+
+                    finish_widget = self.antennas_table.cellWidget(row, 3)
+                    finish = finish_widget.layout().itemAt(0).widget().isChecked()
+
+                    checkpoint_widget = self.antennas_table.cellWidget(row, 4)
+                    checkpoint = checkpoint_widget.layout().itemAt(0).widget().isChecked()
+
+                    # Claves SIEMPRE int (formato normalizado del resto del
+                    # sistema): escribir '1' como string creaba una entrada
+                    # duplicada junto a la 1 entera
+                    antennas = self.wizard_config['antennas']
+                    existing = antennas.pop(port_num, None) or antennas.pop(port_str, None) or {}
+                    antennas.pop(port_str, None)
+                    existing.update({
+                        'enabled': True,
+                        'start': start,
+                        'finish': finish,
+                        'checkpoint': checkpoint,
+                        'name': f'Antena {port_num}'
+                    })
+                    antennas[port_num] = existing
+                    updated += 1
+                else:
+                    # Si está desmarcada, deshabilitar la antena en la config
+                    antennas = self.wizard_config['antennas']
+                    existing = antennas.pop(port_num, None) or antennas.pop(port_str, None)
+                    if existing is not None:
+                        existing['enabled'] = False
+                        antennas[port_num] = existing
+
+            # Guardar
+            self.save_config()
+            self.log(f"✅ Configuración aplicada: {updated} antenas actualizadas")
+
+            main_window = self.window()
+            if hasattr(main_window, 'tab_manager'):
+                main_window.tab_manager.apply_config_to_all_tabs(self.wizard_config)
+
+
+            QMessageBox.information(self, "OK", f"Configuración aplicada: {updated} antenas.")
             
-            # Leer checkboxes
-            enabled_widget = self.antennas_table.cellWidget(row, 1)
-            enabled = enabled_widget.layout().itemAt(0).widget().isChecked()
-            
-            if enabled:
-                start_widget = self.antennas_table.cellWidget(row, 2)
-                start = start_widget.layout().itemAt(0).widget().isChecked()
-                
-                finish_widget = self.antennas_table.cellWidget(row, 3)
-                finish = finish_widget.layout().itemAt(0).widget().isChecked()
-                
-                checkpoint_widget = self.antennas_table.cellWidget(row, 4)
-                checkpoint = checkpoint_widget.layout().itemAt(0).widget().isChecked()
-                
-                # Actualizar o crear config de esta antena
-                if port_str not in self.wizard_config.get('antennas', {}):
-                    self.wizard_config['antennas'][port_str] = {}
-                
-                self.wizard_config['antennas'][port_str].update({
-                    'enabled': True,
-                    'start': start,
-                    'finish': finish,
-                    'checkpoint': checkpoint,
-                    'name': f'Antena {port_num}'
-                })
-                updated += 1
-        
-        # Guardar
-        self.save_config()
-        self.log(f"✅ Configuración aplicada: {updated} antenas actualizadas")
-        
-        QMessageBox.information(
-            self,
-            "Configuración Aplicada",
-            f"Se actualizó la configuración de {updated} antenas.\n\n"
-            "Reinicie la aplicación para aplicar los cambios."
-        )
+
+        except Exception as e:
+            self.log(f"❌ Error aplicando configuración: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error al aplicar configuración:\n\n{e}"
+            )
+            import traceback
+            traceback.print_exc()
     
     def save_config(self):
         """Guardar configuración en archivo"""
@@ -389,58 +452,107 @@ class ConfigurationTab(BaseTab):
         except Exception as e:
             self.log(f"❌ Error guardando: {e}")
     
+    def update_reader_status(self):
+        """Actualizar indicador de conexión con el lector YR8900"""
+        connected = bool(self.scanner and getattr(self.scanner, 'connected', False))
+        if connected:
+            self.reader_status_label.setText("🟢 Conectado")
+            self.reader_status_label.setStyleSheet(
+                "font-weight: bold; font-size: 13px; color: green;")
+        else:
+            self.reader_status_label.setText("🔴 Desconectado")
+            self.reader_status_label.setStyleSheet(
+                "font-weight: bold; font-size: 13px; color: red;")
+
     def test_connection(self):
         """Test de conexión"""
         if not self.scanner:
             self.log("❌ Scanner no disponible")
+            self.update_reader_status()
             return
-        
+
         self.log("🧪 Probando conexión...")
         if hasattr(self.scanner, 'test_original_command'):
             if self.scanner.test_original_command():
                 self.log("✅ Test exitoso")
             else:
                 self.log("❌ Test falló")
+        self.update_reader_status()
     
     def rescan_antennas(self):
         """Re-escanear antenas físicas"""
         if not self.scanner:
             self.log("❌ Scanner no disponible")
+            QMessageBox.warning(
+                self,
+                "Error",
+                "Scanner no disponible.\n\nVerifique la conexión con el lector RFID."
+            )
             return
-        
-        self.log("🔄 Re-escaneando antenas físicas...")
-        detected = self.scanner.detect_connected_antennas()
-        self.log(f"✅ Detectadas {len(detected)} antenas: {detected}")
-        
-        # Actualizar el wizard_config con las antenas detectadas
-        if not self.wizard_config:
-            self.wizard_config = {'connection': {}, 'antennas': {}}
-        
-        # Crear/actualizar entradas para antenas detectadas
-        for port in detected:
-            port_str = str(port)
-            if port_str not in self.wizard_config.get('antennas', {}):
-                self.wizard_config['antennas'][port_str] = {
-                    'enabled': True,
-                    'name': f'Antena {port}',
-                    'start': False,
-                    'finish': False,
-                    'checkpoint': False
-                }
-            else:
-                # Marcar como habilitada si ya existe
-                self.wizard_config['antennas'][port_str]['enabled'] = True
-        
-        # Recargar la tabla con las antenas actualizadas
-        self.load_config_data()
-        
-        QMessageBox.information(
-            self,
-            "Re-escaneo Completado",
-            f"Se detectaron {len(detected)} antenas.\n\n"
-            f"Puertos: {', '.join(map(str, detected))}\n\n"
-            "Configure los roles y haga clic en 'Aplicar Cambios'."
-        )
+
+        try:
+            self.log("🔄 Re-escaneando antenas físicas...")
+
+            # Verificar que el método existe
+            if not hasattr(self.scanner, 'detect_connected_antennas'):
+                self.log("❌ El scanner no soporta detección de antenas")
+                QMessageBox.warning(
+                    self,
+                    "Función no disponible",
+                    "El scanner actual no soporta detección automática de antenas."
+                )
+                return
+
+            detected = self.scanner.detect_connected_antennas()
+            self.log(f"✅ Detectadas {len(detected)} antenas: {detected}")
+
+            # Actualizar el wizard_config con las antenas detectadas
+            if not self.wizard_config:
+                self.wizard_config = {'connection': {}, 'antennas': {}}
+
+            # Asegurar que existe la clave 'antennas'
+            if 'antennas' not in self.wizard_config:
+                self.wizard_config['antennas'] = {}
+
+            # Crear/actualizar entradas para antenas detectadas
+            for port in detected:
+                port_str = str(port)
+                if port_str not in self.wizard_config['antennas']:
+                    self.wizard_config['antennas'][port_str] = {
+                        'enabled': True,
+                        'name': f'Antena {port}',
+                        'start': False,
+                        'finish': False,
+                        'checkpoint': False
+                    }
+                else:
+                    # Marcar como habilitada si ya existe
+                    self.wizard_config['antennas'][port_str]['enabled'] = True
+
+            # Recargar la tabla con las antenas actualizadas
+            self.load_config_data()
+
+            main_window = self.window()
+            if hasattr(main_window, 'tab_manager'):
+                main_window.tab_manager.apply_config_to_all_tabs(self.wizard_config)
+
+            QMessageBox.information(
+                self,
+                "Re-escaneo Completado",
+                f"Se detectaron {len(detected)} antenas.\n\n"
+                f"Puertos: {', '.join(map(str, detected))}\n\n"
+                "Configure los roles y haga clic en 'Aplicar Cambios'."
+            )
+
+        except Exception as e:
+            self.log(f"❌ Error en re-escaneo: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error al re-escanear antenas:\n\n{e}"
+            )
+            import traceback
+            traceback.print_exc()
     
     def rerun_wizard(self):
         """Re-ejecutar el wizard sin reiniciar"""
@@ -451,92 +563,291 @@ class ConfigurationTab(BaseTab):
             "Se abrirá el wizard de configuración.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        
-        if reply == QMessageBox.StandardButton.Yes:
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        main_window = self.window()
+
+        # 1. Desconectar scanner para liberar el socket del lector
+        scanner = getattr(main_window, 'scanner', None)
+        if scanner and hasattr(scanner, 'disconnect'):
             try:
-                # Importar wizard
-                from src.gui.wizard.configuration_wizard import ConfigurationWizard
-                
-                # Ejecutar wizard
-                wizard = ConfigurationWizard()
-                if wizard.exec():
-                    # Obtener nueva config
-                    new_config = wizard.get_configuration()
-                    
-                    # Guardar
-                    import json
-                    with open('timing_system_config.json', 'w') as f:
-                        json.dump(new_config, f, indent=2)
-                    
-                    self.log("✅ Nueva configuración guardada")
-                    
-                    # Actualizar la config actual
-                    self.wizard_config = new_config
-                    
-                    # Recargar datos en el tab
-                    self.load_config_data()
-                    
-                    # Actualizar scanner en MainWindow
-                    main_window = self.window()
-                    if hasattr(main_window, 'wizard_config'):
-                        main_window.wizard_config = new_config
-                    if hasattr(main_window, 'setup_scanner'):
-                        main_window.setup_scanner()
-                    
-                    QMessageBox.information(
-                        self,
-                        "Configuración Actualizada",
-                        "La nueva configuración ha sido aplicada.\n\n"
-                        "Reinicie la aplicación para aplicar todos los cambios."
-                    )
-                else:
-                    self.log("⚠️ Wizard cancelado")
-                    
+                scanner.disconnect()
+                self.log("🔌 Scanner desconectado para re-configuración")
             except Exception as e:
-                self.log(f"❌ Error ejecutando wizard: {e}")
-                import traceback
-                traceback.print_exc()
-    
-    # ========================================================================
-    # Cloud Backend Integration
-    # ========================================================================
+                self.log(f"⚠️ No se pudo desconectar scanner: {e}")
 
-    def _save_cloud_config(self):
-        """Guardar configuración cloud bajo sub-key 'cloud' en api_config.json."""
-        path = 'config/api_config.json'
         try:
-            data = {}
-            if os.path.exists(path):
-                with open(path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            base_url = self.api_url_input.text().strip().rstrip('/')
-            data['cloud'] = {
-                'api_url': base_url + '/api/v1',
-                'event_id': self.event_id_input.text().strip(),
-                'agent_name': self.agent_name_input.text().strip(),
-                'api_key': self.token_input.text().strip(),
-            }
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            self.cloud_status_label.setText("🟡 Configurado (sin verificar)")
-            self.cloud_status_label.setStyleSheet(
-                "font-weight: bold; font-size: 13px; color: orange;")
-            self.log("☁️ Config cloud guardada en config/api_config.json")
+            # 2. Cargar config guardada para pre-poblar el wizard con el IP correcto
+            from config.system_config import SystemConfig
+            saved_config = SystemConfig()
+            saved_config.load_from_file('timing_system_config.json')
 
-            # Recargar en MainWindow si está disponible
-            main_window = self.window()
-            if hasattr(main_window, '_load_cloud_config'):
-                main_window.cloud_config = main_window._load_cloud_config()
-                self.log("✅ Config cloud recargada en MainWindow")
+            # 3. Abrir wizard con la config actual (IP correcta)
+            from src.gui.wizard.auto_wizard import AutoConfigurationWizard
+            wizard = AutoConfigurationWizard(config=saved_config)
+
+            if wizard.exec():
+                new_config = wizard.get_configuration()
+
+                with open('timing_system_config.json', 'w') as f:
+                    json.dump(new_config, f, indent=2)
+
+                self.log("✅ Nueva configuración guardada")
+                self.wizard_config = new_config
+                self.load_config_data()
+
+                if hasattr(main_window, 'wizard_config'):
+                    main_window.wizard_config = new_config
+                if hasattr(main_window, 'setup_scanner'):
+                    main_window.setup_scanner()
+                if hasattr(main_window, 'tab_manager'):
+                    main_window.tab_manager.apply_config_to_all_tabs(new_config)
+
+                QMessageBox.information(
+                    self,
+                    "Configuración Actualizada",
+                    "La nueva configuración ha sido aplicada."
+                )
+            else:
+                self.log("⚠️ Wizard cancelado — reconectando scanner anterior...")
+                # Reconectar con la config que había antes
+                if hasattr(main_window, 'setup_scanner'):
+                    main_window.setup_scanner()
+
         except Exception as e:
-            logger.warning(f"⚠️ Error guardando cloud config: {e}")
-            self.log(f"❌ Error guardando cloud config: {e}")
+            self.log(f"❌ Error ejecutando wizard: {e}")
+            import traceback
+            traceback.print_exc()
+            # Intentar reconectar aunque haya fallado
+            if hasattr(main_window, 'setup_scanner'):
+                main_window.setup_scanner()
+    
+    def import_szconfig(self):
+        """Importar archivo .szconfig generado desde el front web"""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Importar configuración de timing",
+            "",
+            "Sportler-Zeit Config (*.szconfig);;JSON (*.json);;Todos los archivos (*)"
+        )
+        if not path:
+            return
+
+        try:
+            import json
+            with open(path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            required = ['api_url', 'event_id', 'token']
+            missing = [k for k in required if not config.get(k)]
+            if missing:
+                QMessageBox.warning(self, "Archivo inválido",
+                    f"El archivo no contiene los campos requeridos: {', '.join(missing)}")
+                return
+
+            # Guardar en timing_system_config.json
+            self._save_cloud_config(config)
+
+            # Actualizar UI
+            self._apply_cloud_config_to_ui(config)
+
+            self.log(f"✅ Config importada: {config['api_url']} | evento: {config['event_id']} | agente: {config.get('agent_name', '-')}")
+
+            QMessageBox.information(self, "Config importada",
+                f"Conexión configurada correctamente.\n\n"
+                f"URL: {config['api_url']}\n"
+                f"Evento: {config['event_id']}\n"
+                f"Agente: {config.get('agent_name', '-')}\n\n"
+                "Usá 'Probar conexión' para verificar.")
+
+        except Exception as e:
+            logger.error(f"Error importando .szconfig: {e}")
+            QMessageBox.critical(self, "Error", f"No se pudo leer el archivo:\n{e}")
+
+    def sync_athletes_to_backend(self):
+        """Subir atletas locales al backend para el live tracking"""
+        import json, os, requests as req
+
+        # 1. Leer config
+        config_path = 'config/api_config.json'
+        if not os.path.exists(config_path):
+            QMessageBox.warning(self, "Sin configuración",
+                "No hay configuración de backend.\n\n"
+                "Importá un archivo .szconfig primero.")
+            return
+
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo leer api_config.json:\n{e}")
+            return
+
+        # Soporta estructura plana {api_url,...} o anidada {cloud: {...}} (szconfig importado)
+        cloud = cfg.get('cloud', cfg)
+        api_url  = cloud.get('api_url', '').rstrip('/').removesuffix('/api/v1')
+        api_key  = cloud.get('api_key', '')
+        event_id = cloud.get('event_id', '')
+
+        if not api_url or not event_id:
+            QMessageBox.warning(self, "Configuración incompleta",
+                "Falta api_url o event_id en api_config.json.\n\n"
+                "Importá un archivo .szconfig válido.")
+            return
+
+        # 2. Obtener atletas del race_manager (via main_window)
+        from PyQt6.QtWidgets import QApplication
+        main_window = None
+        for w in QApplication.topLevelWidgets():
+            if hasattr(w, 'race_manager'):
+                main_window = w
+                break
+
+        if not main_window or not main_window.race_manager:
+            QMessageBox.warning(self, "Sin datos", "No hay atletas cargados en el sistema.")
+            return
+
+        race_manager = main_window.race_manager
+        all_distances = race_manager.get_all_distances()
+        if not all_distances:
+            QMessageBox.warning(self, "Sin atletas",
+                "No hay atletas cargados.\n\nImportá atletas primero desde CSV o Web.")
+            return
+
+        # 3. Serializar atletas
+        athletes_payload = []
+        for dist in all_distances:
+            for athlete in dist.participants:
+                athletes_payload.append({
+                    'bib_number':  athlete.bib_number,
+                    'name':        athlete.name,
+                    'distance_id': dist.distance_id,
+                    'distance':    dist.name,
+                    'gender':      athlete.gender or '',
+                    'birth_date':  athlete.birth_date.isoformat() if athlete.birth_date else '',
+                    'chip_id':     athlete.tag_id or '',
+                    'team':        athlete.team or '',
+                })
+
+        if not athletes_payload:
+            QMessageBox.warning(self, "Sin atletas", "No hay atletas para sincronizar.")
+            return
+
+        # 4. Confirmar
+        reply = QMessageBox.question(self, "Sincronizar atletas",
+            f"Se van a subir {len(athletes_payload)} atletas al backend.\n\n"
+            f"URL: {api_url}\nEvento: {event_id}\n\n"
+            f"¿Continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes)
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # 5. POST al backend
+        try:
+            self.sync_athletes_btn.setEnabled(False)
+            self.sync_athletes_btn.setText("Subiendo...")
+
+            headers = {'Content-Type': 'application/json'}
+            if api_key:
+                headers['Authorization'] = f'Bearer {api_key}'
+
+            url = f"{api_url}/api/v1/timing/events/{event_id}/athletes"
+            resp = req.post(url, json={'athletes': athletes_payload}, headers=headers, timeout=30)
+
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                created = data.get('created', '?')
+                updated = data.get('updated', '?')
+                self.log(f"✅ Atletas sincronizados: {created} creados, {updated} actualizados")
+                QMessageBox.information(self, "Sincronización exitosa",
+                    f"✅ Atletas subidos al backend:\n\n"
+                    f"• Creados: {created}\n"
+                    f"• Actualizados: {updated}\n\n"
+                    "El live tracking ya puede mostrar nombres y dorsales.")
+            else:
+                self.log(f"⚠️ Backend retornó {resp.status_code}: {resp.text[:200]}")
+                QMessageBox.warning(self, "Respuesta inesperada",
+                    f"El backend respondió con código {resp.status_code}.\n\n"
+                    f"Detalle: {resp.text[:300]}")
+
+        except req.exceptions.ConnectionError:
+            QMessageBox.critical(self, "Sin conexión",
+                "No se pudo conectar al backend.\n\nVerificá que el servicio esté disponible.")
+            self.log("❌ Error de conexión al sincronizar atletas")
+        except req.exceptions.Timeout:
+            QMessageBox.critical(self, "Timeout", "La conexión tardó demasiado.\n\nIntentá de nuevo.")
+            self.log("❌ Timeout al sincronizar atletas")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al sincronizar:\n{e}")
+            self.log(f"❌ Error sincronizando atletas: {e}")
+        finally:
+            self.sync_athletes_btn.setEnabled(True)
+            self.sync_athletes_btn.setText("☁️ Sincronizar atletas")
+
+    def test_cloud_connection(self):
+        """Probar conexión con el backend"""
+        api_url = self.cloud_url_input.text().strip()
+        token = self._get_saved_token()
+
+        if not api_url or not token:
+            QMessageBox.warning(self, "Sin config", "Primero importá un archivo .szconfig.")
+            return
+
+        try:
+            import requests
+            headers = {'Authorization': f'Bearer {token}'}
+            # Usamos el health check del backend
+            base_url = api_url.rstrip('/').replace('/api/v1', '')
+            resp = requests.get(f"{base_url}/health", headers=headers, timeout=15)
+
+            if resp.status_code in (200, 404):
+                # 404 también es "backend respondió", puede que no tenga /health
+                self.cloud_status_label.setText("🟢 Conectado")
+                self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px; color: green;")
+                self.log(f"✅ Backend responde: {resp.status_code}")
+                QMessageBox.information(self, "Conexión OK", "El backend está accesible.")
+            else:
+                self.cloud_status_label.setText(f"🔴 Error {resp.status_code}")
+                self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px; color: red;")
+                self.log(f"⚠️ Backend retornó: {resp.status_code}")
+
+        except Exception as e:
+            self.cloud_status_label.setText("🔴 Sin conexión")
+            self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px; color: red;")
+            self.log(f"❌ Error de conexión: {e}")
+            QMessageBox.warning(self, "Sin conexión", f"No se pudo conectar al backend:\n{e}")
+
+    def _save_cloud_config(self, config: dict):
+        """Guardar config cloud en config/api_config.json"""
+        import json, os
+        config_path = 'config/api_config.json'
+        existing = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+
+        existing['cloud'] = {
+            'api_url': config['api_url'],
+            'event_id': config['event_id'],
+            'agent_name': config.get('agent_name', ''),
+            'api_key': config['token'],
+        }
+
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
 
     def _load_cloud_config_from_file(self):
-        """Cargar config cloud desde archivo y mostrar en UI."""
-        path = 'config/api_config.json'
+        """Cargar cloud config guardado al iniciar"""
+        import json, os
         try:
+            path = 'config/api_config.json'
             if not os.path.exists(path):
                 return
             with open(path, 'r', encoding='utf-8') as f:
@@ -550,67 +861,29 @@ class ConfigurationTab(BaseTab):
         except Exception as e:
             logger.warning(f"⚠️ No se pudo cargar cloud config: {e}")
 
-    def _apply_cloud_config_to_ui(self, cloud: dict):
-        """Poblar campos UI desde dict de cloud config."""
-        api_url = cloud.get('api_url', '')
-        # Strip /api/v1 for display
-        if api_url.endswith('/api/v1'):
-            api_url = api_url[:-7]
-        self.api_url_input.setText(api_url)
-        self.event_id_input.setText(cloud.get('event_id', ''))
-        self.agent_name_input.setText(cloud.get('agent_name', ''))
-        self.token_input.setText(cloud.get('api_key', ''))
-
-    def _test_cloud_connection(self):
-        """Verificar conexión con el backend cloud."""
-        import threading
-        import requests
-
-        base_url = self.api_url_input.text().strip().rstrip('/')
-        token = self.token_input.text().strip()
-        event_id = self.event_id_input.text().strip()
-
-        if not base_url or not token:
-            QMessageBox.warning(self, "Faltan datos", "Ingrese URL y Token antes de verificar.")
-            return
-
-        self.cloud_status_label.setText("🔄 Verificando...")
-        self.cloud_status_label.setStyleSheet(
-            "font-weight: bold; font-size: 13px; color: gray;")
-
-        def _check():
-            try:
-                url = f"{base_url}/api/v1/timing/events/{event_id}/reads/summary"
-                r = requests.get(url, timeout=5)
-                ok = r.status_code in (200, 404)  # 404 = event not found but backend reachable
-                return ok, r.status_code
-            except Exception as e:
-                return False, str(e)
-
-        def _run():
-            ok, code = _check()
-            # Use QTimer.singleShot to update UI safely from main thread
+    def _apply_cloud_config_to_ui(self, config: dict):
+        """Actualizar widgets con la config cloud"""
+        self.cloud_url_input.setText(config.get('api_url', ''))
+        self.cloud_event_input.setText(config.get('event_id', ''))
+        self.cloud_agent_input.setText(config.get('agent_name', ''))
+        self.cloud_status_label.setText("🟡 Configurado (sin verificar)")
+        self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #b45309;")
+        agent_name = config.get('agent_name', '')
+        event_id = config.get('event_id', '')
+        if agent_name and self.signals and hasattr(self.signals, 'backend_config_loaded'):
             from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self.signals.backend_config_loaded.emit(agent_name, event_id))
 
-            def _update():
-                if ok:
-                    self.cloud_status_label.setText("🟢 Conectado")
-                    self.cloud_status_label.setStyleSheet(
-                        "font-weight: bold; font-size: 13px; color: green;")
-                    self.log(f"✅ Backend alcanzable (HTTP {code})")
-                else:
-                    self.cloud_status_label.setText("🔴 Sin conexión")
-                    self.cloud_status_label.setStyleSheet(
-                        "font-weight: bold; font-size: 13px; color: red;")
-                    self.log(f"❌ No se pudo conectar: {code}")
-
-            QTimer.singleShot(0, _update)
-
-        threading.Thread(target=_run, daemon=True).start()
-
-    # ========================================================================
-    # Utilidades
-    # ========================================================================
+    def _get_saved_token(self) -> str:
+        """Obtener token guardado de la config"""
+        import json, os
+        try:
+            with open('config/api_config.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            # Estructura anidada {cloud: {api_key: ...}} o plana {api_key: ...}
+            return data.get('cloud', {}).get('api_key', '') or data.get('api_key', '')
+        except Exception:
+            return ''
 
     def get_timestamp(self):
         """Timestamp formateado"""

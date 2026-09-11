@@ -452,8 +452,8 @@ class ReaderManager:
         try:
             self.comm.send_command(CommandCodes.SET_OUTPUT_POWER, [25])  # 25 dBm
             time.sleep(0.5)
-        except:
-            logger.warning("No se pudo configurar potencia")
+        except (OSError, socket.timeout, socket.error) as e:
+            logger.warning(f"No se pudo configurar potencia: {e}")
         
         results = {}
         

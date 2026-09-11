@@ -24,33 +24,47 @@ class TabManager:
     - Proporcionar acceso a tabs específicos
     """
     
-    def __init__(self, tab_widget: QTabWidget, signals, scanner=None, antenna_manager=None):
+    def __init__(self, tab_widget: QTabWidget, signals, scanner=None, antenna_manager=None, race_manager=None):
         """
         Inicializar gestor de tabs
-        
+
         Args:
             tab_widget: QTabWidget donde se agregarán los tabs
             signals: Objeto AppSignals para comunicación
             scanner: Scanner RFID (opcional, se puede agregar después)
             antenna_manager: Gestor de antenas (opcional)
+            race_manager: Gestor de carreras para timing (opcional)
         """
         self.tab_widget = tab_widget
         self.signals = signals
         self.scanner = scanner
         self.antenna_manager = antenna_manager
+        self.race_manager = race_manager
         self.tabs = {}  # Dict para acceder a tabs por nombre
-        
+
         logger.info("📋 TabManager inicializado")
     
     def set_scanner(self, scanner):
         """
         Establecer scanner (para cuando se inicializa después)
-        
+
         Args:
             scanner: Instancia de AdvancedYR8900Scanner
         """
         self.scanner = scanner
         logger.info("🔄 Scanner asignado a TabManager")
+
+        # Actualizar scanner en tabs que ya existen
+        if 'chip_assignment' in self.tabs:
+            chip_widget = self.tabs['chip_assignment']
+            chip_widget.scanner = scanner
+            logger.info("✅ Scanner actualizado en ChipAssignmentWidget")
+
+        # 🔥 FIX: También actualizar scanner en ConfigurationTab
+        if 'configuration' in self.tabs:
+            config_tab = self.tabs['configuration']
+            config_tab.scanner = scanner
+            logger.info("✅ Scanner actualizado en ConfigurationTab")
     
     def set_antenna_manager(self, antenna_manager):
         """
@@ -65,26 +79,33 @@ class TabManager:
     def create_all_tabs(self):
         """
         Crear todos los tabs de la aplicación
-        
-        Orden de tabs:
-        1. Detección
-        2. Gestión de Eventos
-        3. Competencia
-        4. Configuración
+
+        Orden de tabs (siguiendo el flujo natural de trabajo):
+        1. Configuración - Conectar lector RFID, configurar antenas
+        2. Gestión de Eventos - Crear evento, categorías, distancias
+        3. Asignación de Chips - Asignar chips a corredores
+        4. Categorías de Premiación - Configurar categorías por género/edad
+        5. Competencia - Iniciar carreras, monitorear, resultados
+        6. Detección - Historial de detecciones, debugging
         """
         logger.info("=" * 80)
-        logger.info("🏗️  Creando todos los tabs")
+        logger.info("🏗️  Creando todos los tabs (orden workflow)")
         logger.info("=" * 80)
-        
+
         try:
-            self.create_detection_tab()
-            self.create_event_config_tab()
-            self.create_race_monitoring_tab()
-            self.create_configuration_tab()
-            
+            self.create_configuration_tab()       # 1º: Configurar hardware
+            self.create_chip_assignment_tab()     # 2º: Cargar atletas
+            self.create_event_config_tab()        # 3º: Crear evento / iniciar carrera
+            self.create_award_categories_tab()    # 4º: Categorías de premiación
+            self.create_race_monitoring_tab()     # 5º: Correr carreras
+            self.create_detection_tab()           # 6º: Debugging/historial
+
+            # Conectar señales entre tabs para sincronización
+            self.connect_tab_signals()
+
             logger.info(f"✅ {len(self.tabs)} tabs creados exitosamente")
             logger.info("=" * 80)
-            
+
         except Exception as e:
             logger.error(f"❌ Error creando tabs: {e}")
             import traceback
@@ -97,7 +118,7 @@ class TabManager:
         
         from ..tabs import DetectionTab
         
-        detection_tab = DetectionTab(signals=self.signals)
+        detection_tab = DetectionTab(signals=self.signals, race_manager=self.race_manager)
         self.tab_widget.addTab(detection_tab, "🔍 Detección")
         self.tabs['detection'] = detection_tab
         
@@ -106,25 +127,56 @@ class TabManager:
     def create_event_config_tab(self):
         """Crear tab de gestión de eventos"""
         logger.info("📋 Creando EventConfigWidget...")
-        
+
         from ..widgets.event_config_widget import EventConfigWidget
-        
-        event_config_widget = EventConfigWidget()
+
+        event_config_widget = EventConfigWidget(
+            race_manager=self.race_manager,
+            signals=self.signals  # 🔥 Pasar signals para auto-inicio de escaneo
+        )
         self.tab_widget.addTab(event_config_widget, "📋 Gestión de Eventos")
         self.tabs['events'] = event_config_widget
-        
+
         logger.info("✅ EventConfigWidget creado")
-    
+
+    def create_award_categories_tab(self):
+        """Crear tab de categorías de premiación"""
+        logger.info("⭐ Creando AwardCategoriesWidget...")
+
+        from ..widgets.award_categories_widget import AwardCategoriesWidget
+
+        award_categories_widget = AwardCategoriesWidget(race_manager=self.race_manager)
+        self.tab_widget.addTab(award_categories_widget, "⭐ Categorías de Premiación")
+        self.tabs['award_categories'] = award_categories_widget
+
+        logger.info("✅ AwardCategoriesWidget creado")
+
+    def create_chip_assignment_tab(self):
+        """Crear tab de asignación de chips"""
+        logger.info("🏷️ Creando ChipAssignmentWidget...")
+
+        from ..widgets.chip_assignment_widget import ChipAssignmentWidget
+
+        chip_widget = ChipAssignmentWidget(
+            race_manager=self.race_manager,
+            scanner=self.scanner,
+            signals=self.signals
+        )
+        self.tab_widget.addTab(chip_widget, "🏷️ Asignación de Chips")
+        self.tabs['chip_assignment'] = chip_widget
+
+        logger.info("✅ ChipAssignmentWidget creado")
+
     def create_race_monitoring_tab(self):
         """Crear tab de monitoreo de carrera"""
         logger.info("🏃 Creando RaceMonitoringWidget...")
-        
+
         from ..widgets.race_monitoring_widget import RaceMonitoringWidget
-        
-        race_monitoring_widget = RaceMonitoringWidget()
+
+        race_monitoring_widget = RaceMonitoringWidget(race_manager=self.race_manager)
         self.tab_widget.addTab(race_monitoring_widget, "🏃 Competencia")
         self.tabs['race'] = race_monitoring_widget
-        
+
         logger.info("✅ RaceMonitoringWidget creado")
     
     def create_configuration_tab(self):
@@ -177,12 +229,16 @@ class TabManager:
         logger.info("=" * 80)
         
         raw_antennas = config.get('antennas', {})
-        antennas_config = {k: v for k, v in raw_antennas.items() if str(k).isdigit()}
-        
-        # Debug
-        logger.info(f"📦 Configuración a aplicar:")
-        logger.info(f"   Keys: {list(antennas_config.keys())}")
-        logger.info(f"   Tipos: {[type(k).__name__ for k in antennas_config.keys()]}")
+
+        # Normalizar: solo claves convertibles a int (descartar claves string no numéricas)
+        antennas_config = {}
+        for k, v in raw_antennas.items():
+            try:
+                antennas_config[int(k)] = v
+            except (ValueError, TypeError):
+                logger.warning(f"⚠️  Clave de antena ignorada (no es puerto): {k!r}")
+
+        logger.info(f"📦 Antenas normalizadas: {list(antennas_config.keys())}")
         
         # 1. Aplicar a DetectionTab
         self._apply_to_detection_tab(antennas_config)
@@ -218,14 +274,18 @@ class TabManager:
         """Aplicar configuración al ConfigurationTab"""
         try:
             logger.info("⚙️  Actualizando ConfigurationTab...")
-            
+
             config_tab = self.get_tab('configuration')
-            if config_tab and hasattr(config_tab, 'load_configuration'):
-                config_tab.load_configuration(config)
+            if config_tab:
+                # 🔥 FIX: Actualizar wizard_config directamente
+                config_tab.wizard_config = config
+                # Recargar datos en la UI
+                if hasattr(config_tab, 'load_config_data'):
+                    config_tab.load_config_data()
                 logger.info("✅ ConfigurationTab actualizado")
             else:
-                logger.warning("⚠️  ConfigurationTab no tiene método load_configuration")
-                
+                logger.warning("⚠️  ConfigurationTab no encontrado")
+
         except Exception as e:
             logger.error(f"❌ Error actualizando ConfigurationTab: {e}")
             import traceback
@@ -242,7 +302,124 @@ class TabManager:
     def has_tab(self, name: str) -> bool:
         """Verificar si existe un tab específico"""
         return name in self.tabs
-    
+
+    def connect_tab_signals(self):
+        """
+        Conectar señales entre tabs para sincronización automática
+
+        Conexiones:
+        - ChipAssignmentWidget.chip_assigned → EventConfigWidget.refresh_all()
+        - ChipAssignmentWidget.assignment_completed → EventConfigWidget.refresh_all()
+        - ChipAssignmentWidget.categories_imported → EventConfigWidget.refresh_all()
+        - EventConfigWidget.category_started → RaceMonitoringWidget.refresh()
+        - EventConfigWidget.category_finished → RaceMonitoringWidget.refresh()
+        - EventConfigWidget.categories_changed → RaceMonitoringWidget.refresh_category_combo()
+        - EventConfigWidget.categories_changed → AwardCategoriesWidget.refresh_table()
+        - AwardCategoriesWidget.award_categories_changed → RaceMonitoringWidget (actualizar podios)
+        """
+        logger.info("🔗 Conectando señales entre tabs...")
+
+        # Obtener referencias a los tabs
+        chip_assignment = self.get_tab('chip_assignment')
+        event_config = self.get_tab('events')
+        race_monitoring = self.get_tab('race')
+        award_categories = self.get_tab('award_categories')
+
+        # Conexión: Asignación de Chips → Gestión de Eventos
+        if chip_assignment and event_config:
+            # Cuando se asigna un chip, refrescar eventos
+            chip_assignment.chip_assigned.connect(
+                lambda athlete_id, chip_id: self._on_chip_assigned(event_config)
+            )
+            chip_assignment.assignment_completed.connect(
+                lambda: event_config.refresh_all()
+            )
+            # Cuando se importan categorías desde CSV, refrescar eventos
+            chip_assignment.categories_imported.connect(
+                lambda: event_config.refresh_all()
+            )
+            logger.info("✅ ChipAssignmentWidget → EventConfigWidget conectado")
+
+        # Conexión: Gestión de Eventos → Monitoreo de Carrera
+        if event_config and race_monitoring:
+            # Cuando se inicia/finaliza una categoría, refrescar monitoreo
+            event_config.category_started.connect(
+                lambda cat_id: self._on_category_changed(race_monitoring, cat_id)
+            )
+            event_config.category_finished.connect(
+                lambda cat_id: self._on_category_changed(race_monitoring, cat_id)
+            )
+            # Cuando cambian las categorías (agregar/eliminar), actualizar combo
+            event_config.categories_changed.connect(
+                lambda: self._on_categories_list_changed(race_monitoring)
+            )
+            logger.info("✅ EventConfigWidget → RaceMonitoringWidget conectado")
+
+        # Conexión: Gestión de Eventos → Categorías de Premiación
+        if event_config and award_categories:
+            # Cuando cambian las categorías de carrera (distancias), refrescar award categories
+            event_config.categories_changed.connect(
+                lambda: self._on_race_categories_changed(award_categories)
+            )
+            logger.info("✅ EventConfigWidget → AwardCategoriesWidget conectado")
+
+        # Conexión: Categorías de Premiación → Monitoreo de Carrera
+        if award_categories and race_monitoring:
+            # Cuando cambian las categorías de premiación, refrescar podios
+            award_categories.award_categories_changed.connect(
+                lambda: self._on_award_categories_changed(race_monitoring)
+            )
+            logger.info("✅ AwardCategoriesWidget → RaceMonitoringWidget conectado")
+
+        logger.info("✅ Señales entre tabs conectadas exitosamente")
+
+    def _on_chip_assigned(self, event_config_widget):
+        """Callback cuando se asigna un chip - refrescar EventConfigWidget"""
+        try:
+            logger.info("🔄 Chip asignado, refrescando EventConfigWidget...")
+            event_config_widget.refresh_all()
+        except Exception as e:
+            logger.error(f"❌ Error refrescando EventConfigWidget: {e}")
+
+    def _on_category_changed(self, race_monitoring_widget, category_id: str):
+        """Callback cuando cambia el estado de una categoría"""
+        try:
+            logger.info(f"🔄 Distancia {category_id} cambió, refrescando RaceMonitoringWidget...")
+            if hasattr(race_monitoring_widget, 'refresh'):
+                race_monitoring_widget.refresh()
+        except Exception as e:
+            logger.error(f"❌ Error refrescando RaceMonitoringWidget: {e}")
+
+    def _on_categories_list_changed(self, race_monitoring_widget):
+        """Callback cuando cambia la lista de categorías (agregar/eliminar)"""
+        try:
+            logger.info("🔄 Lista de categorías cambió, actualizando combo en RaceMonitoringWidget...")
+            if hasattr(race_monitoring_widget, 'refresh_category_combo'):
+                race_monitoring_widget.refresh_category_combo()
+        except Exception as e:
+            logger.error(f"❌ Error actualizando combo de categorías: {e}")
+
+    def _on_race_categories_changed(self, award_categories_widget):
+        """Callback cuando cambian las categorías de carrera (distancias)"""
+        try:
+            logger.info("🔄 Distancias cambiaron, refrescando AwardCategoriesWidget...")
+            if hasattr(award_categories_widget, 'refresh_table'):
+                award_categories_widget.refresh_table()
+        except Exception as e:
+            logger.error(f"❌ Error refrescando AwardCategoriesWidget: {e}")
+
+    def _on_award_categories_changed(self, race_monitoring_widget):
+        """Callback cuando cambian las categorías de premiación"""
+        try:
+            logger.info("🔄 Categorías de premiación cambiaron, refrescando podios en RaceMonitoringWidget...")
+            # Si el widget de monitoreo tiene método para refrescar podios, llamarlo
+            if hasattr(race_monitoring_widget, 'refresh_podiums'):
+                race_monitoring_widget.refresh_podiums()
+            elif hasattr(race_monitoring_widget, 'refresh'):
+                race_monitoring_widget.refresh()
+        except Exception as e:
+            logger.error(f"❌ Error refrescando podios en RaceMonitoringWidget: {e}")
+
     def __repr__(self) -> str:
         """Representación string del manager"""
         return f"<TabManager: {self.get_tab_count()} tabs ({', '.join(self.get_tab_names())})>"
