@@ -17,6 +17,7 @@ import requests
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QTabWidget, QLabel, QMessageBox)
 from PyQt6.QtCore import pyqtSlot, QTimer
+from PyQt6.QtGui import QIcon
 from src.utils.signals import AppSignals
 from ..core.advanced_scanner import AdvancedYR8900Scanner
 from ..core.race_tracking.race_manager import RaceManager
@@ -53,6 +54,11 @@ class MainWindow(QMainWindow):
 
         # Setup
         self.setWindowTitle("RFID Athletics Timer")
+        # Ícono de la ventana y taskbar
+        import os
+        icon_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'Logo SZ.jpeg')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         self.setMinimumSize(1200, 800)
 
         # Orden crítico de inicialización
