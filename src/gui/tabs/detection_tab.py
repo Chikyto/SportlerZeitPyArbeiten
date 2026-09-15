@@ -840,11 +840,19 @@ class DetectionTab(BaseTab):
     def update_statistics(self):
         """Actualizar estadísticas de detecciones"""
         unique_tags = len(self.detected_tags)
-        finished = sum(1 for d in self.tag_data.values() if d.get('finish_ts'))
-        running = sum(1 for d in self.tag_data.values() if d.get('start_ts') and not d.get('finish_ts'))
-        self.stats_label.setText(
-            f"Tags únicos: {unique_tags} | En carrera: {running} | Finalizados: {finished}"
-        )
+
+        # Separar chips registrados (tienen nombre/bib) de chips sin atleta
+        registered   = {t: d for t, d in self.tag_data.items() if d.get('bib') and d['bib'] != '?'}
+        unregistered = {t: d for t, d in self.tag_data.items() if not d.get('bib') or d['bib'] == '?'}
+
+        finished   = sum(1 for d in registered.values()   if d.get('finish_ts'))
+        running    = sum(1 for d in registered.values()   if d.get('start_ts') and not d.get('finish_ts'))
+        sin_atleta = sum(1 for d in unregistered.values() if d.get('finish_ts') or d.get('start_ts'))
+
+        text = f"Tags únicos: {unique_tags} | En carrera: {running} | Finalizados: {finished}"
+        if sin_atleta:
+            text += f" | Sin atleta: {sin_atleta} chips"
+        self.stats_label.setText(text)
     
     def clear_detections(self):
         """Limpiar la tabla de detecciones"""
