@@ -115,8 +115,11 @@ class QuickAthleteRegistrationDialog(QDialog):
         # Chip RFID (pre-llenado, read-only)
         self.chip_input = QLineEdit()
         self.chip_input.setText(self.chip_id)
-        self.chip_input.setReadOnly(True)
-        self.chip_input.setStyleSheet("background: #f0f0f0; color: #666;")
+        if self.chip_id:
+            self.chip_input.setReadOnly(True)
+            self.chip_input.setStyleSheet("background: #f0f0f0; color: #666;")
+        else:
+            self.chip_input.setPlaceholderText("Opcional — se puede asignar después")
         form_layout.addRow("Chip RFID:", self.chip_input)
 
         layout.addWidget(form_group)

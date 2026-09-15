@@ -313,6 +313,11 @@ class ChipAssignmentWidget(QWidget):
         self.export_button.clicked.connect(self.save_assignments)
         bottom_buttons.addWidget(self.export_button)
 
+        self.add_athlete_button = QPushButton("➕ Agregar Atleta")
+        self.add_athlete_button.setToolTip("Registrar un atleta de último momento que no está en el sistema")
+        self.add_athlete_button.clicked.connect(self.add_athlete_manually)
+        bottom_buttons.addWidget(self.add_athlete_button)
+
         self.delete_athlete_button = QPushButton("🗑 Eliminar Atleta")
         self.delete_athlete_button.setToolTip("Elimina el atleta seleccionado de la lista")
         self.delete_athlete_button.setStyleSheet("color: #dc2626;")
@@ -1150,6 +1155,95 @@ class ChipAssignmentWidget(QWidget):
                 "Error",
                 f"Error al crear el corredor:\n{str(e)}"
             )
+
+    def add_athlete_manually(self):
+        """Agregar un atleta de último momento mediante el diálogo de registro rápido."""
+        dialog = QuickAthleteRegistrationDialog(
+            chip_id="",
+            race_manager=self.race_manager,
+            parent=self
+        )
+        # Cambiar texto del botón para este flujo (sin chip)
+        dialog.register_btn.setText("✅ Registrar Atleta")
+        dialog.chip_input.setPlaceholderText("Se asignará después")
+
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+
+        athlete_data = dialog.get_athlete_data()
+        if not athlete_data:
+            return
+
+        try:
+            from src.core.race_tracking.models import Athlete
+
+            if athlete_data['bib_number'] is None:
+                bib_number = self._generate_bib_number(athlete_data['category_id'])
+            else:
+                bib_number = athlete_data['bib_number']
+
+            # Verificar dorsal duplicado globalmente
+            for dist in self.race_manager.get_all_distances():
+                for a in dist.participants:
+                    if a.bib_number == bib_number:
+                        QMessageBox.warning(
+                            self,
+                            "Dorsal duplicado",
+                            f"El dorsal #{bib_number} ya está asignado a {a.name}.\n"
+                            "Elegí otro número de dorsal."
+                        )
+                        return
+
+            athlete_id = f"{athlete_data['category_id']}_{bib_number}"
+            chip_id = athlete_data.get('chip_id', '').strip() or None
+
+            new_athlete = Athlete(
+                athlete_id=athlete_id,
+                tag_id=chip_id or "",
+                bib_number=bib_number,
+                name=athlete_data['name'],
+                category_id=athlete_data['category_id'],
+                gender=athlete_data['gender'],
+                birth_date=athlete_data['birth_date'],
+                team='',
+                notes='Registrado el día del evento'
+            )
+
+            # Buscar distancia compatible (normalizada)
+            dist_obj = self._find_existing_distance(athlete_data['category_id'])
+            if not dist_obj:
+                QMessageBox.critical(
+                    self,
+                    "Distancia no encontrada",
+                    f"No existe una distancia con ID '{athlete_data['category_id']}'.\n"
+                    "Importá atletas primero o creá la distancia desde Gestión de Eventos."
+                )
+                return
+
+            dist_obj.participants.append(new_athlete)
+            if chip_id:
+                self.assignments[athlete_id] = chip_id
+
+            logger.info(f"✅ Atleta agregado manualmente: {new_athlete.name} (#{bib_number})")
+
+            self.refresh_athletes_table()
+            self.auto_save_data()
+
+            msg = (
+                f"✅ Atleta registrado:\n\n"
+                f"• Nombre: {new_athlete.name}\n"
+                f"• Dorsal: #{bib_number}\n"
+                f"• Distancia: {athlete_data['category_id']}"
+            )
+            if chip_id:
+                msg += f"\n• Chip: {chip_id}"
+            else:
+                msg += "\n• Chip: pendiente de asignar"
+            QMessageBox.information(self, "Atleta Registrado", msg)
+
+        except Exception as e:
+            logger.error(f"❌ Error al agregar atleta manualmente: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"No se pudo registrar el atleta:\n{str(e)}")
 
     def _generate_bib_number(self, category_id: str) -> int:
         """
