@@ -1659,10 +1659,28 @@ class ChipAssignmentWidget(QWidget):
         if not file_path:
             return
 
+        # Intentar también con utf-8-sig (BOM de Excel)
+        for enc in ('utf-8-sig', 'utf-8', 'latin-1'):
+            try:
+                with open(file_path, 'r', encoding=enc) as _f:
+                    _f.read(1)
+                _encoding = enc
+                break
+            except Exception:
+                continue
+        else:
+            _encoding = 'utf-8'
+
         try:
             # ── 2. Leer y analizar sin importar todavía ─────────────────────
-            with open(file_path, 'r', encoding='utf-8') as f:
-                rows = list(csv.DictReader(f))
+            with open(file_path, 'r', encoding=_encoding) as f:
+                sample = f.read(4096)
+                f.seek(0)
+                try:
+                    dialect = csv.Sniffer().sniff(sample, delimiters=',;\t|')
+                except csv.Error:
+                    dialect = csv.excel  # fallback coma
+                rows = list(csv.DictReader(f, dialect=dialect))
 
             if not rows:
                 QMessageBox.warning(self, "CSV vacío", "El archivo no contiene filas de datos.")
@@ -2044,8 +2062,8 @@ class ChipAssignmentWidget(QWidget):
             return
 
         try:
-            with open(file_path, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
+            with open(file_path, 'w', newline='', encoding='utf-8-sig') as f:
+                writer = csv.writer(f, delimiter=';')
 
                 # Header
                 writer.writerow([
