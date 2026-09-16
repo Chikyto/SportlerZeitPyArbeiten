@@ -2243,6 +2243,8 @@ class ChipAssignmentWidget(QWidget):
                 success = self.persistence.load_race_data(self.race_manager)
                 if success:
                     logger.info("✅ Datos cargados exitosamente")
+                    self.refresh_athletes_table()
+                    self.categories_imported.emit()  # dispara sync silencioso al backend
                 else:
                     logger.error("❌ Error cargando datos guardados")
                     QMessageBox.warning(

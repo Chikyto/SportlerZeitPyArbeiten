@@ -129,6 +129,10 @@ class MainWindow(QMainWindow):
                     if reply == QMessageBox.StandardButton.Yes:
                         if persistence.restore_into(self.race_manager):
                             logger.info("♻️ Estado de sesión anterior restaurado")
+                            # Sync silencioso al backend — lo más tarde posible para que
+                            # la UI ya esté lista cuando se ejecute
+                            from PyQt6.QtCore import QTimer as _QTimer
+                            _QTimer.singleShot(3000, self._sync_athletes_after_restore)
                         else:
                             QMessageBox.warning(
                                 None,
@@ -409,6 +413,18 @@ class MainWindow(QMainWindow):
         else:
             self.status_label.setText(f"✗ {message}")
             logger.warning(f"✗ {message}")
+
+    def _sync_athletes_after_restore(self):
+        """Sync silencioso de atletas al backend después de restaurar un snapshot."""
+        try:
+            tab_manager = getattr(self, 'tab_manager', None)
+            if not tab_manager:
+                return
+            config_tab = tab_manager.get_tab('configuration')
+            if config_tab and hasattr(config_tab, 'sync_athletes_to_backend_silent'):
+                config_tab.sync_athletes_to_backend_silent()
+        except Exception as e:
+            logger.warning(f"Sync post-restauración falló (no crítico): {e}")
 
     @pyqtSlot(str, str)
     def on_backend_config_loaded(self, api_url, event_id):
