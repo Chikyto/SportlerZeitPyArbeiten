@@ -177,17 +177,49 @@ class PDFExporter:
                 return cat_name[len(prefix):]
         return cat_name
 
+    @staticmethod
+    def _resolve_athlete_category(athlete, cat_map: dict, award_categories: dict) -> str:
+        """
+        Resuelve el nombre de categoría de un atleta en este orden:
+        1. cat_map por athlete_id o tag_id (precalculado)
+        2. Buscar en award_categories cuál aplica al atleta (por género+edad)
+        3. Fallback: solo letra de género
+        """
+        _amap = cat_map or {}
+        # 1. cat_map
+        cat_name = (
+            _amap.get(getattr(athlete, 'athlete_id', ''), '') or
+            _amap.get(getattr(athlete, 'tag_id', ''), '')
+        )
+        if cat_name:
+            return cat_name
+
+        # 2. buscar en award_categories cuál aplica
+        if award_categories:
+            for ac in award_categories.values():
+                try:
+                    if ac.applies_to_athlete(athlete):
+                        return ac.name
+                except Exception:
+                    pass
+
+        # 3. fallback: género
+        g = (getattr(athlete, 'gender', '') or '').upper()
+        return g[0] if g else '-'
+
     def _results_table(self, results: list, distance_meters: float = 0,
                        header_color=None,
                        athlete_cat_map: dict = None,
+                       award_categories: dict = None,
                        cat_mode: str = 'full') -> Table:
         """
         cat_mode:
           'full'   — nombre completo de categoría (6 cols)
-          'short'  — letra género + rango edad: 'M 45-49' (6 cols, general)
+          'short'  — letra género + rango edad: 'M 45-49' (6 cols, orden llegada)
           'age'    — solo rango edad: '45-49'  (6 cols, por género)
           'none'   — sin columna Categoría     (5 cols, subcats/relator)
-        athlete_cat_map: {athlete_id: category_name}
+        athlete_cat_map: {athlete_id|tag_id: category_name}
+        award_categories: {award_id: AwardCategory} — fallback directo por atleta
         """
         if cat_mode == 'none':
             header = ['#', 'Atleta', 'Dorsal', 'Tiempo neto', 'Ritmo']
@@ -213,19 +245,17 @@ class PDFExporter:
             a = result.athlete
             g = (getattr(a, 'gender', '') or '').upper()
             letter = g[0] if g else '?'
-            _amap = athlete_cat_map or {}
-            cat_name = (
-                _amap.get(getattr(a, 'athlete_id', ''), '') or
-                _amap.get(getattr(a, 'tag_id', ''), '')
-            ) if _amap else ''
+
+            full_cat = self._resolve_athlete_category(a, athlete_cat_map or {}, award_categories or {})
+
             if cat_mode == 'short':
-                age_part = self._strip_gender_prefix(cat_name) if cat_name else ''
-                cat = f"{letter} {age_part}".strip() if age_part else letter
+                age_part = self._strip_gender_prefix(full_cat) if full_cat not in ('M','F','X','?','-') else ''
+                cat = f"{letter} {age_part}".strip() if age_part else (full_cat or letter)
             elif cat_mode == 'age':
-                cat = self._strip_gender_prefix(cat_name) if cat_name else '-'
+                cat = self._strip_gender_prefix(full_cat) if full_cat not in ('M','F','X','?','-') else '-'
             else:  # 'full'
-                cat = cat_name or (getattr(a, 'get_award_category', lambda: None)() or
-                                   f"{letter} {getattr(a, 'age_category', '') or ''}").strip()
+                cat = full_cat or '-'
+
             t_sec = None
             if result.total_time is not None:
                 try:
@@ -290,7 +320,7 @@ class PDFExporter:
         # 1. Orden de Llegada — todos mezclados, con columna categoría completa
         if all_results:
             story.append(Paragraph("Orden de Llegada", self.styles['SectionBlue']))
-            story.append(self._results_table(all_results, distance_meters, athlete_cat_map=cat_map, cat_mode='full'))
+            story.append(self._results_table(all_results, distance_meters, athlete_cat_map=cat_map, award_categories=award_categories, cat_mode="full"))
             story.append(Spacer(1, 0.6*cm))
 
         # 2. Clasificaciones generales por género con subcategorías
@@ -308,7 +338,7 @@ class PDFExporter:
             seen_genders.add(gender_key)
 
             story.append(Paragraph(section_title, self.styles['SectionBlue']))
-            story.append(self._results_table(results, distance_meters, athlete_cat_map=cat_map, cat_mode='age'))
+            story.append(self._results_table(results, distance_meters, athlete_cat_map=cat_map, award_categories=award_categories, cat_mode="age"))
             story.append(Spacer(1, 0.4*cm))
 
             for award_id, podium in sorted(podiums_by_award_cat.items()):
@@ -573,7 +603,7 @@ class PDFExporter:
                 # 1. Orden de Llegada — todos mezclados con categoría
                 if all_r:
                     story.append(Paragraph("Orden de Llegada", self.styles['SectionBlue']))
-                    story.append(self._results_table(all_r, dm, athlete_cat_map=cat_map, cat_mode='full'))
+                    story.append(self._results_table(all_r, dm, athlete_cat_map=cat_map, award_categories=award_cats, cat_mode="full"))
                     story.append(Spacer(1, 0.6*cm))
 
                 # 2. Clasificaciones por género
@@ -589,7 +619,7 @@ class PDFExporter:
                         continue
                     seen.add(gk)
                     story.append(Paragraph(sec_title, self.styles['SectionBlue']))
-                    story.append(self._results_table(results, dm, athlete_cat_map=cat_map, cat_mode='age'))
+                    story.append(self._results_table(results, dm, athlete_cat_map=cat_map, award_categories=award_cats, cat_mode="age"))
                     story.append(Spacer(1, 0.4*cm))
                     for award_id, podium in sorted(podiums.items()):
                         gender_podium = [(p, r) for p, r in podium

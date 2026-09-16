@@ -1208,9 +1208,17 @@ class RaceMonitoringWidget(QWidget):
         all_results = self.race_manager.get_results(distance_id)
         results_by_gender = self.race_manager.get_results_by_gender(distance_id, only_finished=True)
         podiums = self.race_manager.get_podium_by_award_category(distance_id, top_n=top_n) or {}
-        award_categories = {aid: self.race_manager.get_award_category(aid)
-                            for aid in podiums if self.race_manager.get_award_category(aid)}
         results_by_category = self.race_manager.get_results_by_award_category(distance_id)
+        # Incluir TODAS las award categories disponibles para la distancia,
+        # no solo las que tienen podio (podría estar vacío si faltan birth_date)
+        all_award_cats = self.race_manager.get_award_categories_for_distance(distance_id)
+        award_categories = {ac.award_category_id: ac for ac in all_award_cats}
+        # Agregar también las que vienen de podiums y results_by_category
+        for aid in list(podiums) + list(results_by_category):
+            if aid not in award_categories:
+                ac = self.race_manager.get_award_category(aid)
+                if ac:
+                    award_categories[aid] = ac
         return {
             'distance': distance,
             'all_results': all_results,
