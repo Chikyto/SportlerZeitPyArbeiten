@@ -737,7 +737,19 @@ class ConfigurationTab(BaseTab):
         # 3. Serializar atletas
         athletes_payload = []
         for dist in all_distances:
+            # Obtener categorías de premiación para esta distancia (para calcular por atleta)
+            award_cats = self.race_manager.get_award_categories_for_distance(dist.distance_id)
             for athlete in dist.participants:
+                # Resolver categoría localmente para mandársela al backend
+                category_name = ''
+                for ac in award_cats:
+                    try:
+                        if ac.applies_to_athlete(athlete):
+                            category_name = ac.name
+                            break
+                    except Exception:
+                        pass
+
                 athletes_payload.append({
                     'bib_number':  athlete.bib_number,
                     'name':        athlete.name,
@@ -747,6 +759,7 @@ class ConfigurationTab(BaseTab):
                     'birth_date':  athlete.birth_date.isoformat() if athlete.birth_date else '',
                     'chip_id':     athlete.tag_id or '',
                     'team':        athlete.team or '',
+                    'category':    category_name,  # categoría de premiación resuelta localmente
                 })
 
         if not athletes_payload:
