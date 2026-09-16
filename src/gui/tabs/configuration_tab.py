@@ -738,7 +738,7 @@ class ConfigurationTab(BaseTab):
         athletes_payload = []
         for dist in all_distances:
             # Obtener categorías de premiación para esta distancia (para calcular por atleta)
-            award_cats = self.race_manager.get_award_categories_for_distance(dist.distance_id)
+            award_cats = race_manager.get_award_categories_for_distance(dist.distance_id)
             for athlete in dist.participants:
                 # Resolver categoría localmente para mandársela al backend
                 category_name = ''
