@@ -180,7 +180,7 @@ class RaceMonitoringWidget(QWidget):
             self._correct_times(row)
 
     def _correct_times(self, row):
-        """Diálogo para corregir manualmente la largada y/o llegada de un atleta."""
+        """Diálogo para corregir/reasignar tiempos de largada y llegada."""
         if not self.race_manager:
             return
 
@@ -198,56 +198,132 @@ class RaceMonitoringWidget(QWidget):
 
         from datetime import datetime, date
         ref_date = category.start_time.date() if (category and category.start_time) else date.today()
+        gun_dt = category.start_time if (category and category.start_time) else None
 
         def _to_qtime(dt):
-            if dt:
-                return QTime(dt.hour, dt.minute, dt.second)
-            return QTime(0, 0, 0)
+            return QTime(dt.hour, dt.minute, dt.second) if dt else QTime(0, 0, 0)
 
-        # Defaults: largada = hora de disparo de la distancia (o la ya registrada)
-        gun_time = _to_qtime(category.start_time if category else None)
-        default_start = _to_qtime(result.start_time) if result.start_time else gun_time
-        default_finish = _to_qtime(result.finish_time) if result.finish_time else QTime(0, 0, 0)
+        gun_qtime = _to_qtime(gun_dt)
+        has_start  = result.start_time is not None
+        has_finish = result.finish_time is not None
+
+        # ── Detectar el caso "solo una lectura, puede estar mal asignada" ──────
+        only_start  = has_start and not has_finish
+        only_finish = has_finish and not has_start
+        neither     = not has_start and not has_finish
 
         dlg = QDialog(self)
         dlg.setWindowTitle("Corrección de Tiempos")
-        dlg.setMinimumWidth(380)
-        form = QFormLayout(dlg)
-        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        dlg.setMinimumWidth(400)
+        layout = QVBoxLayout(dlg)
 
-        form.addRow(QLabel(f"<b>{athlete_name}</b> — {distance_id}"))
-        form.addRow(QLabel(""))
+        # Encabezado
+        layout.addWidget(QLabel(f"<b>{athlete_name}</b> — {distance_id}"))
 
-        # Largada
+        # Estado actual visible
+        gun_str   = gun_dt.strftime('%H:%M:%S') if gun_dt else '—'
+        start_str = result.start_time.strftime('%H:%M:%S') if has_start else '—'
+        finish_str= result.finish_time.strftime('%H:%M:%S') if has_finish else '—'
+        info = QLabel(
+            f"<small>Disparo distancia: <b>{gun_str}</b> &nbsp;|&nbsp; "
+            f"Largada registrada: <b>{start_str}</b> &nbsp;|&nbsp; "
+            f"Llegada registrada: <b>{finish_str}</b></small>"
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        # ── Atajo rápido: solo hay un tiempo y probablemente está mal asignado ─
+        if only_start:
+            # Hay solo largada — puede ser que ese tiempo sea en realidad la llegada
+            misread_btn = QPushButton(
+                f"↩ Reasignar: mover largada ({start_str}) → llegada  +  largada = disparo ({gun_str})"
+            )
+            misread_btn.setStyleSheet("background:#f0a500; color:white; font-weight:bold; padding:6px;")
+            misread_btn.setToolTip(
+                "Usa el tiempo ya registrado como llegada y asigna la hora de disparo como largada"
+            )
+
+            def _reassign_start_to_finish():
+                recorded = result.start_time
+                # Asignar hora de disparo como largada
+                new_start = gun_dt or recorded
+                result.record_start(new_start)
+                # Mover el tiempo original a llegada
+                result.record_finish(recorded)
+                logger.info(f"Reasignación: {athlete_name} largada={new_start.strftime('%H:%M:%S')} llegada={recorded.strftime('%H:%M:%S')}")
+                self._backend_send(tag_id, distance_id, 'start', new_start)
+                self._backend_send(tag_id, distance_id, 'finish', recorded)
+                self.refresh_participants_table()
+                dlg.accept()
+                QMessageBox.information(
+                    self, "Tiempos reasignados",
+                    f"<b>{athlete_name}</b><br>"
+                    f"Largada: {new_start.strftime('%H:%M:%S')}<br>"
+                    f"Llegada: {recorded.strftime('%H:%M:%S')}"
+                )
+
+            misread_btn.clicked.connect(_reassign_start_to_finish)
+            layout.addWidget(misread_btn)
+
+        elif only_finish:
+            # Hay solo llegada — ofrecer asignar la hora de disparo como largada
+            misread_btn = QPushButton(
+                f"↩ Asignar largada = disparo ({gun_str})  (llegada {finish_str} queda igual)"
+            )
+            misread_btn.setStyleSheet("background:#f0a500; color:white; font-weight:bold; padding:6px;")
+
+            def _assign_gun_as_start():
+                new_start = gun_dt or result.finish_time
+                result.record_start(new_start)
+                logger.info(f"Largada manual (disparo): {athlete_name} @ {new_start.strftime('%H:%M:%S')}")
+                self._backend_send(tag_id, distance_id, 'start', new_start)
+                self.refresh_participants_table()
+                dlg.accept()
+                QMessageBox.information(
+                    self, "Largada asignada",
+                    f"<b>{athlete_name}</b><br>Largada: {new_start.strftime('%H:%M:%S')}<br>Llegada: {finish_str}"
+                )
+
+            misread_btn.clicked.connect(_assign_gun_as_start)
+            layout.addWidget(misread_btn)
+
+        # ── Separador ──────────────────────────────────────────────────────────
+        line = QLabel("<hr>")
+        line.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(line)
+        layout.addWidget(QLabel("<small>O bien corrija los tiempos manualmente:</small>"))
+
+        # ── Campos manuales ────────────────────────────────────────────────────
+        form = QFormLayout()
+
         chk_start = QPushButton("Corregir largada")
         chk_start.setCheckable(True)
-        chk_start.setChecked(True)
-        start_edit = QTimeEdit(default_start)
+        chk_start.setChecked(neither or only_finish)
+        start_edit = QTimeEdit(_to_qtime(result.start_time) if has_start else gun_qtime)
         start_edit.setDisplayFormat("HH:mm:ss")
         start_edit.setWrapping(True)
-        if category and category.start_time:
-            start_edit.setToolTip(f"Hora de disparo: {category.start_time.strftime('%H:%M:%S')}")
+        start_edit.setEnabled(chk_start.isChecked())
         chk_start.toggled.connect(start_edit.setEnabled)
         form.addRow(chk_start, start_edit)
 
-        # Llegada
         chk_finish = QPushButton("Corregir llegada")
         chk_finish.setCheckable(True)
-        chk_finish.setChecked(bool(result.finish_time))
-        finish_edit = QTimeEdit(default_finish)
+        chk_finish.setChecked(neither or only_start)
+        finish_edit = QTimeEdit(_to_qtime(result.finish_time) if has_finish else QTime(0, 0, 0))
         finish_edit.setDisplayFormat("HH:mm:ss")
         finish_edit.setWrapping(True)
-        finish_edit.setEnabled(bool(result.finish_time))
+        finish_edit.setEnabled(chk_finish.isChecked())
         chk_finish.toggled.connect(finish_edit.setEnabled)
         form.addRow(chk_finish, finish_edit)
 
-        form.addRow(QLabel(""))
+        layout.addLayout(form)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.accepted.connect(dlg.accept)
         buttons.rejected.connect(dlg.reject)
-        form.addRow(buttons)
+        layout.addWidget(buttons)
 
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
