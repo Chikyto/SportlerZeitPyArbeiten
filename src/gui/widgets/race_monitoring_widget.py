@@ -174,52 +174,74 @@ class RaceMonitoringWidget(QWidget):
         if row < 0:
             return
         menu = QMenu(self)
-        correct_start_action = menu.addAction("⏱ Corregir Tiempo de Largada")
+        correct_times_action = menu.addAction("⏱ Corregir Tiempos (Largada / Llegada)")
         action = menu.exec(self.participants_table.viewport().mapToGlobal(pos))
-        if action == correct_start_action:
-            self._correct_start_time(row)
+        if action == correct_times_action:
+            self._correct_times(row)
 
-    def _correct_start_time(self, row):
-        """Abre diálogo para corregir/asignar tiempo de largada manualmente"""
+    def _correct_times(self, row):
+        """Diálogo para corregir manualmente la largada y/o llegada de un atleta."""
         if not self.race_manager:
             return
 
         tag_id = self.participants_table.item(row, 0).text()
         distance_id = self.participants_table.item(row, 1).text()
 
-        # Buscar result
         results = self.race_manager.get_results(distance_id)
         result = next((r for r in results if r.athlete.tag_id == tag_id), None)
         if result is None:
             QMessageBox.warning(self, "Error", "No se encontró el atleta en la distancia.")
             return
 
-        # Obtener hora de largada de la distancia como default
         category = self.race_manager.get_category(distance_id)
-        default_time = QTime.currentTime()
-        if category and category.start_time:
-            t = category.start_time
-            default_time = QTime(t.hour, t.minute, t.second)
-        elif result.start_time:
-            t = result.start_time
-            default_time = QTime(t.hour, t.minute, t.second)
-
         athlete_name = result.athlete.name if hasattr(result.athlete, 'name') else tag_id
 
-        # Diálogo simple
+        from datetime import datetime, date
+        ref_date = category.start_time.date() if (category and category.start_time) else date.today()
+
+        def _to_qtime(dt):
+            if dt:
+                return QTime(dt.hour, dt.minute, dt.second)
+            return QTime(0, 0, 0)
+
+        # Defaults: largada = hora de disparo de la distancia (o la ya registrada)
+        gun_time = _to_qtime(category.start_time if category else None)
+        default_start = _to_qtime(result.start_time) if result.start_time else gun_time
+        default_finish = _to_qtime(result.finish_time) if result.finish_time else QTime(0, 0, 0)
+
         dlg = QDialog(self)
-        dlg.setWindowTitle("Corregir Tiempo de Largada")
-        dlg.setMinimumWidth(320)
+        dlg.setWindowTitle("Corrección de Tiempos")
+        dlg.setMinimumWidth(380)
         form = QFormLayout(dlg)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
 
-        name_lbl = QLabel(f"<b>{athlete_name}</b> — {distance_id}")
-        form.addRow("Atleta:", name_lbl)
+        form.addRow(QLabel(f"<b>{athlete_name}</b> — {distance_id}"))
+        form.addRow(QLabel(""))
 
-        time_edit = QTimeEdit(default_time)
-        time_edit.setDisplayFormat("HH:mm:ss")
-        time_edit.setWrapping(True)
-        form.addRow("Hora de largada:", time_edit)
+        # Largada
+        chk_start = QPushButton("Corregir largada")
+        chk_start.setCheckable(True)
+        chk_start.setChecked(True)
+        start_edit = QTimeEdit(default_start)
+        start_edit.setDisplayFormat("HH:mm:ss")
+        start_edit.setWrapping(True)
+        if category and category.start_time:
+            start_edit.setToolTip(f"Hora de disparo: {category.start_time.strftime('%H:%M:%S')}")
+        chk_start.toggled.connect(start_edit.setEnabled)
+        form.addRow(chk_start, start_edit)
 
+        # Llegada
+        chk_finish = QPushButton("Corregir llegada")
+        chk_finish.setCheckable(True)
+        chk_finish.setChecked(bool(result.finish_time))
+        finish_edit = QTimeEdit(default_finish)
+        finish_edit.setDisplayFormat("HH:mm:ss")
+        finish_edit.setWrapping(True)
+        finish_edit.setEnabled(bool(result.finish_time))
+        chk_finish.toggled.connect(finish_edit.setEnabled)
+        form.addRow(chk_finish, finish_edit)
+
+        form.addRow(QLabel(""))
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -230,36 +252,48 @@ class RaceMonitoringWidget(QWidget):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
-        # Construir datetime combinando fecha actual/distancia con la hora ingresada
-        from datetime import datetime, date
-        ref_date = category.start_time.date() if (category and category.start_time) else date.today()
-        qt = time_edit.time()
-        new_start = datetime(ref_date.year, ref_date.month, ref_date.day,
-                             qt.hour(), qt.minute(), qt.second())
+        changed = []
 
-        result.record_start(new_start)
-        logger.info(f"Largada manual: {athlete_name} ({tag_id}) @ {new_start.strftime('%H:%M:%S')}")
+        if chk_start.isChecked():
+            qt = start_edit.time()
+            new_start = datetime(ref_date.year, ref_date.month, ref_date.day,
+                                 qt.hour(), qt.minute(), qt.second())
+            result.record_start(new_start)
+            changed.append(f"Largada: {new_start.strftime('%H:%M:%S')}")
+            logger.info(f"Corrección manual largada: {athlete_name} ({tag_id}) @ {new_start.strftime('%H:%M:%S')}")
+            self._backend_send(tag_id, distance_id, 'start', new_start)
 
-        # Intentar sincronizar con backend si está disponible
+        if chk_finish.isChecked():
+            qt = finish_edit.time()
+            new_finish = datetime(ref_date.year, ref_date.month, ref_date.day,
+                                  qt.hour(), qt.minute(), qt.second())
+            result.record_finish(new_finish)
+            changed.append(f"Llegada: {new_finish.strftime('%H:%M:%S')}")
+            logger.info(f"Corrección manual llegada: {athlete_name} ({tag_id}) @ {new_finish.strftime('%H:%M:%S')}")
+            self._backend_send(tag_id, distance_id, 'finish', new_finish)
+
+        self.refresh_participants_table()
+        if changed:
+            QMessageBox.information(
+                self, "Tiempos corregidos",
+                f"<b>{athlete_name}</b><br>" + "<br>".join(changed)
+            )
+
+    def _backend_send(self, tag_id, distance_id, role, timestamp):
+        """Envía una corrección manual al backend (best-effort)."""
         try:
             main_window = self.window()
             if hasattr(main_window, '_send_detection_to_backend'):
                 main_window._send_detection_to_backend({
                     'tag_id': tag_id,
-                    'role': 'start',
-                    'timestamp': new_start,
+                    'role': role,
+                    'timestamp': timestamp,
                     'antenna': 0,
                     'distance_id': distance_id,
                     'manual_correction': True,
                 })
         except Exception:
             pass
-
-        self.refresh_participants_table()
-        QMessageBox.information(
-            self, "Largada registrada",
-            f"Hora de largada de <b>{athlete_name}</b> corregida a <b>{new_start.strftime('%H:%M:%S')}</b>."
-        )
 
     def setup_statistics_tab(self):
         """Tab con estadísticas detalladas"""
