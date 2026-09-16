@@ -671,37 +671,49 @@ class ConfigurationTab(BaseTab):
             QMessageBox.critical(self, "Error", f"No se pudo leer el archivo:\n{e}")
 
     def sync_athletes_to_backend(self):
-        """Subir atletas locales al backend para el live tracking"""
+        """Botón manual: confirma y sincroniza con popup de resultado."""
+        self._do_sync_athletes(silent=False)
+
+    def sync_athletes_to_backend_silent(self):
+        """Auto-sync post-import: sin confirmación, solo log y notificación en statusbar."""
+        self._do_sync_athletes(silent=True)
+
+    def _do_sync_athletes(self, silent: bool = False):
+        """
+        Sincronizar atletas al backend.
+        silent=False → diálogo de confirmación + popup de resultado (flujo manual).
+        silent=True  → sin preguntar, notificación solo en log/statusbar (auto-sync).
+        """
         import json, os, requests as req
 
         # 1. Leer config
         config_path = 'config/api_config.json'
         if not os.path.exists(config_path):
-            QMessageBox.warning(self, "Sin configuración",
-                "No hay configuración de backend.\n\n"
-                "Importá un archivo .szconfig primero.")
+            if not silent:
+                QMessageBox.warning(self, "Sin configuración",
+                    "No hay configuración de backend.\n\nImportá un archivo .szconfig primero.")
             return
 
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 cfg = json.load(f)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"No se pudo leer api_config.json:\n{e}")
+            if not silent:
+                QMessageBox.critical(self, "Error", f"No se pudo leer api_config.json:\n{e}")
             return
 
-        # Soporta estructura plana {api_url,...} o anidada {cloud: {...}} (szconfig importado)
         cloud = cfg.get('cloud', cfg)
         api_url  = cloud.get('api_url', '').rstrip('/').removesuffix('/api/v1')
         api_key  = cloud.get('api_key', '')
         event_id = cloud.get('event_id', '')
 
         if not api_url or not event_id:
-            QMessageBox.warning(self, "Configuración incompleta",
-                "Falta api_url o event_id en api_config.json.\n\n"
-                "Importá un archivo .szconfig válido.")
+            if not silent:
+                QMessageBox.warning(self, "Configuración incompleta",
+                    "Falta api_url o event_id en api_config.json.\n\nImportá un archivo .szconfig válido.")
             return
 
-        # 2. Obtener atletas del race_manager (via main_window)
+        # 2. Obtener atletas del race_manager
         from PyQt6.QtWidgets import QApplication
         main_window = None
         for w in QApplication.topLevelWidgets():
@@ -710,14 +722,16 @@ class ConfigurationTab(BaseTab):
                 break
 
         if not main_window or not main_window.race_manager:
-            QMessageBox.warning(self, "Sin datos", "No hay atletas cargados en el sistema.")
+            if not silent:
+                QMessageBox.warning(self, "Sin datos", "No hay atletas cargados en el sistema.")
             return
 
         race_manager = main_window.race_manager
         all_distances = race_manager.get_all_distances()
         if not all_distances:
-            QMessageBox.warning(self, "Sin atletas",
-                "No hay atletas cargados.\n\nImportá atletas primero desde CSV o Web.")
+            if not silent:
+                QMessageBox.warning(self, "Sin atletas",
+                    "No hay atletas cargados.\n\nImportá atletas primero desde CSV o Web.")
             return
 
         # 3. Serializar atletas
@@ -736,61 +750,72 @@ class ConfigurationTab(BaseTab):
                 })
 
         if not athletes_payload:
-            QMessageBox.warning(self, "Sin atletas", "No hay atletas para sincronizar.")
+            if not silent:
+                QMessageBox.warning(self, "Sin atletas", "No hay atletas para sincronizar.")
             return
 
-        # 4. Confirmar
-        reply = QMessageBox.question(self, "Sincronizar atletas",
-            f"Se van a subir {len(athletes_payload)} atletas al backend.\n\n"
-            f"URL: {api_url}\nEvento: {event_id}\n\n"
-            f"¿Continuar?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes)
+        # 4. Confirmación (solo modo manual)
+        if not silent:
+            reply = QMessageBox.question(self, "Sincronizar atletas",
+                f"Se van a subir {len(athletes_payload)} atletas al backend.\n\n"
+                f"URL: {api_url}\nEvento: {event_id}\n\n¿Continuar?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes)
+            if reply != QMessageBox.StandardButton.Yes:
+                return
 
-        if reply != QMessageBox.StandardButton.Yes:
-            return
+        # 5. POST al backend (en thread para no bloquear UI en modo silent)
+        def _post():
+            try:
+                self.sync_athletes_btn.setEnabled(False)
+                self.sync_athletes_btn.setText("Subiendo...")
 
-        # 5. POST al backend
-        try:
-            self.sync_athletes_btn.setEnabled(False)
-            self.sync_athletes_btn.setText("Subiendo...")
+                headers = {'Content-Type': 'application/json'}
+                if api_key:
+                    headers['Authorization'] = f'Bearer {api_key}'
 
-            headers = {'Content-Type': 'application/json'}
-            if api_key:
-                headers['Authorization'] = f'Bearer {api_key}'
+                url = f"{api_url}/api/v1/timing/events/{event_id}/athletes"
+                resp = req.post(url, json={'athletes': athletes_payload}, headers=headers, timeout=30)
 
-            url = f"{api_url}/api/v1/timing/events/{event_id}/athletes"
-            resp = req.post(url, json={'athletes': athletes_payload}, headers=headers, timeout=30)
+                if resp.status_code in (200, 201):
+                    data = resp.json()
+                    created = data.get('created', '?')
+                    updated = data.get('updated', '?')
+                    self.log(f"☁️ Auto-sync: {created} creados, {updated} actualizados en backend")
+                    if not silent:
+                        QMessageBox.information(self, "Sincronización exitosa",
+                            f"✅ Atletas subidos al backend:\n\n"
+                            f"• Creados: {created}\n• Actualizados: {updated}\n\n"
+                            "El live tracking ya puede mostrar nombres y dorsales.")
+                    # Notificar a la statusbar
+                    if main_window and hasattr(main_window, 'statusBar'):
+                        main_window.statusBar().showMessage(
+                            f"☁️ Atletas sincronizados — {created} nuevos, {updated} actualizados", 8000)
+                else:
+                    self.log(f"⚠️ Sync backend retornó {resp.status_code}: {resp.text[:200]}")
+                    if not silent:
+                        QMessageBox.warning(self, "Respuesta inesperada",
+                            f"El backend respondió con código {resp.status_code}.\n\nDetalle: {resp.text[:300]}")
 
-            if resp.status_code in (200, 201):
-                data = resp.json()
-                created = data.get('created', '?')
-                updated = data.get('updated', '?')
-                self.log(f"✅ Atletas sincronizados: {created} creados, {updated} actualizados")
-                QMessageBox.information(self, "Sincronización exitosa",
-                    f"✅ Atletas subidos al backend:\n\n"
-                    f"• Creados: {created}\n"
-                    f"• Actualizados: {updated}\n\n"
-                    "El live tracking ya puede mostrar nombres y dorsales.")
-            else:
-                self.log(f"⚠️ Backend retornó {resp.status_code}: {resp.text[:200]}")
-                QMessageBox.warning(self, "Respuesta inesperada",
-                    f"El backend respondió con código {resp.status_code}.\n\n"
-                    f"Detalle: {resp.text[:300]}")
+            except req.exceptions.ConnectionError:
+                self.log("❌ Sin conexión al sincronizar atletas")
+                if not silent:
+                    QMessageBox.critical(self, "Sin conexión",
+                        "No se pudo conectar al backend.\n\nVerificá que el servicio esté disponible.")
+            except req.exceptions.Timeout:
+                self.log("❌ Timeout al sincronizar atletas")
+                if not silent:
+                    QMessageBox.critical(self, "Timeout", "La conexión tardó demasiado.\n\nIntentá de nuevo.")
+            except Exception as e:
+                self.log(f"❌ Error sincronizando atletas: {e}")
+                if not silent:
+                    QMessageBox.critical(self, "Error", f"Error al sincronizar:\n{e}")
+            finally:
+                self.sync_athletes_btn.setEnabled(True)
+                self.sync_athletes_btn.setText("☁️ Sincronizar atletas")
 
-        except req.exceptions.ConnectionError:
-            QMessageBox.critical(self, "Sin conexión",
-                "No se pudo conectar al backend.\n\nVerificá que el servicio esté disponible.")
-            self.log("❌ Error de conexión al sincronizar atletas")
-        except req.exceptions.Timeout:
-            QMessageBox.critical(self, "Timeout", "La conexión tardó demasiado.\n\nIntentá de nuevo.")
-            self.log("❌ Timeout al sincronizar atletas")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error al sincronizar:\n{e}")
-            self.log(f"❌ Error sincronizando atletas: {e}")
-        finally:
-            self.sync_athletes_btn.setEnabled(True)
-            self.sync_athletes_btn.setText("☁️ Sincronizar atletas")
+        import threading
+        threading.Thread(target=_post, daemon=True).start()
 
     def test_cloud_connection(self):
         """Probar conexión con el backend"""

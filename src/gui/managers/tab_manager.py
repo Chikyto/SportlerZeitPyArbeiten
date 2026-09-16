@@ -165,6 +165,9 @@ class TabManager:
         self.tab_widget.addTab(chip_widget, "🏷️ Asignación de Chips")
         self.tabs['chip_assignment'] = chip_widget
 
+        # Auto-sync al backend cada vez que se importan atletas (web, CSV o manual)
+        chip_widget.categories_imported.connect(self._on_athletes_imported)
+
         logger.info("✅ ChipAssignmentWidget creado")
 
     def create_race_monitoring_tab(self):
@@ -291,6 +294,15 @@ class TabManager:
             import traceback
             traceback.print_exc()
     
+    def _on_athletes_imported(self):
+        """Auto-sync silencioso al backend después de cualquier import de atletas."""
+        config_tab = self.get_tab('configuration')
+        if config_tab and hasattr(config_tab, 'sync_athletes_to_backend_silent'):
+            logger.info("☁️ Auto-sync de atletas al backend post-import")
+            config_tab.sync_athletes_to_backend_silent()
+        else:
+            logger.debug("☁️ Auto-sync: ConfigurationTab no disponible, sync omitido")
+
     def get_tab_count(self) -> int:
         """Obtener número de tabs creados"""
         return len(self.tabs)
@@ -412,9 +424,21 @@ class TabManager:
         """Callback cuando cambian las categorías de premiación"""
         try:
             logger.info("🔄 Categorías de premiación cambiaron, refrescando podios en RaceMonitoringWidget...")
-            # Si el widget de monitoreo tiene método para refrescar podios, llamarlo
-            if hasattr(race_monitoring_widget, 'refresh_podiums'):
-                race_monitoring_widget.refresh_podiums()
+            if not hasattr(race_monitoring_widget, 'refresh_podiums'):
+                return
+
+            # Actualizar combo primero para que incluya distancias FINISHED
+            if hasattr(race_monitoring_widget, 'refresh_podiums_category_combo'):
+                race_monitoring_widget.refresh_podiums_category_combo()
+
+            # Si el combo aún está en el placeholder, seleccionar la primera distancia disponible
+            combo = getattr(race_monitoring_widget, 'podiums_category_combo', None)
+            if combo and combo.currentText() in ("Selecciona una distancia", "Todas las distancias"):
+                if combo.count() > 1:
+                    combo.setCurrentIndex(1)  # primera distancia real
+                    return  # setCurrentIndex dispara refresh_podiums via señal
+
+            race_monitoring_widget.refresh_podiums()
             elif hasattr(race_monitoring_widget, 'refresh'):
                 race_monitoring_widget.refresh()
         except Exception as e:
