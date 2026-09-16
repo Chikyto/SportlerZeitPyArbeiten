@@ -439,8 +439,6 @@ class TabManager:
                     return  # setCurrentIndex dispara refresh_podiums via señal
 
             race_monitoring_widget.refresh_podiums()
-            elif hasattr(race_monitoring_widget, 'refresh'):
-                race_monitoring_widget.refresh()
         except Exception as e:
             logger.error(f"❌ Error refrescando podios en RaceMonitoringWidget: {e}")
 
