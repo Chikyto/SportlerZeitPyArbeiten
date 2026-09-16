@@ -291,7 +291,7 @@ class AdvancedYR8900Scanner:
             if not self.set_work_antenna(antenna_id):
                 print(f"ERROR: No se pudo activar antena {antenna_id}")
                 return []
-            time.sleep(0.1)  # Pausa para estabilización
+            time.sleep(0.01)  # 10ms — mínimo para conmutación de antena
         
         try:
             # Usar el comando INVENTORY del protocolo

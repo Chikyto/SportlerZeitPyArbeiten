@@ -42,6 +42,11 @@ class AppSignals(QObject):
     scanning_stopped = pyqtSignal()
     scan_progress = pyqtSignal(int)
     auto_start_scanning = pyqtSignal()  # 🔥 Nueva: Auto-iniciar escaneo cuando se inician distancias
+
+    # Emitida cuando arranca una carrera (primer start leído o botón manual)
+    # El ScanThread pasa a burst mode durante BURST_DURATION_SECS segundos
+    race_started = pyqtSignal()
+    race_burst_ended = pyqtSignal()
     
     # Errores de scanning
     scanner_error = pyqtSignal(str)

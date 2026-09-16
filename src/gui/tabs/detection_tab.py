@@ -578,6 +578,10 @@ class DetectionTab(BaseTab):
         self.scan_thread.error_occurred.connect(self.on_scan_error)
         self.scan_thread.start()
 
+        # Burst mode automático al detectar la primera largada
+        if self.signals and hasattr(self.signals, 'race_started'):
+            self.signals.race_started.connect(self._on_race_started)
+
         self.is_scanning = True
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
@@ -744,6 +748,11 @@ class DetectionTab(BaseTab):
             # Primera detección: registrar largada, ignorar los demás roles
             data['start_ts'] = ts_display
             data['start_dt'] = ts_dt
+            # Activar burst mode en la primera largada de la sesión
+            if self.signals and hasattr(self.signals, 'race_started'):
+                if not getattr(self, '_race_burst_emitted', False):
+                    self._race_burst_emitted = True
+                    self.signals.race_started.emit()
 
         elif already_started and not already_finished:
             # Atleta en carrera: checkpoint o meta (no re-largada)
@@ -837,6 +846,23 @@ class DetectionTab(BaseTab):
 
         self.detections_table.scrollToItem(self.detections_table.item(row, 0))
     
+    # Duración del burst mode al arrancar la carrera (segundos)
+    BURST_DURATION_SECS = 90
+
+    def _on_race_started(self):
+        """Activar burst mode por BURST_DURATION_SECS segundos al arrancar la carrera."""
+        if not self.scan_thread:
+            return
+        self.scan_thread.set_burst_mode(True)
+        self.log(f"⚡ Burst mode ON — alta frecuencia de lectura por {self.BURST_DURATION_SECS}s (largada masiva)")
+        QTimer.singleShot(self.BURST_DURATION_SECS * 1000, self._end_burst_mode)
+
+    def _end_burst_mode(self):
+        """Volver a frecuencia normal después del burst."""
+        if self.scan_thread:
+            self.scan_thread.set_burst_mode(False)
+            self.log("⚡ Burst mode OFF — frecuencia de lectura normal")
+
     def update_statistics(self):
         """Actualizar estadísticas de detecciones"""
         unique_tags = len(self.detected_tags)
