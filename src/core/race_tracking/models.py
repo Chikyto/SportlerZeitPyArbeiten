@@ -118,22 +118,26 @@ class Athlete:
 
     def get_age(self) -> Optional[int]:
         """
-        Calcular edad actual del atleta
-
-        Returns:
-            int con edad en años, None si no hay fecha de nacimiento
+        Calcular edad actual del atleta.
+        Si no hay birth_date, intenta leerla desde el campo notes ("Edad: 32 | ...").
         """
-        if not self.birth_date:
-            return None
+        if self.birth_date:
+            today = datetime.now()
+            age = today.year - self.birth_date.year
+            if (today.month, today.day) < (self.birth_date.month, self.birth_date.day):
+                age -= 1
+            return age
 
-        today = datetime.now()
-        age = today.year - self.birth_date.year
+        # Fallback: leer edad desde notes (formato "Edad: 32 | ...")
+        if self.notes:
+            import re
+            m = re.search(r'\bEdad:\s*(\d+)', self.notes)
+            if m:
+                age = int(m.group(1))
+                if 0 < age < 120:   # descartar valores absurdos (-1, 1952, etc.)
+                    return age
 
-        # Ajustar si aún no cumplió años este año
-        if (today.month, today.day) < (self.birth_date.month, self.birth_date.day):
-            age -= 1
-
-        return age
+        return None
 
     def get_award_category(self) -> Optional[str]:
         """
