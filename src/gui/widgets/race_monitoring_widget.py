@@ -323,23 +323,11 @@ class RaceMonitoringWidget(QWidget):
         controls_layout.addWidget(export_podiums_btn)
 
         # Botones de exportación a PDF
-        export_pdf_general_btn = QPushButton("📕 PDF General")
-        export_pdf_general_btn.clicked.connect(self.export_pdf_general)
-        export_pdf_general_btn.setStyleSheet("background-color: #e94560; color: white; font-weight: bold;")
-        export_pdf_general_btn.setToolTip("Exportar clasificación general a PDF")
-        controls_layout.addWidget(export_pdf_general_btn)
-
-        export_pdf_gender_btn = QPushButton("📗 PDF Género")
-        export_pdf_gender_btn.clicked.connect(self.export_pdf_by_gender)
-        export_pdf_gender_btn.setStyleSheet("background-color: #0f3460; color: white; font-weight: bold;")
-        export_pdf_gender_btn.setToolTip("Exportar clasificación por género a PDF")
-        controls_layout.addWidget(export_pdf_gender_btn)
-
-        export_pdf_category_btn = QPushButton("📘 PDF Categorías")
-        export_pdf_category_btn.clicked.connect(self.export_pdf_by_category)
-        export_pdf_category_btn.setStyleSheet("background-color: #16213e; color: white; font-weight: bold;")
-        export_pdf_category_btn.setToolTip("Exportar clasificación por categorías a PDF")
-        controls_layout.addWidget(export_pdf_category_btn)
+        export_pdf_complete_btn = QPushButton("📄 PDF Completo")
+        export_pdf_complete_btn.clicked.connect(self.export_pdf_complete)
+        export_pdf_complete_btn.setStyleSheet("background-color: #e94560; color: white; font-weight: bold;")
+        export_pdf_complete_btn.setToolTip("Exportar PDF completo: orden de llegada + clasificaciones por género + clasificaciones por categoría")
+        controls_layout.addWidget(export_pdf_complete_btn)
 
         export_pdf_announcer_btn = QPushButton("🎤 PDF Relator")
         export_pdf_announcer_btn.clicked.connect(self.export_pdf_announcer)
@@ -1168,8 +1156,12 @@ class RaceMonitoringWidget(QWidget):
             QMessageBox.critical(self, "Error", f"Error exportando PDF:\n{str(e)}")
             logger.error(f"Error en _export_pdf_all_distances({kind}): {e}", exc_info=True)
 
+    def export_pdf_complete(self):
+        """Exportar PDF completo: orden de llegada + clasificaciones por género + categorías"""
+        self.export_pdf_general()
+
     def export_pdf_general(self):
-        """Exportar clasificación general a PDF"""
+        """Exportar PDF completo con toda la clasificación"""
         from PyQt6.QtWidgets import QFileDialog, QMessageBox
         from src.utils.pdf_exporter import PDFExporter
         import logging
