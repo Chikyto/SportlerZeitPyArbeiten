@@ -770,8 +770,13 @@ class ChipAssignmentWidget(QWidget):
                 QMessageBox.warning(self, "Formato inválido", "Usá el formato DD/MM/AAAA")
                 return
             athlete.birth_date = new_date
+            # Recalcular edad y actualizar notes para mantener coherencia
+            new_age = athlete.get_age()
+            if new_age is not None and athlete.notes:
+                import re
+                athlete.notes = re.sub(r'\bEdad:\s*\d+', f'Edad: {new_age}', athlete.notes)
             changed = True
-            logger.info(f"✏️ Fecha de nacimiento corregida: {athlete.name} → {new_date.strftime('%d/%m/%Y')}")
+            logger.info(f"✏️ Fecha de nacimiento corregida: {athlete.name} → {new_date.strftime('%d/%m/%Y')} (edad={new_age})")
 
         if changed:
             self.refresh_athletes_table()
