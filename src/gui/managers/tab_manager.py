@@ -383,6 +383,15 @@ class TabManager:
             )
             logger.info("✅ AwardCategoriesWidget → RaceMonitoringWidget conectado")
 
+        # Conexión: Categorías de Premiación → Backend (re-sync atletas con categoría actualizada)
+        if award_categories:
+            config_tab = self.get_tab('configuration')
+            if config_tab and hasattr(config_tab, 'sync_athletes_to_backend_silent'):
+                award_categories.award_categories_changed.connect(
+                    config_tab.sync_athletes_to_backend_silent
+                )
+                logger.info("✅ AwardCategoriesWidget → Backend sync conectado")
+
         logger.info("✅ Señales entre tabs conectadas exitosamente")
 
     def _on_chip_assigned(self, event_config_widget):
