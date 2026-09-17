@@ -777,11 +777,18 @@ class ConfigurationTab(BaseTab):
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        # 5. POST al backend (en thread para no bloquear UI en modo silent)
+        # 5. POST al backend (en thread para no bloquear UI)
+        # Todas las operaciones de UI se despachan al hilo principal via QTimer.singleShot(0, …)
+        from PyQt6.QtCore import QTimer as _QTimer
+
+        def _ui(fn):
+            """Ejecutar fn en el hilo principal."""
+            _QTimer.singleShot(0, fn)
+
         def _post():
             try:
-                self.sync_athletes_btn.setEnabled(False)
-                self.sync_athletes_btn.setText("Subiendo...")
+                _ui(lambda: (self.sync_athletes_btn.setEnabled(False),
+                             self.sync_athletes_btn.setText("Subiendo...")))
 
                 headers = {'Content-Type': 'application/json'}
                 if api_key:
@@ -796,36 +803,35 @@ class ConfigurationTab(BaseTab):
                     updated = data.get('updated', '?')
                     self.log(f"☁️ Auto-sync: {created} creados, {updated} actualizados en backend")
                     if not silent:
-                        QMessageBox.information(self, "Sincronización exitosa",
+                        _ui(lambda c=created, u=updated: QMessageBox.information(self, "Sincronización exitosa",
                             f"✅ Atletas subidos al backend:\n\n"
-                            f"• Creados: {created}\n• Actualizados: {updated}\n\n"
-                            "El live tracking ya puede mostrar nombres y dorsales.")
-                    # Notificar a la statusbar
+                            f"• Creados: {c}\n• Actualizados: {u}\n\n"
+                            "El live tracking ya puede mostrar nombres y dorsales."))
                     if main_window and hasattr(main_window, 'statusBar'):
-                        main_window.statusBar().showMessage(
-                            f"☁️ Atletas sincronizados — {created} nuevos, {updated} actualizados", 8000)
+                        _ui(lambda c=created, u=updated: main_window.statusBar().showMessage(
+                            f"☁️ Atletas sincronizados — {c} nuevos, {u} actualizados", 8000))
                 else:
                     self.log(f"⚠️ Sync backend retornó {resp.status_code}: {resp.text[:200]}")
                     if not silent:
-                        QMessageBox.warning(self, "Respuesta inesperada",
-                            f"El backend respondió con código {resp.status_code}.\n\nDetalle: {resp.text[:300]}")
+                        _ui(lambda code=resp.status_code, txt=resp.text: QMessageBox.warning(self, "Respuesta inesperada",
+                            f"El backend respondió con código {code}.\n\nDetalle: {txt[:300]}"))
 
             except req.exceptions.ConnectionError:
                 self.log("❌ Sin conexión al sincronizar atletas")
                 if not silent:
-                    QMessageBox.critical(self, "Sin conexión",
-                        "No se pudo conectar al backend.\n\nVerificá que el servicio esté disponible.")
+                    _ui(lambda: QMessageBox.critical(self, "Sin conexión",
+                        "No se pudo conectar al backend.\n\nVerificá que el servicio esté disponible."))
             except req.exceptions.Timeout:
                 self.log("❌ Timeout al sincronizar atletas")
                 if not silent:
-                    QMessageBox.critical(self, "Timeout", "La conexión tardó demasiado.\n\nIntentá de nuevo.")
+                    _ui(lambda: QMessageBox.critical(self, "Timeout", "La conexión tardó demasiado.\n\nIntentá de nuevo."))
             except Exception as e:
                 self.log(f"❌ Error sincronizando atletas: {e}")
                 if not silent:
-                    QMessageBox.critical(self, "Error", f"Error al sincronizar:\n{e}")
+                    _ui(lambda err=e: QMessageBox.critical(self, "Error", f"Error al sincronizar:\n{err}"))
             finally:
-                self.sync_athletes_btn.setEnabled(True)
-                self.sync_athletes_btn.setText("☁️ Sincronizar atletas")
+                _ui(lambda: (self.sync_athletes_btn.setEnabled(True),
+                             self.sync_athletes_btn.setText("☁️ Sincronizar atletas")))
 
         import threading
         threading.Thread(target=_post, daemon=True).start()
