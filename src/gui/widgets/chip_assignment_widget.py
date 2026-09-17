@@ -579,12 +579,29 @@ class ChipAssignmentWidget(QWidget):
                 gender_display = gender_map.get(athlete.gender, athlete.gender or "-")
                 self.athletes_table.setItem(row, 3, QTableWidgetItem(gender_display))
 
-                # Fecha de Nacimiento
+                # Fecha de Nacimiento — detectar problemas de edad para resaltar la fila
+                from datetime import datetime as _dt
+                age_problem = False
                 if athlete.birth_date:
                     birth_date_str = athlete.birth_date.strftime('%d/%m/%Y')
+                    _today = _dt.now()
+                    _raw_age = _today.year - athlete.birth_date.year
+                    if (_today.month, _today.day) < (athlete.birth_date.month, athlete.birth_date.day):
+                        _raw_age -= 1
+                    if not (0 < _raw_age < 120):
+                        age_problem = True
+                        birth_date_str += f"  ⚠️ (edad={_raw_age})"
                 else:
-                    birth_date_str = "-"
-                self.athletes_table.setItem(row, 4, QTableWidgetItem(birth_date_str))
+                    birth_date_str = "⚠️ Sin fecha"
+                    if athlete.get_age() is None:
+                        age_problem = True
+
+                date_item = QTableWidgetItem(birth_date_str)
+                if age_problem:
+                    warn_color = QColor("#fef08a")  # amarillo advertencia
+                    date_item.setBackground(warn_color)
+                    date_item.setToolTip("Fecha de nacimiento inválida o ausente — doble-click para corregir")
+                self.athletes_table.setItem(row, 4, date_item)
 
                 # Chip RFID
                 is_dup = bool(athlete.tag_id and athlete.tag_id in duplicate_chips)
@@ -610,6 +627,14 @@ class ChipAssignmentWidget(QWidget):
 
                 # Info adicional
                 self.athletes_table.setItem(row, 7, QTableWidgetItem(athlete.notes or ""))
+
+                # Resaltar fila completa (cols 0,1,2,3,7) si hay problema de edad
+                if age_problem:
+                    _row_warn = QColor("#fffde7")  # amarillo muy suave
+                    for _c in (0, 1, 2, 3, 7):
+                        _it = self.athletes_table.item(row, _c)
+                        if _it:
+                            _it.setBackground(_row_warn)
 
                 total_count += 1
 
