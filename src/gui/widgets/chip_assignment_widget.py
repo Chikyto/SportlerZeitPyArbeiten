@@ -160,6 +160,7 @@ class ChipAssignmentWidget(QWidget):
         self.athletes_table.setAlternatingRowColors(True)
         self.athletes_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.athletes_table.itemSelectionChanged.connect(self.on_athlete_selected)
+        self.athletes_table.cellDoubleClicked.connect(self._on_athletes_table_double_click)
 
         # Asegurar que las barras de desplazamiento estén siempre disponibles
         self.athletes_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -665,6 +666,65 @@ class ChipAssignmentWidget(QWidget):
                     show_row = False
 
             self.athletes_table.setRowHidden(row, not show_row)
+
+    def _on_athletes_table_double_click(self, row: int, col: int):
+        """Doble-click en la tabla: col 4 = Fecha Nac. → diálogo de edición"""
+        if col != 4:
+            return
+        athlete_id = self.athletes_table.item(row, 1).data(Qt.ItemDataRole.UserRole) if self.athletes_table.item(row, 1) else None
+        if not athlete_id or not self.race_manager:
+            return
+        athlete = None
+        for dist in self.race_manager.get_all_distances():
+            for a in dist.participants:
+                if a.athlete_id == athlete_id:
+                    athlete = a
+                    break
+            if athlete:
+                break
+        if not athlete:
+            return
+
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLabel, QLineEdit, QDialogButtonBox
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Corregir fecha de nacimiento — {athlete.name}")
+        dlg.setMinimumWidth(360)
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(
+            f"Atleta: <b>{athlete.name}</b><br>"
+            f"Fecha actual: {athlete.birth_date.strftime('%d/%m/%Y') if athlete.birth_date else '(sin datos)'}"
+        ))
+        form = QFormLayout()
+        date_input = QLineEdit()
+        date_input.setPlaceholderText("DD/MM/AAAA")
+        if athlete.birth_date:
+            date_input.setText(athlete.birth_date.strftime('%d/%m/%Y'))
+        form.addRow("Nueva fecha (DD/MM/AAAA):", date_input)
+        lay.addLayout(form)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        lay.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        text = date_input.text().strip()
+        if not text:
+            return
+        from datetime import datetime as _dt
+        for fmt in ('%d/%m/%Y', '%d-%m-%Y', '%Y-%m-%d'):
+            try:
+                new_date = _dt.strptime(text, fmt)
+                break
+            except ValueError:
+                new_date = None
+        if new_date is None:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Formato inválido", "Usá el formato DD/MM/AAAA")
+            return
+        athlete.birth_date = new_date
+        self.refresh_athletes_table()
+        logger.info(f"✏️ Fecha de nacimiento corregida: {athlete.name} → {new_date.strftime('%d/%m/%Y')}")
 
     def on_athlete_selected(self):
         """Manejar selección de atleta en la tabla"""
@@ -1407,15 +1467,62 @@ class ChipAssignmentWidget(QWidget):
             # Mostrar resumen (calcular total correctamente)
             total = sum(len(dist.participants) for dist in distances)
 
-            QMessageBox.information(
-                self,
-                "Importación Exitosa",
-                f"✅ Importados desde CSV:\n\n"
-                f"• {len(distances)} distancias\n"
-                f"• {total} atletas\n"
-                f"• Dorsales asignados automáticamente\n\n"
-                f"Ahora puedes asignar chips RFID a cada corredor."
-            )
+            # Detectar atletas con fecha de nacimiento absurda
+            from datetime import datetime as _dt
+            absurd_athletes = []
+            for dist in distances:
+                for athlete in dist.participants:
+                    if athlete.birth_date:
+                        today = _dt.now()
+                        raw_age = today.year - athlete.birth_date.year
+                        if (today.month, today.day) < (athlete.birth_date.month, athlete.birth_date.day):
+                            raw_age -= 1
+                        if not (0 < raw_age < 120):
+                            absurd_athletes.append((athlete, raw_age, dist.name))
+
+            if absurd_athletes:
+                warning_lines = "\n".join(
+                    f"  • #{a.bib_number} {a.name} ({dist_name}): edad calculada = {age}"
+                    for a, age, dist_name in absurd_athletes[:20]
+                )
+                if len(absurd_athletes) > 20:
+                    warning_lines += f"\n  ... y {len(absurd_athletes) - 20} más"
+                from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QScrollArea, QWidget
+                dlg = QDialog(self)
+                dlg.setWindowTitle("Importación completada con advertencias")
+                dlg.setMinimumWidth(520)
+                lay = QVBoxLayout(dlg)
+                lay.addWidget(QLabel(
+                    f"✅ Importados: {len(distances)} distancias, {total} atletas.\n\n"
+                    f"⚠️  {len(absurd_athletes)} atleta(s) con fecha de nacimiento inválida\n"
+                    f"(la categoría no se podrá calcular automáticamente):\n"
+                ))
+                scroll = QScrollArea()
+                scroll.setWidgetResizable(True)
+                inner = QWidget()
+                inner_lay = QVBoxLayout(inner)
+                inner_lay.addWidget(QLabel(warning_lines))
+                scroll.setWidget(inner)
+                scroll.setFixedHeight(min(200, 30 + 22 * len(absurd_athletes)))
+                lay.addWidget(scroll)
+                lay.addWidget(QLabel(
+                    "\nCorregí la fecha de nacimiento en la tabla de atletas\n"
+                    "haciendo doble-click en la celda 'Fecha Nac.' correspondiente."
+                ))
+                btn = QPushButton("Entendido")
+                btn.clicked.connect(dlg.accept)
+                lay.addWidget(btn)
+                dlg.exec()
+            else:
+                QMessageBox.information(
+                    self,
+                    "Importación Exitosa",
+                    f"✅ Importados desde CSV:\n\n"
+                    f"• {len(distances)} distancias\n"
+                    f"• {total} atletas\n"
+                    f"• Dorsales asignados automáticamente\n\n"
+                    f"Ahora puedes asignar chips RFID a cada corredor."
+                )
 
             logger.info(f"✅ Importación CSV completa: {total} atletas en {len(distances)} distancias")
 
