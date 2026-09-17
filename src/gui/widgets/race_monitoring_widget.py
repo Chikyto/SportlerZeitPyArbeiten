@@ -175,9 +175,19 @@ class RaceMonitoringWidget(QWidget):
             return
         menu = QMenu(self)
         correct_times_action = menu.addAction("⏱ Corregir Tiempos (Largada / Llegada)")
+        menu.addSeparator()
+        dns_action = menu.addAction("🚫 DNS — No tomó la salida")
+        dnf_action = menu.addAction("🛑 DNF — Abandonó la carrera")
+        dsq_action = menu.addAction("❌ DSQ — Descalificado")
         action = menu.exec(self.participants_table.viewport().mapToGlobal(pos))
         if action == correct_times_action:
             self._correct_times(row)
+        elif action == dns_action:
+            self._set_athlete_status(row, 'dns')
+        elif action == dnf_action:
+            self._set_athlete_status(row, 'dnf')
+        elif action == dsq_action:
+            self._set_athlete_status(row, 'dsq')
 
     def _correct_times(self, row):
         """Diálogo para corregir/reasignar tiempos de largada y llegada."""
@@ -354,6 +364,113 @@ class RaceMonitoringWidget(QWidget):
                 self, "Tiempos corregidos",
                 f"<b>{athlete_name}</b><br>" + "<br>".join(changed)
             )
+
+    def _set_athlete_status(self, row: int, status: str):
+        """Marcar un atleta como DNS / DNF / DSQ y notificar al backend."""
+        if not self.race_manager:
+            return
+
+        tag_id = self.participants_table.item(row, 0).text() if self.participants_table.item(row, 0) else None
+        distance_id = self.participants_table.item(row, 1).text() if self.participants_table.item(row, 1) else None
+        if not tag_id or not distance_id:
+            return
+
+        labels = {'dns': 'DNS (No tomó la salida)', 'dnf': 'DNF (Abandonó)', 'dsq': 'DSQ (Descalificado)'}
+        label = labels.get(status, status.upper())
+
+        from PyQt6.QtWidgets import QMessageBox
+        athlete_name = self.participants_table.item(row, 2).text() if self.participants_table.item(row, 2) else tag_id
+        reply = QMessageBox.question(
+            self, f"Confirmar {status.upper()}",
+            f"¿Marcar a <b>{athlete_name}</b> como <b>{label}</b>?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Actualizar estado local en el modelo
+        from src.core.race_tracking.models import AthleteStatus
+        status_map = {
+            'dns': AthleteStatus.DNS,
+            'dnf': AthleteStatus.DNF,
+            'dsq': AthleteStatus.DSQ,
+        }
+        dist = self.race_manager.get_distance(distance_id)
+        if dist:
+            new_status = status_map.get(status)
+            for athlete in dist.participants:
+                if athlete.tag_id == tag_id:
+                    if new_status:
+                        athlete.status = new_status
+                    break
+
+        # Enviar al backend
+        self._backend_send_status(tag_id, distance_id, status)
+
+        # Refrescar tabla
+        self.refresh_data()
+
+    def _backend_send_status(self, tag_id: str, distance_id: str, status: str):
+        """Envía un evento de estado (dns/dnf/dsq) al backend."""
+        try:
+            from datetime import datetime
+            main_window = self.window()
+            if not hasattr(main_window, 'cloud_config') or not main_window.cloud_config:
+                return
+            import requests, threading
+            cfg = main_window.cloud_config
+            base_url = cfg['api_url'].rstrip('/').removesuffix('/api/v1')
+            event_id = cfg.get('event_id', '')
+            url = f"{base_url}/api/events/{event_id}/detection"
+            headers = {'Authorization': f"Bearer {cfg['token']}"}
+
+            # Buscar datos del atleta para incluir en el payload
+            athlete_name, bib_number = None, None
+            if hasattr(main_window, 'race_manager') and main_window.race_manager:
+                dist = main_window.race_manager.get_distance(distance_id)
+                if dist:
+                    for a in dist.participants:
+                        if a.tag_id == tag_id:
+                            athlete_name = a.name
+                            bib_number = a.bib_number
+                            break
+
+            payload = {
+                'tag_id': tag_id,
+                'timestamp': datetime.now().isoformat(),
+                'antenna_port': 0,
+                'event_type': status,          # "dns" | "dnf" | "dsq"
+                'checkpoint_number': None,
+                'checkpoint_km': None,
+                'category_id': distance_id,
+                'athlete_name': athlete_name,
+                'bib_number': bib_number,
+                'manual': True,
+            }
+
+            persistence = getattr(main_window, 'race_persistence', None)
+            worker = getattr(main_window, 'sync_worker', None)
+            if persistence and worker:
+                import uuid
+                payload['event_id'] = str(uuid.uuid4())
+                persistence.enqueue_sync('detection', url, payload, headers)
+                worker.notify()
+            else:
+                def _post():
+                    try:
+                        r = requests.post(url, json=payload, headers=headers, timeout=5)
+                        if r.status_code not in (200, 201):
+                            import logging
+                            logging.getLogger(__name__).warning(
+                                f"⚠️ Backend {status.upper()} respondió {r.status_code}: {r.text[:200]}")
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).warning(f"⚠️ No se pudo enviar {status.upper()}: {e}")
+                threading.Thread(target=_post, daemon=True).start()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"⚠️ _backend_send_status falló: {e}")
 
     def _backend_send(self, tag_id, distance_id, role, timestamp):
         """Envía una corrección manual al backend (best-effort)."""

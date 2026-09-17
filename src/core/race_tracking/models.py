@@ -53,6 +53,9 @@ class EventType(Enum):
     CHECKPOINT = "checkpoint"       # Punto intermedio
     FINISH = "finish"               # Meta
     LAP = "lap"                     # Vuelta completada (para carreras por vueltas)
+    DNS = "dns"                     # Did Not Start — no tomó la salida
+    DNF = "dnf"                     # Did Not Finish — abandonó
+    DSQ = "dsq"                     # Disqualified — descalificado
 
 
 class RaceMode(Enum):
