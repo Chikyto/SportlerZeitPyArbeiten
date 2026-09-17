@@ -2484,27 +2484,137 @@ class ChipAssignmentWidget(QWidget):
         n_distances = len(self.race_manager.get_all_distances())
         n_athletes  = sum(len(d.participants) for d in self.race_manager.get_all_distances())
 
+        # ── Paso 1: confirmar borrado local ──────────────────────────────────
         reply = QMessageBox.question(
             self,
-            "Nueva Sesión — Confirmar",
-            f"Esto va a borrar TODOS los datos actuales:\n\n"
+            "Nuevo Evento — Paso 1 de 2: datos locales",
+            f"Esto va a borrar TODOS los datos locales:\n\n"
             f"• {n_distances} distancias\n"
             f"• {n_athletes} atletas con sus chips asignados\n"
-            f"• Datos guardados en disco\n\n"
-            f"Esta acción no se puede deshacer.\n\n"
+            f"• Tiempos, resultados y datos guardados en disco\n\n"
+            f"⚠️  Esta acción no se puede deshacer.\n\n"
             f"¿Continuar?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
 
-        if reply == QMessageBox.StandardButton.Yes:
-            self.race_manager.clear_all()
-            self.persistence.clear_data()
-            self.refresh_athletes_table()
-            self.refresh_category_filter()
-            self.update_stats()
-            logger.info("🗑️ Sesión limpiada por el usuario")
-            QMessageBox.information(self, "Sesión nueva", "✅ Datos borrados. Sistema listo para un nuevo evento.")
+        self.race_manager.clear_all()
+        self.persistence.clear_data()
+        self.refresh_athletes_table()
+        self.refresh_category_filter()
+        self.update_stats()
+        logger.info("🗑️ Sesión local limpiada por el usuario")
+
+        # ── Paso 2: ofrecer limpiar el backend (opcional) ────────────────────
+        from PyQt6.QtWidgets import QApplication
+        main_window = None
+        for w in QApplication.topLevelWidgets():
+            if hasattr(w, 'cloud_config'):
+                main_window = w
+                break
+
+        cloud_cfg = getattr(main_window, 'cloud_config', None) if main_window else None
+        if not cloud_cfg:
+            QMessageBox.information(self, "Nuevo Evento", "✅ Datos locales borrados. Sistema listo para un nuevo evento.")
+            return
+
+        reply2 = QMessageBox.question(
+            self,
+            "Nuevo Evento — Paso 2 de 2: backend",
+            f"¿Querés también borrar los atletas del backend?\n\n"
+            f"Esto eliminará permanentemente los {n_athletes} atletas del evento\n"
+            f"'{cloud_cfg.get('event_id', '')}' en el servidor.\n\n"
+            f"⛔  Los tiempos ya registrados en el backend NO se borran,\n"
+            f"    solo la lista de atletas.\n\n"
+            f"Si vas a usar el mismo evento con una lista nueva, decí Sí.\n"
+            f"Si vas a crear un evento nuevo en el backend, decí No.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply2 != QMessageBox.StandardButton.Yes:
+            QMessageBox.information(self, "Nuevo Evento",
+                "✅ Datos locales borrados.\n\n"
+                "Recordá crear un nuevo evento en el backend si vas\n"
+                "a usar una lista de atletas distinta.")
+            return
+
+        # ── Paso 3: confirmación final con texto explícito ───────────────────
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QDialogButtonBox
+        dlg = QDialog(self)
+        dlg.setWindowTitle("⛔ Confirmación final — borrar atletas del backend")
+        dlg.setMinimumWidth(460)
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(
+            f"<b>Vas a borrar {n_athletes} atletas del backend.</b><br><br>"
+            f"Esta acción es irreversible. Los datos de detección y tiempos<br>"
+            f"ya registrados se conservan, pero los atletas desaparecerán<br>"
+            f"del live tracking hasta que vuelvas a sincronizar.<br><br>"
+            f"Para confirmar, escribí exactamente: <b>BORRAR</b>"
+        ))
+        confirm_input = QLineEdit()
+        confirm_input.setPlaceholderText("Escribí BORRAR para confirmar")
+        lay.addWidget(confirm_input)
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Borrar del backend")
+        btns.button(QDialogButtonBox.StandardButton.Ok).setStyleSheet("background: #dc2626; color: white;")
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        lay.addWidget(btns)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            QMessageBox.information(self, "Cancelado", "✅ Datos locales borrados. El backend no fue modificado.")
+            return
+
+        if confirm_input.text().strip() != "BORRAR":
+            QMessageBox.warning(self, "Texto incorrecto",
+                "No escribiste 'BORRAR' exactamente. El backend no fue modificado.")
+            return
+
+        # ── Ejecutar replace en background ───────────────────────────────────
+        self._replace_athletes_in_backend(cloud_cfg, n_athletes)
+
+    def _replace_athletes_in_backend(self, cloud_cfg: dict, n_athletes_deleted: int):
+        """POST /athletes con replace=true y lista vacía para borrar todos."""
+        import requests, threading, json
+        from PyQt6.QtCore import QTimer as _QTimer
+
+        base_url = cloud_cfg['api_url'].rstrip('/').removesuffix('/api/v1')
+        event_id = cloud_cfg.get('event_id', '')
+        api_key  = cloud_cfg.get('api_key', '') or cloud_cfg.get('token', '')
+        url = f"{base_url}/api/v1/timing/events/{event_id}/athletes"
+        headers = {'Content-Type': 'application/json',
+                   'Authorization': f'Bearer {api_key}'}
+        payload = {'athletes': [], 'replace': True}
+
+        def _post():
+            try:
+                r = requests.post(url, json=payload, headers=headers, timeout=15)
+                if r.status_code in (200, 201):
+                    logger.info(f"☁️ Backend: {n_athletes_deleted} atletas eliminados (replace=true)")
+                    _QTimer.singleShot(0, lambda: QMessageBox.information(
+                        self, "Backend actualizado",
+                        f"✅ Datos locales y backend limpiados.\n\n"
+                        f"El evento '{event_id}' ya no tiene atletas registrados.\n"
+                        f"Importá la nueva lista y sincronizá para continuar."))
+                else:
+                    logger.warning(f"⚠️ Backend replace respondió {r.status_code}: {r.text[:200]}")
+                    _QTimer.singleShot(0, lambda code=r.status_code: QMessageBox.warning(
+                        self, "Error en backend",
+                        f"Los datos locales fueron borrados ✅\n\n"
+                        f"Pero el backend respondió {code}.\n"
+                        f"Puede que los atletas anteriores sigan en el servidor.\n"
+                        f"Verificá manualmente o contactá al administrador."))
+            except Exception as e:
+                logger.error(f"❌ Error en replace backend: {e}")
+                _QTimer.singleShot(0, lambda err=e: QMessageBox.critical(
+                    self, "Error de conexión",
+                    f"Los datos locales fueron borrados ✅\n\n"
+                    f"No se pudo conectar al backend:\n{err}\n\n"
+                    f"Los atletas anteriores pueden seguir en el servidor."))
+
+        threading.Thread(target=_post, daemon=True).start()
 
     def manual_save_data(self):
         """Guardar datos manualmente (con confirmación)"""
