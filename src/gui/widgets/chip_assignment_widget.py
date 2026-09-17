@@ -668,10 +668,12 @@ class ChipAssignmentWidget(QWidget):
             self.athletes_table.setRowHidden(row, not show_row)
 
     def _on_athletes_table_double_click(self, row: int, col: int):
-        """Doble-click en la tabla: col 4 = Fecha Nac. → diálogo de edición"""
-        if col != 4:
+        """Doble-click en la tabla: col 4 = Fecha Nac. → diálogo de edición.
+        También col 3 (Género) abre el mismo diálogo para poder corregir género."""
+        if col not in (3, 4):
             return
-        athlete_id = self.athletes_table.item(row, 1).data(Qt.ItemDataRole.UserRole) if self.athletes_table.item(row, 1) else None
+        name_item = self.athletes_table.item(row, 1)
+        athlete_id = name_item.data(Qt.ItemDataRole.UserRole) if name_item else None
         if not athlete_id or not self.race_manager:
             return
         athlete = None
@@ -685,21 +687,31 @@ class ChipAssignmentWidget(QWidget):
         if not athlete:
             return
 
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLabel, QLineEdit, QDialogButtonBox
+        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QLabel,
+                                      QLineEdit, QDialogButtonBox, QComboBox, QMessageBox)
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"Corregir fecha de nacimiento — {athlete.name}")
-        dlg.setMinimumWidth(360)
+        dlg.setWindowTitle(f"Corregir datos — {athlete.name}")
+        dlg.setMinimumWidth(380)
         lay = QVBoxLayout(dlg)
         lay.addWidget(QLabel(
-            f"Atleta: <b>{athlete.name}</b><br>"
-            f"Fecha actual: {athlete.birth_date.strftime('%d/%m/%Y') if athlete.birth_date else '(sin datos)'}"
+            f"Atleta: <b>{athlete.name}</b> (#{athlete.bib_number})<br>"
+            f"Fecha actual: {athlete.birth_date.strftime('%d/%m/%Y') if athlete.birth_date else '(sin fecha)'} &nbsp;|&nbsp; "
+            f"Género actual: {athlete.gender or '(sin datos)'}"
         ))
         form = QFormLayout()
+
         date_input = QLineEdit()
-        date_input.setPlaceholderText("DD/MM/AAAA")
+        date_input.setPlaceholderText("DD/MM/AAAA  (dejar vacío para no cambiar)")
         if athlete.birth_date:
             date_input.setText(athlete.birth_date.strftime('%d/%m/%Y'))
-        form.addRow("Nueva fecha (DD/MM/AAAA):", date_input)
+        form.addRow("Fecha de nacimiento:", date_input)
+
+        gender_combo = QComboBox()
+        gender_combo.addItems(["(sin cambio)", "M", "F", "Otro"])
+        if athlete.gender in ("M", "F", "Otro"):
+            gender_combo.setCurrentText(athlete.gender)
+        form.addRow("Género:", gender_combo)
+
         lay.addLayout(form)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dlg.accept)
@@ -708,23 +720,36 @@ class ChipAssignmentWidget(QWidget):
 
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
+
+        changed = False
+
+        # Género
+        new_gender = gender_combo.currentText()
+        if new_gender != "(sin cambio)" and new_gender != athlete.gender:
+            athlete.gender = new_gender
+            changed = True
+            logger.info(f"✏️ Género corregido: {athlete.name} → {new_gender}")
+
+        # Fecha de nacimiento
         text = date_input.text().strip()
-        if not text:
-            return
-        from datetime import datetime as _dt
-        for fmt in ('%d/%m/%Y', '%d-%m-%Y', '%Y-%m-%d'):
-            try:
-                new_date = _dt.strptime(text, fmt)
-                break
-            except ValueError:
-                new_date = None
-        if new_date is None:
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Formato inválido", "Usá el formato DD/MM/AAAA")
-            return
-        athlete.birth_date = new_date
-        self.refresh_athletes_table()
-        logger.info(f"✏️ Fecha de nacimiento corregida: {athlete.name} → {new_date.strftime('%d/%m/%Y')}")
+        if text:
+            from datetime import datetime as _dt
+            new_date = None
+            for fmt in ('%d/%m/%Y', '%d-%m-%Y', '%Y-%m-%d'):
+                try:
+                    new_date = _dt.strptime(text, fmt)
+                    break
+                except ValueError:
+                    pass
+            if new_date is None:
+                QMessageBox.warning(self, "Formato inválido", "Usá el formato DD/MM/AAAA")
+                return
+            athlete.birth_date = new_date
+            changed = True
+            logger.info(f"✏️ Fecha de nacimiento corregida: {athlete.name} → {new_date.strftime('%d/%m/%Y')}")
+
+        if changed:
+            self.refresh_athletes_table()
 
     def on_athlete_selected(self):
         """Manejar selección de atleta en la tabla"""
