@@ -898,7 +898,7 @@ class ConfigurationTab(BaseTab):
             json.dump(existing, f, indent=2, ensure_ascii=False)
 
     def _load_cloud_config_from_file(self):
-        """Cargar cloud config guardado al iniciar y verificar conexión en background."""
+        """Cargar cloud config guardado al iniciar."""
         import json, os
         try:
             path = 'config/api_config.json'
@@ -909,33 +909,6 @@ class ConfigurationTab(BaseTab):
             cloud = data.get('cloud', {})
             if cloud.get('api_url') and cloud.get('api_key'):
                 self._apply_cloud_config_to_ui(cloud)
-                self.cloud_status_label.setText("🟡 Verificando...")
-                self.cloud_status_label.setStyleSheet(
-                    "font-weight: bold; font-size: 13px; color: orange;")
-                # Ping en background para no bloquear el arranque
-                import threading, requests as _req
-                from PyQt6.QtCore import QTimer as _QTimer
-                def _ping():
-                    try:
-                        base = cloud['api_url'].rstrip('/').removesuffix('/api/v1')
-                        token = cloud.get('api_key', '')
-                        r = _req.get(f"{base}/api/health",
-                                     headers={'Authorization': f'Bearer {token}'},
-                                     timeout=5)
-                        ok = r.status_code < 400
-                    except Exception:
-                        ok = False
-                    if ok:
-                        _QTimer.singleShot(0, lambda: (
-                            self.cloud_status_label.setText("🟢 Conectado"),
-                            self.cloud_status_label.setStyleSheet(
-                                "font-weight: bold; font-size: 13px; color: green;")))
-                    else:
-                        _QTimer.singleShot(0, lambda: (
-                            self.cloud_status_label.setText("🟡 Configurado (sin verificar)"),
-                            self.cloud_status_label.setStyleSheet(
-                                "font-weight: bold; font-size: 13px; color: orange;")))
-                threading.Thread(target=_ping, daemon=True).start()
         except Exception as e:
             logger.warning(f"⚠️ No se pudo cargar cloud config: {e}")
 
@@ -944,7 +917,7 @@ class ConfigurationTab(BaseTab):
         self.cloud_url_input.setText(config.get('api_url', ''))
         self.cloud_event_input.setText(config.get('event_id', ''))
         self.cloud_agent_input.setText(config.get('agent_name', ''))
-        self.cloud_status_label.setText("🟡 Configurado (sin verificar)")
+        self.cloud_status_label.setText("🟡 Configurado")
         self.cloud_status_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #b45309;")
         agent_name = config.get('agent_name', '')
         event_id = config.get('event_id', '')
