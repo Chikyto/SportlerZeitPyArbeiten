@@ -2399,22 +2399,38 @@ class ChipAssignmentWidget(QWidget):
             else:
                 last_save_str = "desconocida"
 
+            n_athletes_saved = 0
+            n_distances_saved = 0
+            try:
+                # Intentar leer el conteo sin cargar completamente
+                import json
+                with open(self.persistence.data_file, 'r', encoding='utf-8') as _f:
+                    _d = json.load(_f)
+                dists = _d.get('distances', [])
+                n_distances_saved = len(dists)
+                n_athletes_saved  = sum(len(d.get('participants', [])) for d in dists)
+            except Exception:
+                pass
+
             msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("Sesión anterior encontrada")
+            msg_box.setWindowTitle("Evento anterior encontrado")
             msg_box.setText(
-                f"Hay datos guardados del evento anterior.\n\n"
-                f"Guardado: {last_save_str}\n\n"
+                f"Hay datos guardados de un evento anterior.\n\n"
+                f"Guardado: {last_save_str}\n"
+                f"Contenido: {n_distances_saved} distancias, {n_athletes_saved} atletas\n\n"
                 f"¿Qué querés hacer?"
             )
             msg_box.setInformativeText(
-                "• Retomar → carga atletas y chips del evento anterior\n"
-                "• Nuevo evento → arranca vacío (el archivo guardado se conserva)\n"
-                "• Eliminar datos → borra el archivo guardado definitivamente"
+                "• Retomar → carga atletas, chips y tiempos del evento anterior "
+                "(recomendado si el evento sigue en curso)\n\n"
+                "• Nuevo evento → borra todos los datos locales y te permite "
+                "limpiar el backend también. Usá esto para empezar una carrera nueva.\n\n"
+                "• Cancelar → abre la app sin cargar nada"
             )
-            btn_load   = msg_box.addButton("Retomar evento anterior", QMessageBox.ButtonRole.YesRole)
-            btn_skip   = msg_box.addButton("Nuevo evento",            QMessageBox.ButtonRole.NoRole)
-            btn_delete = msg_box.addButton("Eliminar datos guardados", QMessageBox.ButtonRole.DestructiveRole)
-            msg_box.setDefaultButton(btn_skip)
+            btn_load   = msg_box.addButton("▶ Retomar evento anterior", QMessageBox.ButtonRole.YesRole)
+            btn_new    = msg_box.addButton("🗑️ Nuevo evento",           QMessageBox.ButtonRole.NoRole)
+            btn_cancel = msg_box.addButton("Cancelar",                  QMessageBox.ButtonRole.RejectRole)
+            msg_box.setDefaultButton(btn_load)
             msg_box.exec()
 
             clicked = msg_box.clickedButton()
@@ -2432,9 +2448,10 @@ class ChipAssignmentWidget(QWidget):
                         "No se pudieron cargar los datos guardados.\n\n"
                         "Comenzarás con una sesión nueva."
                     )
-            elif clicked == btn_delete:
-                self.persistence.clear_data()
-                logger.info("🗑️ Datos guardados eliminados por el usuario")
+            elif clicked == btn_new:
+                # Reutilizar el mismo flujo de 3 pasos del botón "Nuevo Evento"
+                # Primero inyectamos los conteos reales del archivo guardado
+                self._clear_all_data_with_counts(n_distances_saved, n_athletes_saved)
 
         except Exception as e:
             logger.error(f"❌ Error en auto-carga: {e}")
@@ -2477,13 +2494,15 @@ class ChipAssignmentWidget(QWidget):
             self.auto_save_data()
 
     def clear_all_data(self):
-        """Limpiar todos los datos para comenzar una sesión nueva"""
+        """Limpiar todos los datos para comenzar una sesión nueva (desde botón)."""
         if not self.race_manager:
             return
-
         n_distances = len(self.race_manager.get_all_distances())
         n_athletes  = sum(len(d.participants) for d in self.race_manager.get_all_distances())
+        self._clear_all_data_with_counts(n_distances, n_athletes)
 
+    def _clear_all_data_with_counts(self, n_distances: int, n_athletes: int):
+        """Flujo de 3 pasos para nuevo evento, reutilizable desde el botón y el diálogo de arranque."""
         # ── Paso 1: confirmar borrado local ──────────────────────────────────
         reply = QMessageBox.question(
             self,
