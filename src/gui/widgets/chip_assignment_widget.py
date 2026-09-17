@@ -1492,9 +1492,12 @@ class ChipAssignmentWidget(QWidget):
             # Mostrar resumen (calcular total correctamente)
             total = sum(len(dist.participants) for dist in distances)
 
-            # Detectar atletas con fecha de nacimiento absurda
+            # Detectar atletas con fecha de nacimiento problemática:
+            # - birth_date existe pero edad absurda (año futuro, typo, etc.)
+            # - birth_date ausente (columna vacía o no parseada en el CSV)
             from datetime import datetime as _dt
-            absurd_athletes = []
+            bad_date = []   # (athlete, motivo, dist_name)
+            no_date  = []   # (athlete, dist_name)
             for dist in distances:
                 for athlete in dist.participants:
                     if athlete.birth_date:
@@ -1503,36 +1506,55 @@ class ChipAssignmentWidget(QWidget):
                         if (today.month, today.day) < (athlete.birth_date.month, athlete.birth_date.day):
                             raw_age -= 1
                         if not (0 < raw_age < 120):
-                            absurd_athletes.append((athlete, raw_age, dist.name))
+                            bad_date.append((athlete, raw_age, dist.name))
+                    else:
+                        # Sin birth_date: revisar si tiene edad en notes como fallback
+                        if athlete.get_age() is None:
+                            no_date.append((athlete, dist.name))
 
-            if absurd_athletes:
-                warning_lines = "\n".join(
-                    f"  • #{a.bib_number} {a.name} ({dist_name}): edad calculada = {age}"
-                    for a, age, dist_name in absurd_athletes[:20]
-                )
-                if len(absurd_athletes) > 20:
-                    warning_lines += f"\n  ... y {len(absurd_athletes) - 20} más"
+            problem_athletes = bad_date or no_date
+            if problem_athletes:
+                lines = []
+                if bad_date:
+                    lines.append("⚠️  Fecha inválida (edad absurda):")
+                    for a, age, dn in bad_date[:15]:
+                        lines.append(f"   • #{a.bib_number} {a.name} ({dn}): edad={age}")
+                    if len(bad_date) > 15:
+                        lines.append(f"   ... y {len(bad_date)-15} más")
+                if no_date:
+                    if lines:
+                        lines.append("")
+                    lines.append("⚠️  Sin fecha de nacimiento:")
+                    for a, dn in no_date[:15]:
+                        lines.append(f"   • #{a.bib_number} {a.name} ({dn})")
+                    if len(no_date) > 15:
+                        lines.append(f"   ... y {len(no_date)-15} más")
+
                 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QScrollArea, QWidget
                 dlg = QDialog(self)
                 dlg.setWindowTitle("Importación completada con advertencias")
-                dlg.setMinimumWidth(520)
+                dlg.setMinimumWidth(540)
                 lay = QVBoxLayout(dlg)
                 lay.addWidget(QLabel(
                     f"✅ Importados: {len(distances)} distancias, {total} atletas.\n\n"
-                    f"⚠️  {len(absurd_athletes)} atleta(s) con fecha de nacimiento inválida\n"
-                    f"(la categoría no se podrá calcular automáticamente):\n"
+                    f"Los siguientes atletas no tienen fecha de nacimiento válida.\n"
+                    f"No se podrá calcular su categoría de premiación automáticamente.\n"
                 ))
                 scroll = QScrollArea()
                 scroll.setWidgetResizable(True)
                 inner = QWidget()
                 inner_lay = QVBoxLayout(inner)
-                inner_lay.addWidget(QLabel(warning_lines))
+                lbl = QLabel("\n".join(lines))
+                lbl.setFont(lbl.font())
+                inner_lay.addWidget(lbl)
+                inner_lay.addStretch()
                 scroll.setWidget(inner)
-                scroll.setFixedHeight(min(200, 30 + 22 * len(absurd_athletes)))
+                n_shown = len(bad_date) + len(no_date)
+                scroll.setFixedHeight(min(240, 30 + 22 * n_shown))
                 lay.addWidget(scroll)
                 lay.addWidget(QLabel(
-                    "\nCorregí la fecha de nacimiento en la tabla de atletas\n"
-                    "haciendo doble-click en la celda 'Fecha Nac.' correspondiente."
+                    "\n💡 Corregí la fecha haciendo doble-click en la columna\n"
+                    "'Fecha Nac.' o 'Género' de la tabla de atletas."
                 ))
                 btn = QPushButton("Entendido")
                 btn.clicked.connect(dlg.accept)
