@@ -729,6 +729,19 @@ class EventConfigWidget(QWidget):
             self.participant_birth_input.clear()
             self.refresh_categories_table()  # Actualizar conteo de participantes
             self.categories_changed.emit()   # Notificar a otros tabs
+
+            # Sync silencioso al backend
+            from PyQt6.QtWidgets import QApplication
+            main_window = next((w for w in QApplication.topLevelWidgets() if hasattr(w, 'race_manager')), None)
+            if main_window:
+                if hasattr(main_window, 'statusBar'):
+                    main_window.statusBar().showMessage("☁️ Sincronizando atletas con el backend...", 3000)
+                tab_manager = getattr(main_window, 'tab_manager', None)
+                if tab_manager:
+                    config_tab = tab_manager.get_tab('configuration')
+                    if config_tab and hasattr(config_tab, 'sync_athletes_to_backend_silent'):
+                        config_tab.sync_athletes_to_backend_silent()
+
             QMessageBox.information(self, "Éxito",
                                   f"Participante {athlete.name} (#{next_bib}) registrado en {distance_id}")
             logger.info(f"✅ Atleta registrado: {athlete.name} (Chip: {chip_id}, Dorsal: {next_bib}, Género: {gender})")
