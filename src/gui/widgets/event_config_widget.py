@@ -212,16 +212,29 @@ class EventConfigWidget(QWidget):
         
         participants_layout.addWidget(QLabel("Chip ID:"))
         self.chip_id_input = QLineEdit()
+        self.chip_id_input.setFixedWidth(70)
         participants_layout.addWidget(self.chip_id_input)
-        
+
         participants_layout.addWidget(QLabel("Distancia:"))
         self.participant_category_combo = QComboBox()
         participants_layout.addWidget(self.participant_category_combo)
-        
+
         participants_layout.addWidget(QLabel("Nombre:"))
         self.participant_name_input = QLineEdit()
         participants_layout.addWidget(self.participant_name_input)
-        
+
+        participants_layout.addWidget(QLabel("Género:"))
+        self.participant_gender_combo = QComboBox()
+        self.participant_gender_combo.addItems(["M", "F", "X"])
+        self.participant_gender_combo.setFixedWidth(50)
+        participants_layout.addWidget(self.participant_gender_combo)
+
+        participants_layout.addWidget(QLabel("Fecha Nac.:"))
+        self.participant_birth_input = QLineEdit()
+        self.participant_birth_input.setPlaceholderText("DD/MM/AAAA")
+        self.participant_birth_input.setFixedWidth(90)
+        participants_layout.addWidget(self.participant_birth_input)
+
         self.register_participant_btn = QPushButton("Registrar")
         self.register_participant_btn.clicked.connect(self.register_participant)
         participants_layout.addWidget(self.register_participant_btn)
@@ -680,12 +693,31 @@ class EventConfigWidget(QWidget):
             existing_bibs = [p.bib_number for p in distance.participants]
             next_bib = max(existing_bibs) + 1 if existing_bibs else 1
 
+            # Parsear fecha de nacimiento (opcional)
+            from datetime import datetime as _dt
+            birth_date = None
+            birth_str = self.participant_birth_input.text().strip()
+            if birth_str:
+                for fmt in ('%d/%m/%Y', '%d-%m-%Y', '%Y-%m-%d'):
+                    try:
+                        birth_date = _dt.strptime(birth_str, fmt)
+                        break
+                    except ValueError:
+                        pass
+                if birth_date is None:
+                    QMessageBox.warning(self, "Fecha inválida", "Usá el formato DD/MM/AAAA para la fecha de nacimiento.")
+                    return
+
+            gender = self.participant_gender_combo.currentText()
+
             # Crear atleta
             athlete = Athlete(
                 tag_id=chip_id,
                 bib_number=next_bib,
                 name=participant_name if participant_name else f"Corredor-{chip_id}",
-                distance_id=distance_id
+                distance_id=distance_id,
+                gender=gender,
+                birth_date=birth_date,
             )
 
             # Agregar a distancia
@@ -694,10 +726,12 @@ class EventConfigWidget(QWidget):
 
             self.chip_id_input.clear()
             self.participant_name_input.clear()
+            self.participant_birth_input.clear()
             self.refresh_categories_table()  # Actualizar conteo de participantes
+            self.categories_changed.emit()   # Notificar a otros tabs
             QMessageBox.information(self, "Éxito",
                                   f"Participante {athlete.name} (#{next_bib}) registrado en {distance_id}")
-            logger.info(f"✅ Atleta registrado: {athlete.name} (Chip: {chip_id}, Dorsal: {next_bib})")
+            logger.info(f"✅ Atleta registrado: {athlete.name} (Chip: {chip_id}, Dorsal: {next_bib}, Género: {gender})")
 
         except ValueError as e:
             QMessageBox.warning(self, "Error", str(e))

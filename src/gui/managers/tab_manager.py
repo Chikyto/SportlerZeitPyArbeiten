@@ -367,6 +367,14 @@ class TabManager:
             )
             logger.info("✅ EventConfigWidget → RaceMonitoringWidget conectado")
 
+        # Conexión: Gestión de Eventos → Asignación de Chips
+        if event_config and chip_assignment:
+            # Cuando se registra un atleta desde Gestión de Eventos, refrescar tabla de chips
+            event_config.categories_changed.connect(
+                lambda: chip_assignment.refresh_athletes_table()
+            )
+            logger.info("✅ EventConfigWidget → ChipAssignmentWidget conectado")
+
         # Conexión: Gestión de Eventos → Categorías de Premiación
         if event_config and award_categories:
             # Cuando cambian las categorías de carrera (distancias), refrescar award categories
