@@ -157,7 +157,7 @@ class ChipAssignmentScannerManager(QObject):
             layout = QVBoxLayout(dlg)
             layout.addWidget(QLabel("Conectar al servicio WebSocket del lector local:"))
             form = QFormLayout()
-            host_input = QLineEdit("localhost")
+            host_input = QLineEdit("127.0.0.1")
             port_input = QSpinBox()
             port_input.setRange(1, 65535)
             port_input.setValue(8765)
