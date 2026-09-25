@@ -69,6 +69,25 @@ class RaceMonitoringWidget(QWidget):
         """)
         controls_layout.addWidget(self.export_btn)
 
+        # Botón de largada masiva
+        self.bulk_start_btn = QPushButton("🏁 Asignar Largada Masiva")
+        self.bulk_start_btn.clicked.connect(self._bulk_assign_start_time)
+        self.bulk_start_btn.setStyleSheet("""
+            QPushButton {
+                background: #f59e0b;
+                color: white;
+                padding: 8px 15px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background: #d97706; }
+        """)
+        self.bulk_start_btn.setToolTip(
+            "Asigna el tiempo de disparo a todos los atletas que\n"
+            "no tienen ninguna lectura de largada registrada."
+        )
+        controls_layout.addWidget(self.bulk_start_btn)
+
         controls_layout.addStretch()
         
         # Estado del sistema
@@ -487,6 +506,67 @@ class RaceMonitoringWidget(QWidget):
                 })
         except Exception:
             pass
+
+    def _bulk_assign_start_time(self):
+        """Asigna el tiempo de disparo a todos los atletas sin largada registrada."""
+        if not self.race_manager:
+            return
+
+        # Determinar distancia seleccionada
+        selected_text = self.category_combo.currentText()
+        if selected_text == "Todas las categorías":
+            QMessageBox.information(
+                self,
+                "Seleccionar distancia",
+                "Seleccioná una distancia específica para usar esta función."
+            )
+            return
+
+        distance_id = selected_text.split(" - ")[0]
+        category = self.race_manager.get_category(distance_id)
+        if not category or not category.start_time:
+            QMessageBox.warning(
+                self,
+                "Sin tiempo de disparo",
+                "La distancia seleccionada no tiene un tiempo de disparo registrado.\n\n"
+                "Iniciá la carrera primero para que quede registrado el tiempo de disparo."
+            )
+            return
+
+        gun_time = category.start_time
+        all_results = self.race_manager.get_results(distance_id)
+
+        # Filtrar atletas sin largada
+        without_start = [r for r in all_results if r.start_time is None]
+
+        if not without_start:
+            QMessageBox.information(
+                self,
+                "Todos con largada",
+                "Todos los atletas de esta distancia ya tienen una largada registrada."
+            )
+            return
+
+        gun_str = gun_time.strftime('%H:%M:%S')
+        reply = QMessageBox.question(
+            self,
+            "Asignar Largada Masiva",
+            f"{len(without_start)} atletas sin largada.\n\n"
+            f"¿Asignar tiempo de disparo ({gun_str}) a todos?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        for result in without_start:
+            result.record_start(gun_time)
+            self._backend_send(result.athlete.tag_id, distance_id, 'start', gun_time)
+
+        self.refresh_participants_table()
+        logger.info(
+            f"🏁 Largada masiva: {len(without_start)} atletas en {distance_id} → {gun_str}"
+        )
 
     def setup_statistics_tab(self):
         """Tab con estadísticas detalladas"""
