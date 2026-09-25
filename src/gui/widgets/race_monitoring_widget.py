@@ -82,9 +82,10 @@ class RaceMonitoringWidget(QWidget):
             }
             QPushButton:hover { background: #d97706; }
         """)
+        self.bulk_start_btn.setEnabled(False)
         self.bulk_start_btn.setToolTip(
-            "Asigna el tiempo de disparo a todos los atletas que\n"
-            "no tienen ninguna lectura de largada registrada."
+            "Seleccioná una distancia y asegurate de que la carrera\n"
+            "esté iniciada para habilitar esta función."
         )
         controls_layout.addWidget(self.bulk_start_btn)
 
@@ -1777,6 +1778,37 @@ class RaceMonitoringWidget(QWidget):
     def on_category_changed(self):
         """Manejar cambio de categoría seleccionada"""
         self.refresh_participants_table()
+        self._update_bulk_start_btn_state()
+
+    def _update_bulk_start_btn_state(self):
+        """Habilitar el botón de largada masiva solo cuando hay gun_time en la distancia seleccionada."""
+        if not self.race_manager:
+            self.bulk_start_btn.setEnabled(False)
+            self.bulk_start_btn.setToolTip("Sin race manager configurado.")
+            return
+
+        selected_text = self.category_combo.currentText()
+        if selected_text == "Todas las categorías":
+            self.bulk_start_btn.setEnabled(False)
+            self.bulk_start_btn.setToolTip("Seleccioná una distancia específica para usar esta función.")
+            return
+
+        distance_id = selected_text.split(" - ")[0]
+        category = self.race_manager.get_category(distance_id)
+        has_gun = category is not None and category.start_time is not None
+
+        self.bulk_start_btn.setEnabled(has_gun)
+        if has_gun:
+            gun_str = category.start_time.strftime('%H:%M:%S')
+            self.bulk_start_btn.setToolTip(
+                f"Asigna el tiempo de disparo ({gun_str}) a todos los atletas\n"
+                "de esta distancia que no tienen largada registrada."
+            )
+        else:
+            self.bulk_start_btn.setToolTip(
+                "La distancia no tiene tiempo de disparo registrado.\n"
+                "Iniciá la carrera primero."
+            )
         
     def toggle_auto_refresh(self):
         """Alternar actualización automática"""
@@ -1802,6 +1834,7 @@ class RaceMonitoringWidget(QWidget):
         self.refresh_categories_overview()
         self.refresh_participants_table()
         self.refresh_statistics()
+        self._update_bulk_start_btn_state()
         
     def refresh_categories_overview(self):
         """Actualizar resumen de categorías"""
