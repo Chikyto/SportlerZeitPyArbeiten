@@ -780,6 +780,7 @@ class ChipAssignmentWidget(QWidget):
 
         if changed:
             self.refresh_athletes_table()
+            self.categories_imported.emit()  # re-sync al backend con datos actualizados
 
     def on_athlete_selected(self):
         """Manejar selección de atleta en la tabla"""
@@ -1140,6 +1141,9 @@ class ChipAssignmentWidget(QWidget):
         # Emitir señal
         self.chip_assigned.emit(athlete.athlete_id, chip_id)
 
+        # Sync al backend (chip actualizado)
+        self.categories_imported.emit()
+
         # Actualizar tabla
         self.refresh_athletes_table()
 
@@ -1413,6 +1417,7 @@ class ChipAssignmentWidget(QWidget):
             self.selected_athlete.tag_id = ""
             self.refresh_athletes_table()
             self.auto_save_data()
+            self.categories_imported.emit()  # sync al backend con chip removido
             logger.info(f"🗑️ Asignación limpiada para {self.selected_athlete.name}")
 
     def import_from_web(self):
