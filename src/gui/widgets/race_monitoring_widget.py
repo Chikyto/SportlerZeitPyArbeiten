@@ -180,9 +180,9 @@ class RaceMonitoringWidget(QWidget):
         # Columnas: Dorsal | Nombre | Dist | Estado | Largada | Tiempo | Última Lectura
         # tag_id y distance_id se guardan como UserRole en la col 0 (no se muestran aparte)
         self.participants_table = QTableWidget()
-        self.participants_table.setColumnCount(7)
+        self.participants_table.setColumnCount(8)
         self.participants_table.setHorizontalHeaderLabels([
-            "Dorsal", "Nombre", "Dist", "Estado",
+            "Dorsal", "Nombre", "Chip", "Dist", "Estado",
             "Largada", "Tiempo", "Última Lectura"
         ])
 
@@ -191,11 +191,12 @@ class RaceMonitoringWidget(QWidget):
         header.setStretchLastSection(True)
         # Anchos iniciales razonables (el usuario puede ajustarlos arrastrando)
         self.participants_table.setColumnWidth(0, 70)   # Dorsal
-        self.participants_table.setColumnWidth(1, 200)  # Nombre
-        self.participants_table.setColumnWidth(2, 55)   # Dist
-        self.participants_table.setColumnWidth(3, 90)   # Estado
-        self.participants_table.setColumnWidth(4, 80)   # Largada
-        self.participants_table.setColumnWidth(5, 110)  # Tiempo
+        self.participants_table.setColumnWidth(1, 190)  # Nombre
+        self.participants_table.setColumnWidth(2, 65)   # Chip
+        self.participants_table.setColumnWidth(3, 55)   # Dist
+        self.participants_table.setColumnWidth(4, 90)   # Estado
+        self.participants_table.setColumnWidth(5, 80)   # Largada
+        self.participants_table.setColumnWidth(6, 110)  # Tiempo
 
         self.participants_table.setAlternatingRowColors(True)
         self.participants_table.setSortingEnabled(True)
@@ -2044,10 +2045,13 @@ class RaceMonitoringWidget(QWidget):
                 getattr(result.athlete, 'name', result.athlete.tag_id) or result.athlete.tag_id
             ))
 
-            # Col 2: Distancia
-            self.participants_table.setItem(row, 2, QTableWidgetItem(result.distance_id))
+            # Col 2: Chip
+            self.participants_table.setItem(row, 2, QTableWidgetItem(result.athlete.tag_id or "—"))
 
-            # Col 3: Estado con color
+            # Col 3: Distancia
+            self.participants_table.setItem(row, 3, QTableWidgetItem(result.distance_id))
+
+            # Col 4: Estado con color
             status_labels = {
                 AthleteStatus.NOT_STARTED: "No iniciado",
                 AthleteStatus.RUNNING:     "En carrera",
@@ -2063,13 +2067,13 @@ class RaceMonitoringWidget(QWidget):
                 status_item.setBackground(QColor("#22c55e"))
             elif result.status in (AthleteStatus.DNS, AthleteStatus.DNF, AthleteStatus.DSQ):
                 status_item.setBackground(QColor("#f87171"))
-            self.participants_table.setItem(row, 3, status_item)
+            self.participants_table.setItem(row, 4, status_item)
 
-            # Col 4: Largada
+            # Col 5: Largada
             start_str = result.start_time.strftime('%H:%M:%S') if result.start_time else "—"
-            self.participants_table.setItem(row, 4, QTableWidgetItem(start_str))
+            self.participants_table.setItem(row, 5, QTableWidgetItem(start_str))
 
-            # Col 5: Tiempo total o en curso (sortable por segundos)
+            # Col 6: Tiempo total o en curso (sortable por segundos)
             if result.status == AthleteStatus.FINISHED and result.total_time:
                 total_secs = result.total_time.total_seconds()
                 time_str = result.get_formatted_time()
@@ -2082,9 +2086,9 @@ class RaceMonitoringWidget(QWidget):
                 time_str = "—"
             time_item = QTableWidgetItem(time_str)
             time_item.setData(Qt.ItemDataRole.UserRole, total_secs)
-            self.participants_table.setItem(row, 5, time_item)
+            self.participants_table.setItem(row, 6, time_item)
 
-            # Col 6: Última lectura
+            # Col 7: Última lectura
             if result.finish_time:
                 last_ts, last_label = result.finish_time, "Meta"
             elif result.checkpoint_times:
@@ -2095,7 +2099,7 @@ class RaceMonitoringWidget(QWidget):
             else:
                 last_ts, last_label = None, "—"
             last_str = f"{last_ts.strftime('%H:%M:%S')} ({last_label})" if last_ts else "—"
-            self.participants_table.setItem(row, 6, QTableWidgetItem(last_str))
+            self.participants_table.setItem(row, 7, QTableWidgetItem(last_str))
 
         # Reactivar sorting y restaurar scroll
         self.participants_table.setSortingEnabled(True)
@@ -2105,12 +2109,13 @@ class RaceMonitoringWidget(QWidget):
         self._filter_participants_table(self.participants_search.text())
 
     def _filter_participants_table(self, text: str):
-        """Muestra/oculta filas según el texto del buscador (nombre o dorsal)."""
+        """Muestra/oculta filas según el texto del buscador (nombre, dorsal o chip)."""
         text = text.strip().lower()
         for row in range(self.participants_table.rowCount()):
             dorsal = (self.participants_table.item(row, 0) or QTableWidgetItem()).text().lower()
             nombre = (self.participants_table.item(row, 1) or QTableWidgetItem()).text().lower()
-            visible = not text or text in dorsal or text in nombre
+            chip   = (self.participants_table.item(row, 2) or QTableWidgetItem()).text().lower()
+            visible = not text or text in dorsal or text in nombre or text in chip
             self.participants_table.setRowHidden(row, not visible)
             
     def refresh_statistics(self):
