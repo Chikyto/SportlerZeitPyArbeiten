@@ -1987,13 +1987,28 @@ class RaceMonitoringWidget(QWidget):
         if current_text != "Todas las categorías" and " - " in current_text:
             selected_category = current_text.split(" - ")[0]
 
-        # Obtener participantes
+        # Obtener participantes desde results (incluye detectados)
         all_participants = []
-        if selected_category:
-            all_participants = self.race_manager.get_results(selected_category)
-        else:
-            for category in self.race_manager.get_all_categories():
-                all_participants.extend(self.race_manager.get_results(category.distance_id))
+        distances_to_show = (
+            [self.race_manager.get_distance(selected_category)]
+            if selected_category
+            else self.race_manager.get_all_distances()
+        )
+        for dist in distances_to_show:
+            if dist is None:
+                continue
+            results_in_dist = self.race_manager.get_results(dist.distance_id)
+            all_participants.extend(results_in_dist)
+
+            # Agregar atletas registrados que NO tienen resultado (NOT_STARTED no restaurados)
+            result_athlete_ids = {r.athlete.athlete_id for r in results_in_dist}
+            for athlete in dist.participants:
+                if athlete.athlete_id not in result_athlete_ids:
+                    from src.core.race_tracking.models import AthleteResult
+                    all_participants.append(AthleteResult(
+                        athlete=athlete,
+                        distance_id=dist.distance_id
+                    ))
 
         # Filtrar por estado
         status_filter = self.status_filter_combo.currentText().lower()
