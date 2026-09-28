@@ -187,13 +187,15 @@ class RaceMonitoringWidget(QWidget):
         ])
 
         header = self.participants_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Dorsal
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)            # Nombre
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Dist
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Estado
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Largada
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Tiempo
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # Última Lectura
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(True)
+        # Anchos iniciales razonables (el usuario puede ajustarlos arrastrando)
+        self.participants_table.setColumnWidth(0, 70)   # Dorsal
+        self.participants_table.setColumnWidth(1, 200)  # Nombre
+        self.participants_table.setColumnWidth(2, 55)   # Dist
+        self.participants_table.setColumnWidth(3, 90)   # Estado
+        self.participants_table.setColumnWidth(4, 80)   # Largada
+        self.participants_table.setColumnWidth(5, 110)  # Tiempo
 
         self.participants_table.setAlternatingRowColors(True)
         self.participants_table.setSortingEnabled(True)
