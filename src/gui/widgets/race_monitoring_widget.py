@@ -146,44 +146,59 @@ class RaceMonitoringWidget(QWidget):
         """Tab con participantes en tiempo real"""
         tab = QWidget()
         self.monitoring_tabs.addTab(tab, "Participantes")
-        
+
         layout = QVBoxLayout(tab)
-        
-        # Filtros
+
+        # ── Fila de filtros ────────────────────────────────────────────────
         filters_layout = QHBoxLayout()
-        
-        filters_layout.addWidget(QLabel("Mostrar:"))
+
+        filters_layout.addWidget(QLabel("Estado:"))
         self.status_filter_combo = QComboBox()
         self.status_filter_combo.addItems([
             "Todos", "No iniciados", "En carrera", "Finalizados"
         ])
         self.status_filter_combo.currentTextChanged.connect(self.refresh_participants_table)
         filters_layout.addWidget(self.status_filter_combo)
-        
+
+        filters_layout.addSpacing(12)
+        filters_layout.addWidget(QLabel("Buscar:"))
+        self.participants_search = QLineEdit()
+        self.participants_search.setPlaceholderText("Nombre o dorsal…")
+        self.participants_search.setClearButtonEnabled(True)
+        self.participants_search.textChanged.connect(self._filter_participants_table)
+        filters_layout.addWidget(self.participants_search)
+
         filters_layout.addStretch()
-        
-        # Contadores
+
         self.participants_count_label = QLabel("Total: 0 participantes")
         self.participants_count_label.setStyleSheet("font-weight: bold;")
         filters_layout.addWidget(self.participants_count_label)
-        
+
         layout.addLayout(filters_layout)
-        
-        # Tabla de participantes
+
+        # ── Tabla ──────────────────────────────────────────────────────────
+        # Columnas: Dorsal | Nombre | Dist | Estado | Largada | Tiempo | Última Lectura
+        # tag_id y distance_id se guardan como UserRole en la col 0 (no se muestran aparte)
         self.participants_table = QTableWidget()
-        self.participants_table.setColumnCount(8)
+        self.participants_table.setColumnCount(7)
         self.participants_table.setHorizontalHeaderLabels([
-            "Chip", "Distancia", "Estado", "Tiempo Inicio",
-            "Tiempo Actual", "Checkpoints", "Última Lectura", "Antena"
+            "Dorsal", "Nombre", "Dist", "Estado",
+            "Largada", "Tiempo", "Última Lectura"
         ])
-        
-        # Configurar tabla
+
         header = self.participants_table.horizontalHeader()
-        header.setStretchLastSection(True)
-        for i in range(7):
-            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
-        
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Dorsal
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)            # Nombre
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Dist
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Estado
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Largada
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Tiempo
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # Última Lectura
+
         self.participants_table.setAlternatingRowColors(True)
+        self.participants_table.setSortingEnabled(True)
+        self.participants_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.participants_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.participants_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.participants_table.customContextMenuRequested.connect(self._participants_context_menu)
         layout.addWidget(self.participants_table)
@@ -192,6 +207,9 @@ class RaceMonitoringWidget(QWidget):
         """Context menu para tabla de participantes"""
         row = self.participants_table.rowAt(pos.y())
         if row < 0:
+            return
+        # Respetar filas ocultas por el buscador
+        if self.participants_table.isRowHidden(row):
             return
         menu = QMenu(self)
         correct_times_action = menu.addAction("⏱ Corregir Tiempos (Largada / Llegada)")
@@ -214,8 +232,11 @@ class RaceMonitoringWidget(QWidget):
         if not self.race_manager:
             return
 
-        tag_id = self.participants_table.item(row, 0).text()
-        distance_id = self.participants_table.item(row, 1).text()
+        item0 = self.participants_table.item(row, 0)
+        if not item0:
+            return
+        tag_id = item0.data(Qt.ItemDataRole.UserRole)
+        distance_id = item0.data(Qt.ItemDataRole.UserRole + 1)
 
         results = self.race_manager.get_results(distance_id)
         result = next((r for r in results if r.athlete.tag_id == tag_id), None)
@@ -416,8 +437,11 @@ class RaceMonitoringWidget(QWidget):
         if not self.race_manager:
             return
 
-        tag_id = self.participants_table.item(row, 0).text() if self.participants_table.item(row, 0) else None
-        distance_id = self.participants_table.item(row, 1).text() if self.participants_table.item(row, 1) else None
+        item0 = self.participants_table.item(row, 0)
+        if not item0:
+            return
+        tag_id = item0.data(Qt.ItemDataRole.UserRole)
+        distance_id = item0.data(Qt.ItemDataRole.UserRole + 1)
         if not tag_id or not distance_id:
             return
 
@@ -425,7 +449,7 @@ class RaceMonitoringWidget(QWidget):
         label = labels.get(status, status.upper())
 
         from PyQt6.QtWidgets import QMessageBox
-        athlete_name = self.participants_table.item(row, 2).text() if self.participants_table.item(row, 2) else tag_id
+        athlete_name = self.participants_table.item(row, 1).text() if self.participants_table.item(row, 1) else tag_id
         reply = QMessageBox.question(
             self, f"Confirmar {status.upper()}",
             f"¿Marcar a <b>{athlete_name}</b> como <b>{label}</b>?",
@@ -1943,108 +1967,134 @@ class RaceMonitoringWidget(QWidget):
             self.categories_overview_table.setItem(row, 7, QTableWidgetItem(last_checkpoint))
             
     def refresh_participants_table(self):
-        """Actualizar tabla de participantes"""
+        """Actualizar tabla de participantes."""
         if not self.race_manager:
             return
-            
+
+        from src.core.race_tracking.models import AthleteStatus
+
+        # Preservar posición del scroll
+        scrollbar = self.participants_table.verticalScrollBar()
+        scroll_pos = scrollbar.value()
+
+        # Desactivar sorting durante el fill para evitar saltos
+        self.participants_table.setSortingEnabled(False)
         self.participants_table.setRowCount(0)
-        
-        # Determinar categoría seleccionada
+
+        # Determinar distancia seleccionada
         selected_category = None
         current_text = self.category_combo.currentText()
         if current_text != "Todas las categorías" and " - " in current_text:
             selected_category = current_text.split(" - ")[0]
-            
-        # Filtrar por estado
-        status_filter = self.status_filter_combo.currentText().lower()
-        
+
         # Obtener participantes
         all_participants = []
         if selected_category:
             all_participants = self.race_manager.get_results(selected_category)
         else:
-            # Todas las categorías
             for category in self.race_manager.get_all_categories():
                 all_participants.extend(self.race_manager.get_results(category.distance_id))
-        
+
         # Filtrar por estado
+        status_filter = self.status_filter_combo.currentText().lower()
         if status_filter != "todos":
-            from src.core.race_tracking.models import AthleteStatus
             status_map = {
                 "no iniciados": AthleteStatus.NOT_STARTED,
-                "en carrera": AthleteStatus.RUNNING,
-                "finalizados": AthleteStatus.FINISHED
+                "en carrera":   AthleteStatus.RUNNING,
+                "finalizados":  AthleteStatus.FINISHED,
             }
             filter_status = status_map.get(status_filter)
             if filter_status:
                 all_participants = [p for p in all_participants if p.status == filter_status]
-        
-        # Actualizar contador
+
         self.participants_count_label.setText(f"Total: {len(all_participants)} participantes")
-        
+
         # Llenar tabla
-        from src.core.race_tracking.models import AthleteStatus
+        # Columnas: 0=Dorsal 1=Nombre 2=Dist 3=Estado 4=Largada 5=Tiempo 6=Última Lectura
         for result in all_participants:
             row = self.participants_table.rowCount()
             self.participants_table.insertRow(row)
 
-            # Chip ID, Categoría
-            self.participants_table.setItem(row, 0, QTableWidgetItem(result.athlete.tag_id))
-            self.participants_table.setItem(row, 1, QTableWidgetItem(result.distance_id))
+            # Col 0: Dorsal — guarda tag_id y distance_id como UserRole para el menú contextual
+            bib = str(getattr(result.athlete, 'bib_number', result.athlete.tag_id) or result.athlete.tag_id)
+            dorsal_item = QTableWidgetItem(bib)
+            dorsal_item.setData(Qt.ItemDataRole.UserRole,     result.athlete.tag_id)
+            dorsal_item.setData(Qt.ItemDataRole.UserRole + 1, result.distance_id)
+            self.participants_table.setItem(row, 0, dorsal_item)
 
-            # Estado con color
-            status_item = QTableWidgetItem(result.status.value.replace('_', ' ').title())
+            # Col 1: Nombre
+            self.participants_table.setItem(row, 1, QTableWidgetItem(
+                getattr(result.athlete, 'name', result.athlete.tag_id) or result.athlete.tag_id
+            ))
+
+            # Col 2: Distancia
+            self.participants_table.setItem(row, 2, QTableWidgetItem(result.distance_id))
+
+            # Col 3: Estado con color
+            status_labels = {
+                AthleteStatus.NOT_STARTED: "No iniciado",
+                AthleteStatus.RUNNING:     "En carrera",
+                AthleteStatus.FINISHED:    "Finalizado",
+                AthleteStatus.DNS:         "DNS",
+                AthleteStatus.DNF:         "DNF",
+                AthleteStatus.DSQ:         "DSQ",
+            }
+            status_item = QTableWidgetItem(status_labels.get(result.status, result.status.value))
             if result.status == AthleteStatus.RUNNING:
                 status_item.setBackground(Qt.GlobalColor.yellow)
             elif result.status == AthleteStatus.FINISHED:
-                status_item.setBackground(Qt.GlobalColor.green)
-            self.participants_table.setItem(row, 2, status_item)
+                status_item.setBackground(QColor("#22c55e"))
+            elif result.status in (AthleteStatus.DNS, AthleteStatus.DNF, AthleteStatus.DSQ):
+                status_item.setBackground(QColor("#f87171"))
+            self.participants_table.setItem(row, 3, status_item)
 
-            # Tiempos
-            start_time_str = result.start_time.strftime('%H:%M:%S') if result.start_time else "N/A"
-            self.participants_table.setItem(row, 3, QTableWidgetItem(start_time_str))
+            # Col 4: Largada
+            start_str = result.start_time.strftime('%H:%M:%S') if result.start_time else "—"
+            self.participants_table.setItem(row, 4, QTableWidgetItem(start_str))
 
-            # Tiempo actual/total
+            # Col 5: Tiempo total o en curso (sortable por segundos)
             if result.status == AthleteStatus.FINISHED and result.total_time:
+                total_secs = result.total_time.total_seconds()
                 time_str = result.get_formatted_time()
             elif result.status == AthleteStatus.RUNNING and result.start_time:
-                current_time = (datetime.now() - result.start_time).total_seconds()
-                minutes = int(current_time // 60)
-                seconds = int(current_time % 60)
-                time_str = f"{minutes:02d}:{seconds:02d} (en curso)"
+                total_secs = (datetime.now() - result.start_time).total_seconds()
+                m, s = int(total_secs // 60), int(total_secs % 60)
+                time_str = f"{m:02d}:{s:02d} ▶"
             else:
-                time_str = "N/A"
-            self.participants_table.setItem(row, 4, QTableWidgetItem(time_str))
+                total_secs = float('inf')
+                time_str = "—"
+            time_item = QTableWidgetItem(time_str)
+            time_item.setData(Qt.ItemDataRole.UserRole, total_secs)
+            self.participants_table.setItem(row, 5, time_item)
 
-            # Checkpoints - Mostrar cuáles checkpoints específicos pasó
-            if result.checkpoint_times:
-                # Obtener lista de checkpoints en orden
-                checkpoint_numbers = sorted(result.checkpoint_times.keys())
-                checkpoints_text = ", ".join([f"✓ CP{num}" for num in checkpoint_numbers])
-                checkpoints_item = QTableWidgetItem(checkpoints_text)
-                checkpoints_item.setForeground(QColor(0, 100, 200))  # Azul
-            else:
-                checkpoints_item = QTableWidgetItem("-")
-            self.participants_table.setItem(row, 5, checkpoints_item)
-
-            # Última lectura (último timestamp conocido)
-            last_time = None
-            last_antenna = "N/A"
+            # Col 6: Última lectura
             if result.finish_time:
-                last_time = result.finish_time
-                last_antenna = "Finish"
+                last_ts, last_label = result.finish_time, "Meta"
             elif result.checkpoint_times:
-                last_checkpoint = max(result.checkpoint_times.keys())
-                last_time = result.checkpoint_times[last_checkpoint]
-                last_antenna = f"CP{last_checkpoint}"
+                cp = max(result.checkpoint_times.keys())
+                last_ts, last_label = result.checkpoint_times[cp], f"CP{cp}"
             elif result.start_time:
-                last_time = result.start_time
-                last_antenna = "Start"
+                last_ts, last_label = result.start_time, "Largada"
+            else:
+                last_ts, last_label = None, "—"
+            last_str = f"{last_ts.strftime('%H:%M:%S')} ({last_label})" if last_ts else "—"
+            self.participants_table.setItem(row, 6, QTableWidgetItem(last_str))
 
-            last_reading_str = last_time.strftime('%H:%M:%S') if last_time else "N/A"
+        # Reactivar sorting y restaurar scroll
+        self.participants_table.setSortingEnabled(True)
+        scrollbar.setValue(scroll_pos)
 
-            self.participants_table.setItem(row, 6, QTableWidgetItem(last_reading_str))
-            self.participants_table.setItem(row, 7, QTableWidgetItem(last_antenna))
+        # Reaplicar búsqueda activa
+        self._filter_participants_table(self.participants_search.text())
+
+    def _filter_participants_table(self, text: str):
+        """Muestra/oculta filas según el texto del buscador (nombre o dorsal)."""
+        text = text.strip().lower()
+        for row in range(self.participants_table.rowCount()):
+            dorsal = (self.participants_table.item(row, 0) or QTableWidgetItem()).text().lower()
+            nombre = (self.participants_table.item(row, 1) or QTableWidgetItem()).text().lower()
+            visible = not text or text in dorsal or text in nombre
+            self.participants_table.setRowHidden(row, not visible)
             
     def refresh_statistics(self):
         """Actualizar estadísticas"""
