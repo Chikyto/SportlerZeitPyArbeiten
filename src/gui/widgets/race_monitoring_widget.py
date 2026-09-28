@@ -363,19 +363,42 @@ class RaceMonitoringWidget(QWidget):
 
         changed = []
 
+        # Calcular los tiempos que se van a aplicar para validarlos antes de tocar nada
+        new_start = None
+        new_finish = None
+
         if chk_start.isChecked():
             qt = start_edit.time()
             new_start = datetime(ref_date.year, ref_date.month, ref_date.day,
                                  qt.hour(), qt.minute(), qt.second())
-            result.force_update_times(start_time=new_start)
-            changed.append(f"Largada: {new_start.strftime('%H:%M:%S')}")
-            logger.info(f"Corrección manual largada: {athlete_name} ({tag_id}) @ {new_start.strftime('%H:%M:%S')}")
-            self._backend_send(tag_id, distance_id, 'start', new_start)
 
         if chk_finish.isChecked():
             qt = finish_edit.time()
             new_finish = datetime(ref_date.year, ref_date.month, ref_date.day,
                                   qt.hour(), qt.minute(), qt.second())
+
+        # Determinar la largada efectiva para la validación
+        effective_start = new_start if new_start is not None else result.start_time
+
+        # Validar: la llegada no puede ser <= largada (tiempo cero o negativo)
+        if new_finish is not None and effective_start is not None:
+            if new_finish <= effective_start:
+                QMessageBox.warning(
+                    self, "Tiempo inválido",
+                    f"La llegada ({new_finish.strftime('%H:%M:%S')}) debe ser "
+                    f"posterior a la largada ({effective_start.strftime('%H:%M:%S')}).\n\n"
+                    f"No se aplicaron cambios."
+                )
+                return
+
+        # Aplicar cambios validados
+        if new_start is not None:
+            result.force_update_times(start_time=new_start)
+            changed.append(f"Largada: {new_start.strftime('%H:%M:%S')}")
+            logger.info(f"Corrección manual largada: {athlete_name} ({tag_id}) @ {new_start.strftime('%H:%M:%S')}")
+            self._backend_send(tag_id, distance_id, 'start', new_start)
+
+        if new_finish is not None:
             result.force_update_times(finish_time=new_finish)
             changed.append(f"Llegada: {new_finish.strftime('%H:%M:%S')}")
             logger.info(f"Corrección manual llegada: {athlete_name} ({tag_id}) @ {new_finish.strftime('%H:%M:%S')}")
