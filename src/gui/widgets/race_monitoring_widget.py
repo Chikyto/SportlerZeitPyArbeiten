@@ -281,6 +281,9 @@ class RaceMonitoringWidget(QWidget):
                 logger.info(f"Reasignación: {athlete_name} largada={new_start.strftime('%H:%M:%S')} llegada={recorded.strftime('%H:%M:%S')}")
                 self._backend_send(tag_id, distance_id, 'start', new_start)
                 self._backend_send(tag_id, distance_id, 'finish', recorded)
+                # Desmarcar checkboxes para que la sección manual no aplique nada
+                chk_start.setChecked(False)
+                chk_finish.setChecked(False)
                 self.refresh_participants_table()
                 dlg.accept()
                 QMessageBox.information(
@@ -305,6 +308,8 @@ class RaceMonitoringWidget(QWidget):
                 result.force_update_times(start_time=new_start)
                 logger.info(f"Largada manual (disparo): {athlete_name} @ {new_start.strftime('%H:%M:%S')}")
                 self._backend_send(tag_id, distance_id, 'start', new_start)
+                chk_start.setChecked(False)
+                chk_finish.setChecked(False)
                 self.refresh_participants_table()
                 dlg.accept()
                 QMessageBox.information(
