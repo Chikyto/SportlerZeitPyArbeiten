@@ -2003,15 +2003,17 @@ class RaceMonitoringWidget(QWidget):
             results_in_dist = self.race_manager.get_results(dist.distance_id)
             all_participants.extend(results_in_dist)
 
-            # Agregar atletas registrados que NO tienen resultado (NOT_STARTED no restaurados)
+            # Registrar atletas que faltan en self.results (NOT_STARTED no restaurados tras reinicio)
             result_athlete_ids = {r.athlete.athlete_id for r in results_in_dist}
             for athlete in dist.participants:
                 if athlete.athlete_id not in result_athlete_ids:
                     from src.core.race_tracking.models import AthleteResult
-                    all_participants.append(AthleteResult(
-                        athlete=athlete,
-                        distance_id=dist.distance_id
-                    ))
+                    missing = AthleteResult(athlete=athlete, distance_id=dist.distance_id)
+                    # Insertar en el race_manager para que el bulk-start y otros los vean
+                    if dist.distance_id not in self.race_manager.results:
+                        self.race_manager.results[dist.distance_id] = {}
+                    self.race_manager.results[dist.distance_id][athlete.athlete_id] = missing
+                    all_participants.append(missing)
 
         # Filtrar por estado
         status_filter = self.status_filter_combo.currentText().lower()
