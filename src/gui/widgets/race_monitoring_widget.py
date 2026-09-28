@@ -462,20 +462,23 @@ class RaceMonitoringWidget(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        # Actualizar estado local en el modelo
+        # Actualizar estado en el AthleteResult (no en Athlete, que es otro objeto)
         from src.core.race_tracking.models import AthleteStatus
         status_map = {
             'dns': AthleteStatus.DNS,
             'dnf': AthleteStatus.DNF,
             'dsq': AthleteStatus.DSQ,
         }
-        dist = self.race_manager.get_distance(distance_id)
-        if dist:
-            new_status = status_map.get(status)
-            for athlete in dist.participants:
-                if athlete.tag_id == tag_id:
-                    if new_status:
-                        athlete.status = new_status
+        new_status = status_map.get(status)
+        if new_status:
+            for result in self.race_manager.get_results(distance_id):
+                if result.athlete.tag_id == tag_id:
+                    result.status = new_status
+                    # DNS: limpiar tiempos porque no llegó a largar realmente
+                    if new_status == AthleteStatus.DNS:
+                        result.start_time  = None
+                        result.finish_time = None
+                        result.total_time  = None
                     break
 
         # Enviar al backend
