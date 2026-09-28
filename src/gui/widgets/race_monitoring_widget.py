@@ -277,9 +277,7 @@ class RaceMonitoringWidget(QWidget):
                 recorded = result.start_time
                 # Asignar hora de disparo como largada
                 new_start = gun_dt or recorded
-                result.record_start(new_start)
-                # Mover el tiempo original a llegada
-                result.record_finish(recorded)
+                result.force_update_times(start_time=new_start, finish_time=recorded)
                 logger.info(f"Reasignación: {athlete_name} largada={new_start.strftime('%H:%M:%S')} llegada={recorded.strftime('%H:%M:%S')}")
                 self._backend_send(tag_id, distance_id, 'start', new_start)
                 self._backend_send(tag_id, distance_id, 'finish', recorded)
@@ -304,7 +302,7 @@ class RaceMonitoringWidget(QWidget):
 
             def _assign_gun_as_start():
                 new_start = gun_dt or result.finish_time
-                result.record_start(new_start)
+                result.force_update_times(start_time=new_start)
                 logger.info(f"Largada manual (disparo): {athlete_name} @ {new_start.strftime('%H:%M:%S')}")
                 self._backend_send(tag_id, distance_id, 'start', new_start)
                 self.refresh_participants_table()
@@ -364,7 +362,7 @@ class RaceMonitoringWidget(QWidget):
             qt = start_edit.time()
             new_start = datetime(ref_date.year, ref_date.month, ref_date.day,
                                  qt.hour(), qt.minute(), qt.second())
-            result.record_start(new_start)
+            result.force_update_times(start_time=new_start)
             changed.append(f"Largada: {new_start.strftime('%H:%M:%S')}")
             logger.info(f"Corrección manual largada: {athlete_name} ({tag_id}) @ {new_start.strftime('%H:%M:%S')}")
             self._backend_send(tag_id, distance_id, 'start', new_start)
@@ -373,7 +371,7 @@ class RaceMonitoringWidget(QWidget):
             qt = finish_edit.time()
             new_finish = datetime(ref_date.year, ref_date.month, ref_date.day,
                                   qt.hour(), qt.minute(), qt.second())
-            result.record_finish(new_finish)
+            result.force_update_times(finish_time=new_finish)
             changed.append(f"Llegada: {new_finish.strftime('%H:%M:%S')}")
             logger.info(f"Corrección manual llegada: {athlete_name} ({tag_id}) @ {new_finish.strftime('%H:%M:%S')}")
             self._backend_send(tag_id, distance_id, 'finish', new_finish)
@@ -525,16 +523,35 @@ class RaceMonitoringWidget(QWidget):
 
         distance_id = selected_text.split(" - ")[0]
         category = self.race_manager.get_category(distance_id)
-        if not category or not category.start_time:
-            QMessageBox.warning(
-                self,
-                "Sin tiempo de disparo",
-                "La distancia seleccionada no tiene un tiempo de disparo registrado.\n\n"
-                "Iniciá la carrera primero para que quede registrado el tiempo de disparo."
-            )
+        if not category:
+            QMessageBox.warning(self, "Sin distancia", "No se encontró la distancia seleccionada.")
             return
 
-        gun_time = category.start_time
+        if category.start_time:
+            gun_time = category.start_time
+        else:
+            # Pedir al usuario la hora de disparo manualmente
+            from PyQt6.QtWidgets import QDialog, QFormLayout, QTimeEdit, QDialogButtonBox, QVBoxLayout
+            from PyQt6.QtCore import QTime
+            dlg_gun = QDialog(self)
+            dlg_gun.setWindowTitle("Hora de Disparo Manual")
+            lay = QVBoxLayout(dlg_gun)
+            lay.addWidget(QLabel("La distancia no tiene tiempo de disparo registrado.\nIngresá la hora de disparo para asignar a todos:"))
+            gun_edit = QTimeEdit(QTime.currentTime())
+            gun_edit.setDisplayFormat("HH:mm:ss")
+            lay.addWidget(gun_edit)
+            btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            btns.accepted.connect(dlg_gun.accept)
+            btns.rejected.connect(dlg_gun.reject)
+            lay.addWidget(btns)
+            if dlg_gun.exec() != QDialog.DialogCode.Accepted:
+                return
+            from datetime import datetime
+            qt = gun_edit.time()
+            gun_time = datetime.now().replace(hour=qt.hour(), minute=qt.minute(), second=qt.second(), microsecond=0)
+            # Guardar también en la categoría para que quede registrado
+            if category:
+                category.start_time = gun_time
         all_results = self.race_manager.get_results(distance_id)
 
         # Filtrar atletas sin largada
@@ -1781,7 +1798,7 @@ class RaceMonitoringWidget(QWidget):
         self._update_bulk_start_btn_state()
 
     def _update_bulk_start_btn_state(self):
-        """Habilitar el botón de largada masiva solo cuando hay gun_time en la distancia seleccionada."""
+        """Habilitar/deshabilitar el botón de largada masiva según la distancia seleccionada."""
         if not self.race_manager:
             self.bulk_start_btn.setEnabled(False)
             self.bulk_start_btn.setToolTip("Sin race manager configurado.")
@@ -1797,7 +1814,8 @@ class RaceMonitoringWidget(QWidget):
         category = self.race_manager.get_category(distance_id)
         has_gun = category is not None and category.start_time is not None
 
-        self.bulk_start_btn.setEnabled(has_gun)
+        # Siempre habilitar si hay una distancia seleccionada (sin gun_time se pide manualmente)
+        self.bulk_start_btn.setEnabled(True)
         if has_gun:
             gun_str = category.start_time.strftime('%H:%M:%S')
             self.bulk_start_btn.setToolTip(

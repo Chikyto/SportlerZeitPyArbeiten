@@ -526,7 +526,19 @@ class AthleteResult:
         self.finish_time = timestamp
         self.total_time = timestamp - self.start_time
         self.status = AthleteStatus.FINISHED
-    
+
+    def force_update_times(self, start_time=None, finish_time=None):
+        """Fuerza actualización de tiempos sin validaciones (para correcciones manuales)."""
+        if start_time is not None:
+            self.start_time = start_time
+            if self.status == AthleteStatus.NOT_STARTED:
+                self.status = AthleteStatus.RUNNING
+        if finish_time is not None:
+            self.finish_time = finish_time
+            if self.start_time is not None:
+                self.total_time = finish_time - self.start_time
+            self.status = AthleteStatus.FINISHED
+
     def get_total_seconds(self) -> Optional[float]:
         """
         Obtener tiempo total en segundos

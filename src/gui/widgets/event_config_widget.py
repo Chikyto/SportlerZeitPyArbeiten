@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                             QLabel, QGroupBox, QLineEdit, QTableWidget,
                             QTableWidgetItem, QHeaderView, QTimeEdit, QSpinBox,
                             QTextEdit, QComboBox, QMessageBox, QGridLayout, QDialog,
-                            QDialogButtonBox, QAbstractItemView)
+                            QDialogButtonBox, QAbstractItemView, QMenu, QFormLayout)
 from PyQt6.QtCore import pyqtSignal, QTime, Qt
 from PyQt6.QtGui import QFont, QColor
 from datetime import datetime, time
@@ -197,6 +197,8 @@ class EventConfigWidget(QWidget):
         self.participants_table.setAlternatingRowColors(True)
         self.participants_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.participants_table.setMaximumHeight(200)
+        self.participants_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.participants_table.customContextMenuRequested.connect(self._participants_context_menu)
         participants_detail_layout.addWidget(self.participants_table)
 
         # Label de estadísticas
@@ -910,6 +912,103 @@ class EventConfigWidget(QWidget):
         else:
             self.participants_stats_label.setStyleSheet("font-weight: bold; color: #ef4444;")
             
+    def _participants_context_menu(self, pos):
+        """Menú contextual en la tabla de participantes para editar dorsal."""
+        row = self.participants_table.rowAt(pos.y())
+        if row < 0:
+            return
+
+        menu = QMenu(self)
+        act_edit_bib = menu.addAction("✏️ Editar dorsal")
+        action = menu.exec(self.participants_table.viewport().mapToGlobal(pos))
+
+        if action == act_edit_bib:
+            self._edit_bib_number(row)
+
+    def _edit_bib_number(self, row: int):
+        """Diálogo para cambiar el número de dorsal de un participante."""
+        bib_item = self.participants_table.item(row, 0)
+        name_item = self.participants_table.item(row, 1)
+        if not bib_item or not name_item:
+            return
+
+        current_bib = int(bib_item.text())
+        athlete_name = name_item.text()
+
+        # Obtener la distancia actualmente seleccionada
+        current_row = self.categories_table.currentRow()
+        if current_row < 0:
+            return
+        distance_id = self.categories_table.item(current_row, 0).text()
+        distance = self.race_manager.get_distance(distance_id)
+        if not distance:
+            return
+
+        # Diálogo de ingreso
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Editar Dorsal")
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(f"Atleta: <b>{athlete_name}</b>"))
+        form = QFormLayout()
+        spin = QSpinBox()
+        spin.setRange(1, 99999)
+        spin.setValue(current_bib)
+        form.addRow("Nuevo dorsal:", spin)
+        lay.addLayout(form)
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        lay.addWidget(btns)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        new_bib = spin.value()
+        if new_bib == current_bib:
+            return
+
+        # Verificar que el nuevo dorsal no exista ya en esta distancia
+        existing_bibs = [p.bib_number for p in distance.participants if p.bib_number != current_bib]
+        if new_bib in existing_bibs:
+            QMessageBox.warning(self, "Dorsal duplicado",
+                                f"El dorsal {new_bib} ya está asignado en esta distancia.")
+            return
+
+        # Actualizar en el modelo
+        for athlete in distance.participants:
+            if athlete.bib_number == current_bib:
+                athlete.bib_number = new_bib
+                break
+
+        # Refrescar tabla
+        self.refresh_participants_table(distance)
+
+        # Enviar al backend
+        self._enqueue_bib_update(distance_id, current_bib, new_bib)
+        logger.info(f"Dorsal actualizado: {athlete_name} {current_bib} → {new_bib}")
+
+    def _enqueue_bib_update(self, distance_id: str, old_bib: int, new_bib: int):
+        """Encolar actualización de dorsal al backend."""
+        import os, json as _json
+        try:
+            path = 'config/api_config.json'
+            if not os.path.exists(path):
+                return
+            with open(path, 'r', encoding='utf-8') as f:
+                data = _json.load(f)
+            cloud = data.get('cloud', data)
+            api_url  = cloud.get('api_url', '').rstrip('/').removesuffix('/api/v1')
+            api_key  = cloud.get('api_key', '')
+            event_id = cloud.get('event_id', '')
+            if not api_url or not api_key or not event_id:
+                return
+            url = f"{api_url}/api/v1/timing/events/{event_id}/participants/bib"
+            headers = {'Authorization': f"Bearer {api_key}", 'Content-Type': 'application/json'}
+            body = {'distance_id': distance_id, 'old_bib': old_bib, 'new_bib': new_bib}
+            self._enqueue_backend_call('update_bib', url, body, headers)
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo encolar actualización de dorsal: {e}")
+
     def get_event_manager(self):
         """Obtener el manager de eventos"""
         return self.race_manager

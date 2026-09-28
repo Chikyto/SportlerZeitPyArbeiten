@@ -2,7 +2,7 @@ import sys
 import json
 import logging
 from pathlib import Path
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication, QMessageBox, QPushButton, QDialog, QVBoxLayout, QLabel, QHBoxLayout
 
 from src.gui.wizard.auto_wizard import AutoConfigurationWizard  # 🔥 Cambiado a AutoWizard
 from src.gui.main_window import MainWindow
@@ -102,23 +102,38 @@ def ask_use_existing_config(config):
         summary += f"  • Puerto {port}: {name} ({role_text})\n"
     
     summary += "\n¿Desea usar esta configuración?"
-    
-    reply = QMessageBox.question(
-        None,
-        "Configuración Existente",
-        summary,
-        QMessageBox.StandardButton.Yes | 
-        QMessageBox.StandardButton.No |
-        QMessageBox.StandardButton.Cancel,
-        QMessageBox.StandardButton.Yes
-    )
-    
-    if reply == QMessageBox.StandardButton.Yes:
-        return 'use'
-    elif reply == QMessageBox.StandardButton.No:
-        return 'new'
-    else:
-        return 'cancel'
+
+    dlg = QDialog()
+    dlg.setWindowTitle("Configuración Existente")
+    dlg.setMinimumWidth(420)
+    lay = QVBoxLayout(dlg)
+    lay.addWidget(QLabel(summary))
+    btn_row = QHBoxLayout()
+    result = ['cancel']
+
+    btn_yes = QPushButton("✅ Usar configuración")
+    btn_yes.setDefault(True)
+    btn_new = QPushButton("🔄 Nueva configuración")
+    btn_offline = QPushButton("📴 Abrir sin hardware")
+    btn_cancel = QPushButton("Cancelar")
+
+    def _use():    result[0] = 'use';    dlg.accept()
+    def _new():    result[0] = 'new';    dlg.accept()
+    def _offline():result[0] = 'offline';dlg.accept()
+    def _cancel(): result[0] = 'cancel'; dlg.reject()
+
+    btn_yes.clicked.connect(_use)
+    btn_new.clicked.connect(_new)
+    btn_offline.clicked.connect(_offline)
+    btn_cancel.clicked.connect(_cancel)
+
+    btn_row.addWidget(btn_yes)
+    btn_row.addWidget(btn_new)
+    btn_row.addWidget(btn_offline)
+    btn_row.addWidget(btn_cancel)
+    lay.addLayout(btn_row)
+    dlg.exec()
+    return result[0]
 
 def install_excepthook():
     """Evita que PyQt6 cierre la app ante una excepción no manejada en un slot.
@@ -162,7 +177,7 @@ def main():
         
         if config:
             choice = ask_use_existing_config(config)
-            
+
             if choice == 'cancel':
                 logger.info("Usuario canceló")
                 return 0
@@ -171,13 +186,48 @@ def main():
                 config = run_wizard()
                 if not config:
                     return 0
+            elif choice == 'offline':
+                logger.info("Usuario eligió modo sin hardware")
+                config = None  # MainWindow arranca sin scanner
         else:
-            logger.info("No hay configuración. Ejecutando wizard...")
-            config = run_wizard()
-            
-            if not config:
-                logger.info("Wizard cancelado. Saliendo...")
+            logger.info("No hay configuración guardada.")
+            # Preguntar si quiere wizard o modo offline
+            dlg_start = QDialog()
+            dlg_start.setWindowTitle("RFID Athletics Timer")
+            lay_start = QVBoxLayout(dlg_start)
+            lay_start.addWidget(QLabel("No se encontró una configuración guardada.\n\n¿Cómo desea continuar?"))
+            btn_row_start = QHBoxLayout()
+            start_choice = ['wizard']
+
+            btn_wiz = QPushButton("🔧 Configurar con wizard")
+            btn_wiz.setDefault(True)
+            btn_off = QPushButton("📴 Abrir sin hardware")
+            btn_cx  = QPushButton("Cancelar")
+
+            def _wiz():   start_choice[0] = 'wizard';  dlg_start.accept()
+            def _off():   start_choice[0] = 'offline'; dlg_start.accept()
+            def _cx():    start_choice[0] = 'cancel';  dlg_start.reject()
+
+            btn_wiz.clicked.connect(_wiz)
+            btn_off.clicked.connect(_off)
+            btn_cx.clicked.connect(_cx)
+            btn_row_start.addWidget(btn_wiz)
+            btn_row_start.addWidget(btn_off)
+            btn_row_start.addWidget(btn_cx)
+            lay_start.addLayout(btn_row_start)
+            dlg_start.exec()
+
+            if start_choice[0] == 'cancel':
+                logger.info("Usuario canceló en inicio")
                 return 0
+            elif start_choice[0] == 'offline':
+                logger.info("Usuario eligió modo sin hardware (sin config)")
+                config = None
+            else:
+                config = run_wizard()
+                if not config:
+                    logger.info("Wizard cancelado. Saliendo...")
+                    return 0
         
         # 🔥 DEBUG: Verificar config antes de MainWindow
         logger.info("=" * 80)
