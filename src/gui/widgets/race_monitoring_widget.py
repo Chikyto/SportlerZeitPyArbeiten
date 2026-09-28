@@ -621,20 +621,67 @@ class RaceMonitoringWidget(QWidget):
             return
 
         gun_str = gun_time.strftime('%H:%M:%S')
-        reply = QMessageBox.question(
-            self,
-            "Asignar Largada Masiva",
-            f"{len(without_start)} atletas sin largada.\n\n"
-            f"¿Asignar tiempo de disparo ({gun_str}) a todos?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
 
-        for result in without_start:
+        # Separar atletas con y sin chip asignado
+        without_chip = [r for r in without_start if not r.athlete.tag_id]
+        with_chip    = [r for r in without_start if r.athlete.tag_id]
+
+        # Armar mensaje de confirmación
+        msg = f"{len(without_start)} atletas sin largada.\n\n"
+        msg += f"⏱ Tiempo de disparo: {gun_str}\n\n"
+        if without_chip:
+            names = "\n".join(
+                f"  • {getattr(r.athlete, 'name', '?')} (dorsal {getattr(r.athlete, 'bib_number', '?')})"
+                for r in without_chip[:10]
+            )
+            if len(without_chip) > 10:
+                names += f"\n  … y {len(without_chip) - 10} más"
+            msg += (
+                f"⚠️ {len(without_chip)} atletas NO tienen chip asignado:\n{names}\n\n"
+                f"¿Querés largarlos igual (quedarán registrados pero sin chip para sincronizar)?\n\n"
+            )
+        msg += f"¿Asignar largada a todos ({len(without_start)})" + (
+            f" o solo a los {len(with_chip)} con chip?" if without_chip else "?"
+        )
+
+        if without_chip:
+            dlg_confirm = QDialog(self)
+            dlg_confirm.setWindowTitle("Asignar Largada Masiva")
+            lay_c = QVBoxLayout(dlg_confirm)
+            lay_c.addWidget(QLabel(msg))
+            btn_row_c = QHBoxLayout()
+            choice = ['cancel']
+            btn_all  = QPushButton(f"Largar todos ({len(without_start)})")
+            btn_chip = QPushButton(f"Solo con chip ({len(with_chip)})")
+            btn_no   = QPushButton("Cancelar")
+            def _all():  choice[0] = 'all';  dlg_confirm.accept()
+            def _chip(): choice[0] = 'chip'; dlg_confirm.accept()
+            def _no():   choice[0] = 'cancel'; dlg_confirm.reject()
+            btn_all.clicked.connect(_all)
+            btn_chip.clicked.connect(_chip)
+            btn_no.clicked.connect(_no)
+            btn_row_c.addWidget(btn_all)
+            btn_row_c.addWidget(btn_chip)
+            btn_row_c.addWidget(btn_no)
+            lay_c.addLayout(btn_row_c)
+            dlg_confirm.exec()
+            if choice[0] == 'cancel':
+                return
+            to_start = without_start if choice[0] == 'all' else with_chip
+        else:
+            reply = QMessageBox.question(
+                self, "Asignar Largada Masiva", msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            to_start = without_start
+
+        for result in to_start:
             result.record_start(gun_time)
-            self._backend_send(result.athlete.tag_id, distance_id, 'start', gun_time)
+            if result.athlete.tag_id:
+                self._backend_send(result.athlete.tag_id, distance_id, 'start', gun_time)
 
         self.refresh_participants_table()
         logger.info(
