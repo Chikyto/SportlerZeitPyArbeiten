@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                             QLabel, QGroupBox, QTableWidget, QTableWidgetItem,
                             QHeaderView, QComboBox, QTabWidget, QTextEdit,
                             QMenu, QDialog, QTimeEdit, QDialogButtonBox, QFormLayout,
-                            QMessageBox)
+                            QMessageBox, QLineEdit, QSpinBox)
 from PyQt6.QtCore import pyqtSignal, QTimer, Qt, QTime
 from PyQt6.QtGui import QFont, QColor
 from datetime import datetime
